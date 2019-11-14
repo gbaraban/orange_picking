@@ -72,8 +72,10 @@ while os.path.exists(globalfolder):
   globalfolder = 'data/Run' + str(run_num) + '/'
 
 #presnap = tracemalloc.take_snapshot()
+exp = 1
 while(True):
   print('Trial Number ' + str(exp))
+  exp += 1
   #Filenames
   foldername = "trial" + str(exp) + "/"
   os.makedirs(globalfolder + foldername)
