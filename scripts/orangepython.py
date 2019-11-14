@@ -48,10 +48,10 @@ brainNames = env.brain_names
 env.reset(train_mode=train_mode)
 
 #Global Parameters
-N = 100
+N = 500
 tf = 15.0
 epochs = 50
-stiffness = 1#10e6
+stiffness = 10e4
 stiff_mult = 2.0
 np.random.seed(0)
 #Baseline Positions
@@ -62,7 +62,7 @@ treePos = np.array((0,0,0))
 treemult = np.array((0.5,0.5,0))
 treeHeight = 1.6
 orangePos = np.array((0,0,1))
-orangeR = 1.2
+orangeR = 1.0
 orangeRmult = 0.5
 orangeHmult = 0.5
 run_num = 0
@@ -72,7 +72,7 @@ while os.path.exists(globalfolder):
   globalfolder = 'data/Run' + str(run_num) + '/'
 
 #presnap = tracemalloc.take_snapshot()
-for exp in range(2):
+while(True):
   print('Trial Number ' + str(exp))
   #Filenames
   foldername = "trial" + str(exp) + "/"
@@ -106,7 +106,6 @@ for exp in range(2):
   #Plot x0 and xf
   ax.plot3D((x0_i[0],orangePos_i[0]),(x0_i[1],orangePos_i[1]),(x0_i[2],orangePos_i[2]),'blue')
 #  ax.plot3D((orangePos_i[0]),(orangePos_i[1]),(orangePos_i[2]),'green')
-#  plt.show()
   #continue
 
   #Set up Unity
@@ -126,6 +125,7 @@ for exp in range(2):
   ytraj = [temp[0][1] for temp in ref_traj]
   ztraj = [temp[0][2] for temp in ref_traj]
   ax.plot3D(xtraj,ytraj,ztraj)
+  #plt.show()
   fig.savefig(globalfolder + foldername + 'traj_plot' + str(exp) + '.png')
   fig.clf()
   plt.close()
@@ -139,7 +139,7 @@ for exp in range(2):
   ctr = 0
   for state in ref_traj:
     ctr += 1
-    print('State ' + str(ctr))
+    #print('State ' + str(ctr))
     #Unpack state
     pos = state[0]
     rot = np.array(state[1])

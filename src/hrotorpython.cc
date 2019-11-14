@@ -76,7 +76,9 @@ void solver_process(int N, double tf, int epochs, Vector3d x0, Vector3d xfp,
     us[i][3] = 9.81*sys.m;
     uds[i].head(3).setZero();
     uds[i][3] = 9.81*sys.m;
+    xds[i].p = xfp;
   }
+  xds[N].p = xfp;
   pathcost.SetReference(&xds,&uds);
 
   HrotorDdp ddp(sys, cost, ts, xout, us);
