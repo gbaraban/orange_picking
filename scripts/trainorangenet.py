@@ -188,8 +188,7 @@ def main():
             saver.save(sess, os.path.join(save_path, 'variables'), epoch, write_meta_graph=False)
       # Re-shuffle data after each epoch
       rand_idx = np.random.permutation(num_train_samples)
-      train_inputs = train_inputs[rand_idx, :]
-      train_outputs = train_outputs[rand_idx, :]
+      train_indices = train_indices[rand_idx]
   train_writer.flush()
   val_writer.flush()
   print("Done")

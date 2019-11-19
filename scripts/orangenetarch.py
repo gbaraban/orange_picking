@@ -72,14 +72,14 @@ def resnet8(img_input, output_dim, scope='Prediction', reuse=False, f=0.25):
 class OrangeResNet:
   def __init__(self):
     #Parameters
-    self.h = 300
-    self.w = 200
+    self.w = 300
+    self.h = 200
     self.num_points = 5
     self.output_dim = self.num_points*3
     self.f = 0.25
     self.learning_fac_init=0.000001
     #Inputs
-    self.image_input = tf.placeholder(tf.float32,shape=[None,self.h,self.w,3],name='image_input')#TODO: ask if dict is better than generate batches/cond method
+    self.image_input = tf.placeholder(tf.float32,shape=[None,self.w,self.h,3],name='image_input')#TODO: ask if dict is better than generate batches/cond method
     self.waypoint_output = tf.placeholder(tf.float32,shape=[None,self.output_dim],name="waypoints")#
     #Network Architecture
     self.resnet_output = resnet8(self.image_input,output_dim=self.output_dim, f=self.f)
