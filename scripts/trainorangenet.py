@@ -99,13 +99,17 @@ def main():
   parser.add_argument('--epochs', type=int, default=10000, help='number of epochs to train for')
   parser.add_argument('--seed', type=int, default=0, help='random seed')
   parser.add_argument('--resample', action='store_true', help='resample data')
+  parser.add_argument('--gpus', help='gpu to use')
   args = parser.parse_args()
+
+  if (args.gpus is not None):
+    os.environ["CUDA_VISIBLE_DEVICES"]=args.gpus
 
   # Model and optimization params
   val_perc = 0.01
   #g_depths = [64, 64, 64]
   #f_depths = [64, 64, 64]
-  batch_size = 64#32
+  batch_size = 256#64
   num_epochs = args.epochs
   #start_learn_rate = 1e-4
   learn_rate_decay = 2.5 / num_epochs
@@ -158,7 +162,6 @@ def main():
       # Decay learning rate
       model.learning_fac.assign(np.exp(-epoch*learn_rate_decay)*model.learning_fac_init)
       while batch_idx < num_train_samples:
-        print(batch_idx)
         end_idx = min(batch_idx + batch_size, num_train_samples)
         train_inputs, train_outputs = loadData(train_indices[batch_idx:end_idx],args.data, model)
         feed_dict[model.image_input] = train_inputs
