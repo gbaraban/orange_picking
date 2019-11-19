@@ -46,7 +46,7 @@ def parseDirData(run_dir, seed, resample, val_perc, time_window = 5):
 def parseFiles(idx,traj_data,trial_dir, model):
   idx = idx.astype(int)
   image_idx = idx[0]
-  image = img.open(trial_dir+'image'+str(image_idx)+'.png').resize((model.h,model.w))
+  image = img.open(trial_dir+'image'+str(image_idx)+'.png').resize((model.w,model.h))
   image = np.array(image.getdata()).reshape(image.size[0],image.size[1],3)
   image = image[:,:,0:3]/255.0 #Cut out alpha
   image = image/255.0
