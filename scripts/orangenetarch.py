@@ -1,10 +1,10 @@
 import tensorflow as tf
-import keras
-from keras.models import Model
-from keras.layers import Dense, Dropout, Activation, Flatten, Input
-from keras.layers import Conv2D, MaxPooling2D, GlobalAveragePooling2D
-from keras.layers.merge import add, concatenate
-from keras import regularizers
+import tensorflow.keras
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Dense, Dropout, Activation, Flatten, Input
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, GlobalAveragePooling2D
+from tensorflow.keras.layers import add, concatenate
+from tensorflow.keras import regularizers
 
 #From https://github.com/uzh-rpg/sim2real_drone_racing/blob/master/learning/deep_drone_racing_learner/src/ddr_learner/models/nets.py
 def resnet8(img_input, output_dim, scope='Prediction', reuse=False, f=0.25):
@@ -70,14 +70,14 @@ def resnet8(img_input, output_dim, scope='Prediction', reuse=False, f=0.25):
     return logits
 
 class OrangeResNet:
-  def ___init__(self):
+  def __init__(self):
     #Parameters
-    self.numpoints = 5
-    self.output_dim = num_points*3
+    self.num_points = 5
+    self.output_dim = self.num_points*3
     self.f = 0.25
     #Inputs
-    self.image_input = tf.placeholder(#TODO: ask if dict is better than generate batches/cond method
-    self.waypoint_output = tf.placeholder(#
+    self.image_input = tf.placeholder(tf.float32,shape=[None,rows,columns,1],name='image_input')#TODO: ask if dict is better than generate batches/cond method
+    self.waypoint_output = tf.placeholder(tf.float32,shape=[None,self.output_dim],name="waypoints")#
     #Network Architecture
     self.resnet_output = resnet8(image_input,output_dim=self.output_dim, f=self.f)
     #Training

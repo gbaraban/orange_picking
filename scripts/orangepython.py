@@ -1,6 +1,7 @@
 import gcophrotor
 from mpl_toolkits import mplot3d
 import matplotlib.pyplot as plt
+import PIL.Image as img
 import numpy as np
 import sys
 import os
@@ -54,15 +55,24 @@ epochs = 50
 stiffness = 10e4
 stiff_mult = 2.0
 np.random.seed(0)
+q = (10,10,10,#rotation log
+     0,0,0,#position
+     0,0,0,#rotation rate
+     0,0,0)#velocity
+qf = (2,2,2,#rotation log
+     20,20,20,#position
+     5,5,5,#rotation rate
+     50,50,50)#velocity
+r = (.05,.05,.05,.1)
 #Baseline Positions
 x0 = np.array((-10,0,1))
-xmult = np.array((2,1,0.5))
+xmult = np.array((2,2,0.5))
 cameraRot = np.array([[1,0,0],[0,1,0],[0,0,1]])
 treePos = np.array((0,0,0))
 treemult = np.array((0.5,0.5,0))
 treeHeight = 1.6
-orangePos = np.array((0,0,1))
-orangeR = 1.0
+orangePos = np.array((0,0,0.5))
+orangeR = 0.3
 orangeRmult = 0.5
 orangeHmult = 0.5
 run_num = 0
@@ -72,10 +82,10 @@ while os.path.exists(globalfolder):
   globalfolder = 'data/Run' + str(run_num) + '/'
 
 #presnap = tracemalloc.take_snapshot()
-exp = 1
+exp = -1
 while(True):
-  print('Trial Number ' + str(exp))
   exp += 1
+  print('Trial Number ' + str(exp))
   #Filenames
   foldername = "trial" + str(exp) + "/"
   os.makedirs(globalfolder + foldername)
@@ -88,7 +98,7 @@ while(True):
   treeoffset = 2*treemult*(np.random.rand(3) - 0.5)
   treePos_i = treePos + treeoffset
   theta = 2*np.pi*np.random.random_sample()
-  R_i = orangeR + orangeRmult*np.random.random_sample() + 0.2
+  R_i = orangeR + orangeRmult*np.random.random_sample()# + 0.2
   #print("OrangeR: " + str(orangeR))
   #print("R_i: " + str(R_i))
   orangeoffset = np.array((R_i*np.cos(theta), R_i*np.sin(theta),
@@ -114,12 +124,14 @@ while(True):
   act = setUpEnv(brainNames,x0_i,cameraRot,treePos_i,orangePos_i)
   env.step(act)
   #Call GCOP
-  with open(globalfolder + foldername + 'metadata.pickl','wb') as f:
+  with open(globalfolder + foldername + 'metadata.pickle','wb') as f:
     metadata = {'N':N,'tf':tf,'epochs':epochs,'stiffness':stiffness,'stiff_mult':stiff_mult,
-                'x0':x0_i, 'xf':orangePos_i,'cyl_o':treePos,'r':orangeR, 'h':treeHeight}
+                'x0':x0_i, 'xf':orangePos_i,'cyl_o':treePos,'cyl_r':orangeR, 'h':treeHeight,
+                'q':q, 'qf':qf, 'r':r}
     pickle.dump(metadata,f,pickle.HIGHEST_PROTOCOL)
   ref_traj = gcophrotor.trajgen(N,tf,epochs,tuple(x0_i),tuple(orangePos_i),
                                 tuple(treePos),orangeR,treeHeight,
+                                tuple(q),tuple(qf),tuple(r),
                                 stiffness,stiff_mult)
   
   #Plot trajectory
@@ -140,7 +152,6 @@ while(True):
   #Step through trajectory
   ctr = 0
   for state in ref_traj:
-    ctr += 1
     #print('State ' + str(ctr))
     #Unpack state
     pos = state[0]
@@ -150,13 +161,10 @@ while(True):
     act = makeCamAct(act, brainNames,pos,rot)
     env_info = env.step(act)[brainNames[0]]
     obs = np.array(env_info.visual_observations)
-    fig = plt.figure()
-    ax = plt.axes()
-    ax.imshow(obs[0,0,:,:,:])
-    #plt.show()
-    fig.savefig(globalfolder + foldername + picturename + str(ctr) + suffix)
-    fig.clf()
-    plt.close()
+    im_np = (obs[0,0,:,:,:]*255).astype('uint8')
+    image = img.fromarray(im_np)
+    image.save(globalfolder + foldername + picturename + str(ctr) + suffix)
+    ctr += 1
 #postsnap = tracemalloc.take_snapshot()
 env.close()
 #stats = postsnap.compare_to(presnap, 'lineno')

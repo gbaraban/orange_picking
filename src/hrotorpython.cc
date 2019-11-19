@@ -19,6 +19,7 @@ typedef Ddp<Body3dState, 12, 4> HrotorDdp;
 //Params params;
 void solver_process(int N, double tf, int epochs, Vector3d x0, Vector3d xfp, 
      Vector3d cyl_o, double cyl_r, double cyl_h,
+     Vector12d q, Vector12d qf, Vector4d r,
       double stiffness, double stiff_mult, vector<Body3dState> &xout)
 {
 
@@ -37,11 +38,15 @@ void solver_process(int N, double tf, int epochs, Vector3d x0, Vector3d xfp,
   xf.p = xfp;
 
   Body3dCost<4> pathcost(sys, tf, xf);
-  pathcost.Qf(0,0) = 2; pathcost.Qf(1,1) = 2; pathcost.Qf(2,2) = 2;
-  pathcost.Qf(3,3) = 20; pathcost.Qf(4,4) = 20; pathcost.Qf(5,5) = 20;
-  pathcost.Qf(6,6) = 5; pathcost.Qf(7,7) = 5; pathcost.Qf(8,8) = 5;
-  pathcost.Qf(9,9) = 50; pathcost.Qf(10,10) = 50; pathcost.Qf(11,11) = 50;
-  pathcost.R(0,0) = .05; pathcost.R(1,1) = .05; pathcost.R(2,2) = .05; pathcost.R(3,3) = .1;
+  for (int i = 0; i < 12; ++i)
+  {
+    pathcost.Q(i,i) = q[i];
+    pathcost.Qf(i,i) = qf[i];
+  }
+  for (int i = 0; i < 4; ++i)
+  {
+    pathcost.R(i,i) = r[i];
+  }
   cost.costs.push_back(&pathcost);
   
   //Cylinder Cost
@@ -115,11 +120,22 @@ gcophrotor_trajgen(PyObject *self, PyObject *args)
   double cx, cy, cz;
   double cyl_r;
   double cyl_h;
+  Vector12d q;
+  Vector12d qf;
+  Vector4d r;
   double stiffness;
   double stiff_mult;
-  if (!PyArg_ParseTuple(args, "idi(ddd)(ddd)(ddd)dddd", 
+  if (!PyArg_ParseTuple(args, "idi(ddd)(ddd)(ddd)dd(dddddddddddd)(dddddddddddd)(dddd)dd", 
         &N, &tf, &epochs, &x0x, &x0y, &x0z, &xfx, &xfy, &xfz, 
-        &cx, &cy, &cz, &cyl_r, &cyl_h, &stiffness, &stiff_mult)) {
+        &cx, &cy, &cz, &cyl_r, &cyl_h, 
+        &(q[0]), &(q[1]), &(q[2]), &(q[3]),
+        &(q[4]), &(q[5]), &(q[6]), &(q[7]),
+        &(q[8]), &(q[9]), &(q[10]), &(q[11]),
+        &(qf[0]), &(qf[1]), &(qf[2]), &(qf[3]),
+        &(qf[4]), &(qf[5]), &(qf[6]), &(qf[7]),
+        &(qf[8]), &(qf[9]), &(qf[10]), &(qf[11]),
+        &(r[0]), &(r[1]), &(r[2]), &(r[3]),
+        &stiffness, &stiff_mult)) {
     cout << "Parse Failed" << endl;
     return NULL;
   }
@@ -128,7 +144,7 @@ gcophrotor_trajgen(PyObject *self, PyObject *args)
   Vector3d xfp(xfx,xfy,xfz);
   Vector3d cyl_o(cx,cy,cz);
   solver_process(N, tf, epochs, x0, xfp, 
-                 cyl_o, cyl_r, cyl_h, 
+                 cyl_o, cyl_r, cyl_h, q,qf,r,
                  stiffness, stiff_mult, xs);
   //Construct return object
   PyObject* listObj = PyList_New(xs.size());
