@@ -5,7 +5,7 @@ import pickle
 import os
 from orangenetarch import *
 from datetime import datetime
-import matplotlib.image as mpimg
+import PIL.Image as img
 
 def addTimestamp(input_path):
     return input_path + datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
@@ -25,7 +25,7 @@ def parseDirData(run_dir, seed, resample, val_perc, time_window = 5):
   trial_list = os.listdir(run_dir)
   num_samples = 0
   for trial_dir in trial_list:
-    with open(run_dir+"/"+trial_dir+"/metadata.pickl",'rb') as data_f:
+    with open(run_dir+"/"+trial_dir+"/metadata.pickle",'rb') as data_f:
       data = pickle.load(data_f, encoding='latin1')
       N = data['N']
       tf = data['tf']
@@ -43,25 +43,31 @@ def parseDirData(run_dir, seed, resample, val_perc, time_window = 5):
   train_indices = rand_idx[:train_idx]
   return train_indices, val_indices
 
-def parseFiles(idx,traj_data,trial_dir):
+def parseFiles(idx,traj_data,trial_dir, model):
+  idx = idx.astype(int)
   image_idx = idx[0]
-  image = img.open(trial_dir+'image'+str(image_idx)+'.png')
-  image = np.array(image.getdata()).reshape(image.size[0],image.size[1],4)
+  image = img.open(trial_dir+'image'+str(image_idx)+'.png').resize((model.h,model.w))
+  image = np.array(image.getdata()).reshape(image.size[0],image.size[1],3)
   image = image[:,:,0:3]/255.0 #Cut out alpha
   image = image/255.0
   R0 = np.array(traj_data[image_idx][1])
   p0 = np.array(traj_data[image_idx][0])
-  local_pts = [np.matmul(R0.T,np.array(x[0])-p0) for x in traj_data[idx]]
+  local_pts = []
+  for i in idx:
+    state = traj_data[i]
+    point = np.matmul(R0.T,np.array(state[0]) - p0)
+    local_pts.append(point)
   local_pts = np.array(local_pts[1:])
+  local_pts.resize(model.output_dim)
   return image, local_pts
 
-def loadData(idx,run_dir,output_dim,time_window = 5):
-  num_points = output_dim/3
+def loadData(idx,run_dir,model,time_window = 5):
+  num_points = model.output_dim/3
   #Assume reduced N is constant for all trials
   trial_list = os.listdir(run_dir)
   trial_dir = trial_list[0]
   reduced_N = -1
-  with open(run_dir+"/"+trial_dir+"/metadata.pickl",'rb') as data_f:
+  with open(run_dir+"/"+trial_dir+"/metadata.pickle",'rb') as data_f:
     data = pickle.load(data_f, encoding='latin1')
     N = data['N']
     tf = data['tf']
@@ -69,7 +75,7 @@ def loadData(idx,run_dir,output_dim,time_window = 5):
     reduced_N = int(N - time_window*h)
   images = []
   waypoints = []
-  trial_num = np.floor(idx/reduced_N)
+  trial_num = np.floor(idx/reduced_N).astype(int)
   image_num = np.mod(idx,reduced_N)
   for trial_idx, image_idx in zip(trial_num,image_num):
     trial_dir = run_dir+"/"+trial_list[trial_idx]+"/"
@@ -77,11 +83,11 @@ def loadData(idx,run_dir,output_dim,time_window = 5):
     with open(trial_dir+"trajdata.pickle",'rb') as data_f:
       traj_data = pickle.load(data_f, encoding='latin1')
     metadata = []
-    with open(trial_dir+"metadata.pickl",'rb') as data_f:
+    with open(trial_dir+"metadata.pickle",'rb') as data_f:
       metadata = pickle.load(data_f, encoding='latin1')
     idx_final = image_idx + metadata['N']*time_window/metadata['tf']
     offset_idx = np.floor(np.linspace(image_idx,idx_final,num_points+1))
-    image, waypoint = parseFiles(offset_idx,traj_data,trial_dir)
+    image, waypoint = parseFiles(offset_idx,traj_data,trial_dir, model)
     waypoints.append(waypoint)
     images.append(image)
   return np.array(images), np.array(waypoints)
@@ -96,10 +102,10 @@ def main():
   args = parser.parse_args()
 
   # Model and optimization params
-  val_perc = 0.1
+  val_perc = 0.01
   #g_depths = [64, 64, 64]
   #f_depths = [64, 64, 64]
-  batch_size = 32
+  batch_size = 64#32
   num_epochs = args.epochs
   #start_learn_rate = 1e-4
   learn_rate_decay = 2.5 / num_epochs
@@ -119,9 +125,9 @@ def main():
 
   # Train model
   print ('Training...')
-  val_inputs, val_outputs = loadData(val_indices,args.data, model.output_dim)
+  val_inputs, val_outputs = loadData(val_indices,args.data, model)
   val_dict = {model.image_input: val_inputs, model.waypoint_output: val_outputs}
-
+  print ('Validation Loaded')
   train_path = addTimestamp(os.path.join(log_path, 'train_'))
   val_path = addTimestamp(os.path.join(log_path, 'validation_'))
   train_writer = tf.summary.FileWriter(train_path, graph=tf.get_default_graph())
@@ -129,7 +135,8 @@ def main():
 
   saver = tf.train.Saver()
   init = tf.global_variables_initializer()
-  feed_dict = {model.keep_prob: 0.9}
+  feed_dict = {}#model.keep_prob: 0.9}
+  print ('Writers Set Up')
 
   with tf.Session() as sess:# Load model if specified 
     if args.load:
@@ -143,15 +150,17 @@ def main():
         raise RuntimeError('Uninitialized variables present')
     else:
       sess.run(init)
+    print ('Session')
     iters = 0
     for epoch in range(num_epochs):
       print('Epoch: ', epoch)
       batch_idx = 0
       # Decay learning rate
-      model.learning_fac.assign(np.exp(-epoch*model.learn_rate_decay)*model.learning_fac_init)
+      model.learning_fac.assign(np.exp(-epoch*learn_rate_decay)*model.learning_fac_init)
       while batch_idx < num_train_samples:
+        print(batch_idx)
         end_idx = min(batch_idx + batch_size, num_train_samples)
-        train_inputs, train_outputs = loadData(train_indices[batch_idx:end_idx],args.data)
+        train_inputs, train_outputs = loadData(train_indices[batch_idx:end_idx],args.data, model)
         feed_dict[model.image_input] = train_inputs
         feed_dict[model.waypoint_output] = train_outputs
         #sess.run([model.train_summary_op, model.train_step], feed_dict=feed_dict)
@@ -161,7 +170,8 @@ def main():
         if iters % 20 == 0:
           summary = sess.run(model.train_summ, feed_dict=feed_dict)
           train_writer.add_summary(summary, iters)
-        train_inputs = train_outputs = feed_dict[model.image_imput] = feed_dict[model.true_knots] = None
+        #Clear references to data:
+        train_inputs = train_outputs = feed_dict[model.image_input] = feed_dict[model.waypoint_output] = None
 
       val_summary, val_cost = sess.run([model.val_summ, model.objective], feed_dict=val_dict)
       print('Validation Summary = ', val_cost)
