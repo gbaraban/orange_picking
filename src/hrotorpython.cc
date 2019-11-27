@@ -6,6 +6,7 @@
 #include "multicost.h"
 #include "cylinder.h"
 #include "groundplane.h"
+#include "yawvelfollow.h"
 #include "constraintcost.h"
 #include "hrotor.h"
 #include "ddp.h"
@@ -59,6 +60,11 @@ void solver_process(int N, double tf, int epochs, Vector3d x0, Vector3d xfp,
   ConstraintCost<Body3dState, 12, 4> gpcost(sys,tf,gp);
   cost.costs.push_back(&gpcost);
 
+  //Yaw Cost
+  YawVelFollow<Body3dState, 12, 4> yaw_con;
+  ConstraintCost<Body3dState, 12, 4> yawcost(sys,tf,yaw_con);
+  cost.costs.push_back(&yawcost);
+
   // Times
   vector<double> ts(N+1);
   for (int k = 0; k <= N; ++k)
@@ -95,6 +101,7 @@ void solver_process(int N, double tf, int epochs, Vector3d x0, Vector3d xfp,
   for (double temp_b = 0; temp_b < stiffness; temp_b = temp_b*stiff_mult) {
     cylcost.b = temp_b;
     gpcost.b = temp_b;
+    yawcost.b = temp_b;
     for (int ii = 0; ii < epochs; ++ii) {
       ddp.Iterate();
       //cout << "Stiffness: " << cylcost.b << " Iteration Num: " << ii << " DDP V: " << ddp.V << endl;
