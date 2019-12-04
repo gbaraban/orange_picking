@@ -5,6 +5,8 @@ from tensorflow.keras.layers import Dense, Dropout, Activation, Flatten, Input
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, GlobalAveragePooling2D
 from tensorflow.keras.layers import add, concatenate
 from tensorflow.keras import regularizers
+import matplotlib.pyplot as plt
+import numpy as np
 
 #From https://github.com/uzh-rpg/sim2real_drone_racing/blob/master/learning/deep_drone_racing_learner/src/ddr_learner/models/nets.py
 def resnet8(img_input, output_dim, scope='Prediction', reuse=False, f=0.25):
@@ -70,6 +72,25 @@ def resnet8(img_input, output_dim, scope='Prediction', reuse=False, f=0.25):
     return logits
 
 class OrangeResNet:
+  def gen_image(self,new_waypoint, true_waypoint):
+    new_waypoint = np.array(new_waypoint)
+    true_waypoint = np.array(true_waypoint)
+    new_waypoint = np.reshape(new_waypoint[0,:],[self.num_points,3])
+    true_waypoint = np.reshape(true_waypoint[0,:],[self.num_points,3])
+    figure = plt.figure()
+    plt.plot(true_waypoint[:,0],true_waypoint[:,1],color='g')
+    self.waypoint_list.append(new_waypoint)
+    list_len = len(self.waypoint_list)
+    for i in range(list_len):
+      plt.plot(self.waypoint_list[i][:,0],self.waypoint_list[i][:,1],color=str(float(i)/list_len))
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    plt.close(figure)
+    buf.seek(0)
+    image = tf.image.decode_png(buf.getvalue(), channels=4)
+    image = tf.expand_dims(image, 0)
+    return image
+
   def __init__(self):
     #Parameters
     self.w = 300
@@ -79,20 +100,22 @@ class OrangeResNet:
     self.f = 0.25
     self.learning_fac_init=0.000001
     #Inputs
-    self.image_input = tf.placeholder(tf.float32,shape=[None,self.w,self.h,3],name='image_input')#TODO: ask if dict is better than generate batches/cond method
-    self.waypoint_output = tf.placeholder(tf.float32,shape=[None,self.output_dim],name="waypoints")#
+    self.image_input = tf.placeholder(tf.float32,shape=[None,self.w,self.h,3],name='image_input')
+    self.waypoint_output = tf.placeholder(tf.float32,shape=[None,self.output_dim],name="waypoints")
     #Network Architecture
     self.resnet_output = resnet8(self.image_input,output_dim=self.output_dim, f=self.f)
     #Training
     self.objective = tf.reduce_mean(tf.square(self.resnet_output - self.waypoint_output))
-
     self.learning_fac = tf.Variable(self.learning_fac_init)
     opt_op = tf.train.AdamOptimizer(self.learning_fac).minimize(self.objective)
     self.train_step = opt_op
     #self.iterations = tf.Variable(0)
+    self.waypoint_list = []
+    #self.generate_image = self.gen_image(self.resnet_output,self.waypoint_output)
 
     # Summary
     self.train_summ = tf.summary.scalar('Training Objective Function', self.objective)
     self.val_summ = tf.summary.scalar('Validation Objective Function', self.objective)
     self.lf_summ = tf.summary.scalar('Learning Factor', self.learning_fac)
+    #self.val_image_summ = tf.summary.image('Validation Image',self.generate_image)
     self.merge = tf.summary.merge_all()

@@ -134,8 +134,10 @@ def main():
   print ('Validation Loaded')
   train_path = addTimestamp(os.path.join(log_path, 'train_'))
   val_path = addTimestamp(os.path.join(log_path, 'validation_'))
+  val_image_path = addTimestamp(os.path.join(log_path, 'validation_image_'))
   train_writer = tf.summary.FileWriter(train_path, graph=tf.get_default_graph())
   val_writer = tf.summary.FileWriter(val_path, graph=tf.get_default_graph())
+  val_image_writer = tf.summary.FileWriter(val_image_path, graph=tf.get_default_graph())
 
   saver = tf.train.Saver()
   init = tf.global_variables_initializer()
@@ -176,10 +178,12 @@ def main():
         #Clear references to data:
         train_inputs = train_outputs = feed_dict[model.image_input] = feed_dict[model.waypoint_output] = None
 
-      val_summary, val_cost = sess.run([model.val_summ, model.objective], feed_dict=val_dict)
+      val_summary, val_cost, resnet_output = sess.run([model.val_summ, model.objective, model.resnet_output], feed_dict=val_dict)
+      val_image = model.gen_image(resnet_output,val_ouputs)
       print('Validation Summary = ', val_cost)
 
       val_writer.add_summary(val_summary, iters)
+      val_image_writer.add_summary(val_image, iters)
 
       train_writer.flush()
       val_writer.flush()
