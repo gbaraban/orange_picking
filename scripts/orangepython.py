@@ -55,15 +55,16 @@ epochs = 50
 stiffness = 10e4
 stiff_mult = 2.0
 np.random.seed(0)
-q = (10,10,10,#rotation log
+q = (10,10,0,#rotation log
      0,0,0,#position
-     0,0,0,#rotation rate
-     0,0,0)#velocity
-qf = (2,2,2,#rotation log
-     20,20,20,#position
-     5,5,5,#rotation rate
+     10,10,10,#rotation rate
+     5,5,5)#velocity
+qf = (200,200,0,#rotation log
+     200,200,200,#position
+     5,5,0,#rotation rate
      50,50,50)#velocity
 r = (.05,.05,.05,.1)
+yaw_g = 10
 #Baseline Positions
 x0 = np.array((-10,0,1))
 xmult = np.array((2,2,0.5))
@@ -127,11 +128,11 @@ while(True):
   with open(globalfolder + foldername + 'metadata.pickle','wb') as f:
     metadata = {'N':N,'tf':tf,'epochs':epochs,'stiffness':stiffness,'stiff_mult':stiff_mult,
                 'x0':x0_i, 'xf':orangePos_i,'cyl_o':treePos,'cyl_r':orangeR, 'h':treeHeight,
-                'q':q, 'qf':qf, 'r':r}
+                'q':q, 'qf':qf, 'r':r, 'yaw_gain':yaw_g}
     pickle.dump(metadata,f,pickle.HIGHEST_PROTOCOL)
   ref_traj = gcophrotor.trajgen(N,tf,epochs,tuple(x0_i),tuple(orangePos_i),
-                                tuple(treePos),orangeR,treeHeight,
-                                tuple(q),tuple(qf),tuple(r),
+                                tuple(treePos_i),orangeR,treeHeight,
+                                tuple(q),tuple(qf),tuple(r),yaw_g,
                                 stiffness,stiff_mult)
   
   #Plot trajectory
