@@ -58,7 +58,7 @@ if (args.plotonly == None):
 
 #Global Parameters
 N = 500
-tf = 4
+tf = 10
 epochs = 100
 stiffness = 1000
 stiff_mult = 2.0
@@ -76,7 +76,7 @@ yaw_g = 0
 rp_g = 0
 direction_gain = 1
 #Baseline Positions
-x0 = np.array((-3,0,1))
+x0 = np.array((-10,0,1))
 xmult = np.array((2,2,0.5))
 yaw0 = 0
 ymult = np.pi/3
@@ -136,7 +136,8 @@ while (exp < trials) or args.loop:
   yawf = np.arctan2(treePos_i[1]-orangePos_i[1],treePos[0]-orangePos_i[0])
   with open(globalfolder + foldername + 'metadata.pickle','wb') as f:
     metadata = {'N':N,'tf':tf,'epochs':epochs,'stiffness':stiffness,'stiff_mult':stiff_mult,
-                'x0':x0_i, 'yaw0':yaw0_i,'xf':orangePos_i,'yawf':yawf,'cyl_o':treePos_i,'cyl_r':orangeR, 'h':treeHeight,
+                'x0':x0_i, 'yaw0':yaw0_i,'xf':orangePos_i,'yawf':yawf,
+                'cyl_o':treePos_i,'cyl_r':orangeR, 'h':treeHeight,
                 'q':q, 'qf':qf, 'r':r, 'yaw_gain':yaw_g, 'rp_gain':rp_g}
     pickle.dump(metadata,f,pickle.HIGHEST_PROTOCOL)
   ref_traj = gcophrotor.trajgen(N,tf,epochs,tuple(x0_i),yaw0_i,tuple(orangePos_i),yawf,
