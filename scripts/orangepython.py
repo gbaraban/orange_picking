@@ -58,28 +58,28 @@ if (args.plotonly == None):
 
 #Global Parameters
 N = 500
-tf = 10
-epochs = 100
+tf = 15
+epochs = 200
 stiffness = 1000
 stiff_mult = 2.0
 np.random.seed(0)
 q = (0.2,0.2,0,#rotation log
      0,0,0,#position
      1,1,1,#rotation rate
-     .01,.01,.01)#velocity
-qf = (5,5,5,#rotation log
-     20,20,20,#position
-     0.5,0.5,0.1,#rotation rate
      5,5,5)#velocity
-r = (.01,.01,.01,1)
-yaw_g = 0
+qf = (10,10,10,#rotation log
+     50,50,50,#position
+     0.5,0.5,0.5,#rotation rate
+     5,5,5)#velocity
+r = (.1,.1,.1,1)
+yaw_g = 10
 rp_g = 0
-direction_gain = 1
+direction_gain = 0 
 #Baseline Positions
 x0 = np.array((-10,0,1))
 xmult = np.array((2,2,0.5))
 yaw0 = 0
-ymult = np.pi/3
+ymult = np.pi
 cameraRot = np.array([[1,0,0],[0,1,0],[0,0,1]])
 treePos = np.array((0,0,0))
 treemult = np.array((0.5,0.5,0))
@@ -96,7 +96,7 @@ while os.path.exists(globalfolder):
 
 #presnap = tracemalloc.take_snapshot()
 exp = -1
-trials = 6
+trials = 2
 while (exp < trials) or args.loop:
   exp += 1
   print('Trial Number ' + str(exp))
@@ -133,12 +133,12 @@ while (exp < trials) or args.loop:
     act = setUpEnv(brainNames,x0_i,cameraRot,treePos_i,orangePos_i)
     env.step(act)
   #Call GCOP
-  yawf = np.arctan2(treePos_i[1]-orangePos_i[1],treePos[0]-orangePos_i[0])
+  yawf = np.arctan2(treePos_i[1]-orangePos_i[1],treePos_i[0]-orangePos_i[0])
   with open(globalfolder + foldername + 'metadata.pickle','wb') as f:
     metadata = {'N':N,'tf':tf,'epochs':epochs,'stiffness':stiffness,'stiff_mult':stiff_mult,
                 'x0':x0_i, 'yaw0':yaw0_i,'xf':orangePos_i,'yawf':yawf,
                 'cyl_o':treePos_i,'cyl_r':orangeR, 'h':treeHeight,
-                'q':q, 'qf':qf, 'r':r, 'yaw_gain':yaw_g, 'rp_gain':rp_g}
+                'q':q, 'qf':qf, 'r':r, 'yaw_gain':yaw_g, 'rp_gain':rp_g, 'dir_gain':direction_gain}
     pickle.dump(metadata,f,pickle.HIGHEST_PROTOCOL)
   ref_traj = gcophrotor.trajgen(N,tf,epochs,tuple(x0_i),yaw0_i,tuple(orangePos_i),yawf,
                                 tuple(treePos_i),orangeR,treeHeight,
