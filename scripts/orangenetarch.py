@@ -7,13 +7,17 @@ from tensorflow.keras.layers import add, concatenate
 from tensorflow.keras import regularizers
 import matplotlib.pyplot as plt
 import numpy as np
+import io
 
 #From https://github.com/uzh-rpg/sim2real_drone_racing/blob/master/learning/deep_drone_racing_learner/src/ddr_learner/models/nets.py
-def resnet8(img_input, output_dim, scope='Prediction', reuse=False, f=0.25):
+def resnet8(img_input, output_dim, scope='Prediction', reuse=False, f=0.25, reg=True):
     """
     Define model architecture. The parameter 'f' controls the network width.
     """
     img_input = Input(tensor=img_input)
+    kr = None
+    if reg:
+        kr = regularizers.l2(1e-4)
 
     with tf.variable_scope(scope, reuse=reuse):
         x1 = Conv2D(int(32*f), (5, 5), strides=[2, 2], padding='same')(img_input)
@@ -23,12 +27,12 @@ def resnet8(img_input, output_dim, scope='Prediction', reuse=False, f=0.25):
         x2 = Activation('relu')(x1)
         x2 = Conv2D(int(32*f), (3, 3), strides=[2, 2], padding='same',
                     kernel_initializer="he_normal",
-                    kernel_regularizer=regularizers.l2(1e-4))(x2)
+                    kernel_regularizer=kr)(x2)
 
         x2 = Activation('relu')(x2)
         x2 = Conv2D(int(32*f), (3, 3), padding='same',
                     kernel_initializer="he_normal",
-                    kernel_regularizer=regularizers.l2(1e-4))(x2)
+                    kernel_regularizer=kr)(x2)
 
         x1 = Conv2D(int(32*f), (1, 1), strides=[2, 2], padding='same')(x1)
         x3 = add([x1, x2])
@@ -37,11 +41,11 @@ def resnet8(img_input, output_dim, scope='Prediction', reuse=False, f=0.25):
         x4 = Activation('relu')(x3)
         x4 = Conv2D(int(64*f), (3, 3), strides=[2, 2], padding='same',
                     kernel_initializer="he_normal",
-                    kernel_regularizer=regularizers.l2(1e-4))(x4)
+                    kernel_regularizer=kr)(x4)
         x4 = Activation('relu')(x4)
         x4 = Conv2D(int(64*f), (3, 3), padding='same',
                     kernel_initializer="he_normal",
-                    kernel_regularizer=regularizers.l2(1e-4))(x4)
+                    kernel_regularizer=kr)(x4)
 
         x3 = Conv2D(int(64*f), (1, 1), strides=[2, 2], padding='same')(x3)
         x5 = add([x3, x4])
@@ -50,12 +54,12 @@ def resnet8(img_input, output_dim, scope='Prediction', reuse=False, f=0.25):
         x6 = Activation('relu')(x5)
         x6 = Conv2D(int(128*f), (3, 3), strides=[2, 2], padding='same',
                     kernel_initializer="he_normal",
-                    kernel_regularizer=regularizers.l2(1e-4))(x6)
+                    kernel_regularizer=kr)(x6)
 
         x6 = Activation('relu')(x6)
         x6 = Conv2D(int(128*f), (3, 3), padding='same',
                     kernel_initializer="he_normal",
-                    kernel_regularizer=regularizers.l2(1e-4))(x6)
+                    kernel_regularizer=kr)(x6)
 
         x5 = Conv2D(int(128*f), (1, 1), strides=[2, 2], padding='same')(x5)
         x7 = add([x5, x6])
@@ -97,13 +101,14 @@ class OrangeResNet:
     self.h = 200
     self.num_points = 5
     self.output_dim = self.num_points*3
-    self.f = 0.25
+    self.f = 5.0#2.0#1.5#125#1#0.25
     self.learning_fac_init=0.000001
+    self.reg = False
     #Inputs
     self.image_input = tf.placeholder(tf.float32,shape=[None,self.w,self.h,3],name='image_input')
     self.waypoint_output = tf.placeholder(tf.float32,shape=[None,self.output_dim],name="waypoints")
     #Network Architecture
-    self.resnet_output = resnet8(self.image_input,output_dim=self.output_dim, f=self.f)
+    self.resnet_output = resnet8(self.image_input,output_dim=self.output_dim, f=self.f, reg=self.reg)
     #Training
     self.objective = tf.reduce_mean(tf.square(self.resnet_output - self.waypoint_output))
     self.learning_fac = tf.Variable(self.learning_fac_init)

@@ -26,7 +26,7 @@ def parseDirData(run_dir, seed, resample, val_perc, time_window = 5):
   num_samples = 0
   for trial_dir in trial_list:
     with open(run_dir+"/"+trial_dir+"/metadata.pickle",'rb') as data_f:
-      data = pickle.load(data_f, encoding='latin1')
+      data = pickle.load(data_f)#, encoding='latin1')
       N = data['N']
       tf = data['tf']
       h = float(N)/tf
@@ -100,6 +100,7 @@ def main():
   parser.add_argument('--seed', type=int, default=0, help='random seed')
   parser.add_argument('--resample', action='store_true', help='resample data')
   parser.add_argument('--gpus', help='gpu to use')
+  parser.add_argument('--noimages', help='turn off tensorboard images')
   args = parser.parse_args()
 
   if (args.gpus is not None):
@@ -109,10 +110,10 @@ def main():
   val_perc = 0.01
   #g_depths = [64, 64, 64]
   #f_depths = [64, 64, 64]
-  batch_size = 256#64
+  batch_size = 512#1024#64
   num_epochs = args.epochs
-  #start_learn_rate = 1e-4
-  learn_rate_decay = 2.5 / num_epochs
+  learning_rate = 5e-2#50#e-1
+  learn_rate_decay = 0#1000 / num_epochs
   save_variables_divider = 10
   log_path = './model/logs'
   save_path = createStampedFolder(os.path.join(log_path, 'variable_log'))
@@ -134,10 +135,10 @@ def main():
   print ('Validation Loaded')
   train_path = addTimestamp(os.path.join(log_path, 'train_'))
   val_path = addTimestamp(os.path.join(log_path, 'validation_'))
-  val_image_path = addTimestamp(os.path.join(log_path, 'validation_image_'))
+  plot_data_path = addTimestamp(os.path.join(log_path, 'plot_data_'))
   train_writer = tf.summary.FileWriter(train_path, graph=tf.get_default_graph())
   val_writer = tf.summary.FileWriter(val_path, graph=tf.get_default_graph())
-  val_image_writer = tf.summary.FileWriter(val_image_path, graph=tf.get_default_graph())
+  os.makedirs(plot_data_path)
 
   saver = tf.train.Saver()
   init = tf.global_variables_initializer()
@@ -158,11 +159,18 @@ def main():
       sess.run(init)
     print ('Session')
     iters = 0
+    plotting_data = dict()
+    plotting_data['idx'] = range(5)
+    plotting_data['truth'] = val_outputs[plotting_data['idx']]
+    plotting_data['data'] = list()
+    for ii in plotting_data['idx']:
+      plotting_data['data'].append([])
+    #print(plotting_data)
     for epoch in range(num_epochs):
       print('Epoch: ', epoch)
       batch_idx = 0
       # Decay learning rate
-      model.learning_fac.assign(np.exp(-epoch*learn_rate_decay)*model.learning_fac_init)
+      model.learning_fac.assign(np.exp(-epoch*learn_rate_decay)*learning_rate)
       while batch_idx < num_train_samples:
         end_idx = min(batch_idx + batch_size, num_train_samples)
         train_inputs, train_outputs = loadData(train_indices[batch_idx:end_idx],args.data, model)
@@ -179,11 +187,17 @@ def main():
         train_inputs = train_outputs = feed_dict[model.image_input] = feed_dict[model.waypoint_output] = None
 
       val_summary, val_cost, resnet_output = sess.run([model.val_summ, model.objective, model.resnet_output], feed_dict=val_dict)
-      val_image = model.gen_image(resnet_output,val_ouputs)
       print('Validation Summary = ', val_cost)
+      for ii in plotting_data['idx']:
+          plotting_data['data'][ii].append(resnet_output[ii])
+      with open(plot_data_path+'/data.pickle','wb') as f:
+          pickle.dump(plotting_data,f,pickle.HIGHEST_PROTOCOL)
 
       val_writer.add_summary(val_summary, iters)
-      val_image_writer.add_summary(val_image, iters)
+      if args.noimages is None:
+        val_image = model.gen_image(resnet_output,val_outputs)
+        val_image_writer.add_summary(val_image, iters)
+        val_image_writer.flush()
 
       train_writer.flush()
       val_writer.flush()
