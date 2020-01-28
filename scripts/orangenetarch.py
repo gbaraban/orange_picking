@@ -76,36 +76,37 @@ def resnet8(img_input, output_dim, scope='Prediction', reuse=False, f=0.25, reg=
     return logits
 
 class OrangeResNet:
-  def gen_image(self,new_waypoint, true_waypoint):
-    new_waypoint = np.array(new_waypoint)
-    true_waypoint = np.array(true_waypoint)
-    new_waypoint = np.reshape(new_waypoint[0,:],[self.num_points,3])
-    true_waypoint = np.reshape(true_waypoint[0,:],[self.num_points,3])
-    figure = plt.figure()
-    plt.plot(true_waypoint[:,0],true_waypoint[:,1],color='g')
-    self.waypoint_list.append(new_waypoint)
-    list_len = len(self.waypoint_list)
-    for i in range(list_len):
-      plt.plot(self.waypoint_list[i][:,0],self.waypoint_list[i][:,1],color=str(float(i)/list_len))
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png')
-    plt.close(figure)
-    buf.seek(0)
-    image = tf.image.decode_png(buf.getvalue(), channels=4)
-    image = tf.expand_dims(image, 0)
-    return image
+  #def gen_image(self,new_waypoint, true_waypoint):
+  #  new_waypoint = np.array(new_waypoint)
+  #  true_waypoint = np.array(true_waypoint)
+  #  new_waypoint = np.reshape(new_waypoint[0,:],[self.num_points,3])
+  #  true_waypoint = np.reshape(true_waypoint[0,:],[self.num_points,3])
+  #  figure = plt.figure()
+  #  plt.plot(true_waypoint[:,0],true_waypoint[:,1],color='g')
+  #  self.waypoint_list.append(new_waypoint)
+  #  list_len = len(self.waypoint_list)
+  #  for i in range(list_len):
+  #    plt.plot(self.waypoint_list[i][:,0],self.waypoint_list[i][:,1],color=str(float(i)/list_len))
+  #  buf = io.BytesIO()
+  #  plt.savefig(buf, format='png')
+  #  plt.close(figure)
+  #  buf.seek(0)
+  #  image = tf.image.decode_png(buf.getvalue(), channels=4)
+  #  image = tf.expand_dims(image, 0)
+  #  return image
 
-  def __init__(self):
+  def __init__(self, capacity = 1, num_img = 2, num_pts = 1):
     #Parameters
     self.w = 300
     self.h = 200
-    self.num_points = 5
+    self.num_points = num_pts
+    self.num_images = num_img
     self.output_dim = self.num_points*3
-    self.f = 5.0#2.0#1.5#125#1#0.25
+    self.f = capacity#5.0#2.0#1.5#125#1#0.25
     self.learning_fac_init=0.000001
     self.reg = False
     #Inputs
-    self.image_input = tf.placeholder(tf.float32,shape=[None,self.w,self.h,3],name='image_input')
+    self.image_input = tf.placeholder(tf.float32,shape=[None,self.w,self.h,3*self.num_images],name='image_input')
     self.waypoint_output = tf.placeholder(tf.float32,shape=[None,self.output_dim],name="waypoints")
     #Network Architecture
     self.resnet_output = resnet8(self.image_input,output_dim=self.output_dim, f=self.f, reg=self.reg)

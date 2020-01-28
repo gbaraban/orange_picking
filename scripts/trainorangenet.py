@@ -46,10 +46,17 @@ def parseDirData(run_dir, seed, resample, val_perc, time_window = 5):
 def parseFiles(idx,traj_data,trial_dir, model):
   idx = idx.astype(int)
   image_idx = idx[0]
-  image = img.open(trial_dir+'image'+str(image_idx)+'.png').resize((model.w,model.h))
-  image = np.array(image.getdata()).reshape(image.size[0],image.size[1],3)
-  image = image[:,:,0:3]/255.0 #Cut out alpha
-  image = image/255.0
+  image = None
+  for ii in range(model.num_images):
+    temp_idx = max(0,image_idx - ii)
+    temp_image = img.open(trial_dir+'image'+str(temp_idx)+'.png').resize((model.w,model.h))
+    temp_image = np.array(temp_image.getdata()).reshape(temp_image.size[0],temp_image.size[1],3)
+    temp_image = temp_image[:,:,0:3]/255.0 #Cut out alpha
+    temp_image = temp_image/255.0
+    if image is None:
+        image = temp_image
+    else:
+        image = np.concatenate((image,temp_image),axis=2)
   R0 = np.array(traj_data[image_idx][1])
   p0 = np.array(traj_data[image_idx][0])
   local_pts = []
@@ -100,7 +107,10 @@ def main():
   parser.add_argument('--seed', type=int, default=0, help='random seed')
   parser.add_argument('--resample', action='store_true', help='resample data')
   parser.add_argument('--gpus', help='gpu to use')
-  parser.add_argument('--noimages', help='turn off tensorboard images')
+  parser.add_argument('--num_images', type=int, default=2, help='number of input images')
+  parser.add_argument('--batch_size', type=int, default=256, help='batch size')
+  parser.add_argument('--num_pts', type=int, default=2, help='number of output waypoints')
+  parser.add_argument('--capacity', type=float, default=1, help='network capacity')
   args = parser.parse_args()
 
   if (args.gpus is not None):
@@ -110,7 +120,7 @@ def main():
   val_perc = 0.01
   #g_depths = [64, 64, 64]
   #f_depths = [64, 64, 64]
-  batch_size = 512#1024#64
+  batch_size = args.batch_size#512#1024#64
   num_epochs = args.epochs
   learning_rate = 5e-2#50#e-1
   learn_rate_decay = 0#1000 / num_epochs
@@ -122,7 +132,7 @@ def main():
 
   # Make model
   print ('Building model')
-  model = OrangeResNet()
+  model = OrangeResNet(args.capacity, args.num_images, args.num_pts)
 
   # Load in Data
   train_indices, val_indices = parseDirData(args.data, args.seed, args.resample, val_perc)
@@ -194,10 +204,6 @@ def main():
           pickle.dump(plotting_data,f,pickle.HIGHEST_PROTOCOL)
 
       val_writer.add_summary(val_summary, iters)
-      if args.noimages is None:
-        val_image = model.gen_image(resnet_output,val_outputs)
-        val_image_writer.add_summary(val_image, iters)
-        val_image_writer.flush()
 
       train_writer.flush()
       val_writer.flush()
