@@ -21,9 +21,10 @@ def createStampedFolder(folder_path):
         if e.errno != errno.EEXIST:
             raise # This was not a "directory exist" error..
 
-def parseDirData(run_dir, seed, resample, val_perc, time_window = 5):
+def parseDirData(run_dir, seed, resample, val_perc, num_pts, dt = 1):
   trial_list = os.listdir(run_dir)
   num_samples = 0
+  time_window = num_pts*dt
   for trial_dir in trial_list:
     with open(run_dir+"/"+trial_dir+"/metadata.pickle",'rb') as data_f:
       data = pickle.load(data_f)#, encoding='latin1')
@@ -60,16 +61,27 @@ def parseFiles(idx,traj_data,trial_dir, model):
   R0 = np.array(traj_data[image_idx][1])
   p0 = np.array(traj_data[image_idx][0])
   local_pts = []
+  idx = idx[1:]#Cut out first point (will be (0,0,0)
   for i in idx:
     state = traj_data[i]
     point = np.matmul(R0.T,np.array(state[0]) - p0)
+    if model.foc_l > 0:
+        #Convert into image coordinates
+        x = float(point[0])#Local Forward
+        y = float(point[1])#Local Left
+        z = float(point[2])#Local Up
+        image_up = model.foc_l*z/x
+        image_left = model.foc_l*y/x
+        image_depth = x#model.foc_l/x
+        point = np.array((image_depth,image_left, image_up))
     local_pts.append(point)
-  local_pts = np.array(local_pts[1:])
+  local_pts = np.array(local_pts)
   local_pts.resize(model.output_dim)
   return image, local_pts
 
-def loadData(idx,run_dir,model,time_window = 5):
+def loadData(idx,run_dir,model,dt = 1):
   num_points = model.output_dim/3
+  time_window = num_points*dt
   #Assume reduced N is constant for all trials
   trial_list = os.listdir(run_dir)
   trial_dir = trial_list[0]
@@ -111,6 +123,7 @@ def main():
   parser.add_argument('--batch_size', type=int, default=256, help='batch size')
   parser.add_argument('--num_pts', type=int, default=2, help='number of output waypoints')
   parser.add_argument('--capacity', type=float, default=1, help='network capacity')
+  parser.add_argument('--cam_coord', type=float, default=-1, help='use focal length coordinates')
   args = parser.parse_args()
 
   if (args.gpus is not None):
@@ -132,10 +145,10 @@ def main():
 
   # Make model
   print ('Building model')
-  model = OrangeResNet(args.capacity, args.num_images, args.num_pts)
+  model = OrangeResNet(args.capacity, args.num_images, args.num_pts, args.cam_coord)
 
   # Load in Data
-  train_indices, val_indices = parseDirData(args.data, args.seed, args.resample, val_perc)
+  train_indices, val_indices = parseDirData(args.data, args.seed, args.resample, val_perc, args.num_pts)
   num_train_samples = train_indices.shape[0]
 
   # Train model
@@ -173,6 +186,7 @@ def main():
     plotting_data['idx'] = range(5)
     plotting_data['truth'] = val_outputs[plotting_data['idx']]
     plotting_data['data'] = list()
+    plotting_data['foc_l'] = args.cam_coord
     for ii in plotting_data['idx']:
       plotting_data['data'].append([])
     #print(plotting_data)

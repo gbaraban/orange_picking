@@ -95,7 +95,7 @@ class OrangeResNet:
   #  image = tf.expand_dims(image, 0)
   #  return image
 
-  def __init__(self, capacity = 1, num_img = 2, num_pts = 1):
+  def __init__(self, capacity = 1, num_img = 2, num_pts = 1, focal_l = -1):
     #Parameters
     self.w = 300
     self.h = 200
@@ -105,6 +105,7 @@ class OrangeResNet:
     self.f = capacity#5.0#2.0#1.5#125#1#0.25
     self.learning_fac_init=0.000001
     self.reg = False
+    self.foc_l = focal_l
     #Inputs
     self.image_input = tf.placeholder(tf.float32,shape=[None,self.w,self.h,3*self.num_images],name='image_input')
     self.waypoint_output = tf.placeholder(tf.float32,shape=[None,self.output_dim],name="waypoints")
