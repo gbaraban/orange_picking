@@ -75,11 +75,11 @@ def resnet8(img_input, output_dim, scope='Prediction', reuse=False, f=0.25, reg=
         for ii in range(3):
           temp = Dense(output_dim/3)(x)
           temp = Activation('softmax')(temp)
-          logits[ii] = temp
+          logits.append(temp)
 
     return logits
 
-class OrangeResNet:
+class OrangeClassNet:
   #def gen_image(self,new_waypoint, true_waypoint):
   #  new_waypoint = np.array(new_waypoint)
   #  true_waypoint = np.array(true_waypoint)
@@ -109,15 +109,16 @@ class OrangeResNet:
     self.learning_fac_init=0.000001
     self.reg = False
     self.foc_l = focal_l
-    self.min = min_xyz
-    self.max = max_xyz
+    self.min = np.array(min_xyz)
+    self.max = np.array(max_xyz)
     self.bins = bins
-    self.output_dim = self.bins*3
+    self.output_dim = self.num_points*3
     #Inputs
     self.image_input = tf.placeholder(tf.float32,shape=[None,self.w,self.h,3*self.num_images],name='image_input')
-    self.waypoint_output = [tf.placeholder(tf.float32,shape=[None,self.output_dim/3],name="waypoints_x"),
-                            tf.placeholder(tf.float32,shape=[None,self.output_dim/3],name="waypoints_y"),
-                            tf.placeholder(tf.float32,shape=[None,self.output_dim/3],name="waypoints_z")]
+    self.waypoint_output_x = tf.placeholder(tf.float32,shape=[None,self.output_dim/3],name="waypoints_x")
+    self.waypoint_output_y = tf.placeholder(tf.float32,shape=[None,self.output_dim/3],name="waypoints_y")
+    self.waypoint_output_z = tf.placeholder(tf.float32,shape=[None,self.output_dim/3],name="waypoints_z")
+    self.waypoint_output = [self.waypoint_output_x, self.waypoint_output_y, self.waypoint_output_z]
     #Network Architecture
     self.softmax = resnet8(self.image_input,output_dim=self.output_dim, f=self.f, reg=self.reg)
     #Training

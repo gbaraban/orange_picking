@@ -58,6 +58,8 @@ def parseFiles(idx,traj_data,trial_dir, model):
         image = temp_image
     else:
         image = np.concatenate((image,temp_image),axis=2)
+  #print(image_idx)
+  #print(traj_data)
   R0 = np.array(traj_data[image_idx][1])
   p0 = np.array(traj_data[image_idx][0])
   local_pts = []
@@ -96,7 +98,9 @@ def loadData(idx,run_dir,model,dt = 1):
     h = float(N)/tf
     reduced_N = int(N - time_window*h)
   images = []
-  waypoints = []
+  waypoints_x = []
+  waypoints_y = []
+  waypoints_z = []
   trial_num = np.floor(idx/reduced_N).astype(int)
   image_num = np.mod(idx,reduced_N)
   for trial_idx, image_idx in zip(trial_num,image_num):
@@ -110,9 +114,11 @@ def loadData(idx,run_dir,model,dt = 1):
     idx_final = image_idx + metadata['N']*time_window/metadata['tf']
     offset_idx = np.floor(np.linspace(image_idx,idx_final,num_points+1))
     image, waypoint = parseFiles(offset_idx,traj_data,trial_dir, model)
-    waypoints.append(waypoint)
+    waypoints_x.append(waypoint[0])
+    waypoints_y.append(waypoint[1])
+    waypoints_z.append(waypoint[2])
     images.append(image)
-  return np.array(images), np.array(waypoints)
+  return np.array(images), np.array(waypoints_x).reshape(-1,1), np.array(waypoints_y).reshape(-1,1), np.array(waypoints_z).reshape(-1,1)
 
 def main():
   parser = argparse.ArgumentParser()
@@ -159,9 +165,12 @@ def main():
   num_train_samples = train_indices.shape[0]
 
   # Train model
-  print ('Training...')
-  val_inputs, val_outputs = loadData(val_indices,args.data, model)
-  val_dict = {model.image_input: val_inputs, model.waypoint_output: val_outputs}
+  print ('Training...  with samples: ' + str(num_train_samples))
+  val_inputs, val_outputs_x, val_outputs_y, val_outputs_z = loadData(val_indices,args.data, model)
+  val_dict = {model.image_input: val_inputs, 
+              model.waypoint_output[0]: val_outputs_x,
+              model.waypoint_output[1]: val_outputs_y,
+              model.waypoint_output[2]: val_outputs_z}
   print ('Validation Loaded')
   train_path = addTimestamp(os.path.join(log_path, 'train_'))
   val_path = addTimestamp(os.path.join(log_path, 'validation_'))
@@ -191,7 +200,9 @@ def main():
     iters = 0
     plotting_data = dict()
     plotting_data['idx'] = range(5)
-    plotting_data['truth'] = val_outputs[plotting_data['idx']]
+    plotting_data['truth'] = [val_outputs_x[plotting_data['idx']],
+                              val_outputs_y[plotting_data['idx']],
+                              val_outputs_z[plotting_data['idx']]]
     plotting_data['data'] = list()
     plotting_data['foc_l'] = args.cam_coord
     plotting_data['min'] = model.min
@@ -207,9 +218,11 @@ def main():
       model.learning_fac.assign(np.exp(-epoch*learn_rate_decay)*learning_rate)
       while batch_idx < num_train_samples:
         end_idx = min(batch_idx + batch_size, num_train_samples)
-        train_inputs, train_outputs = loadData(train_indices[batch_idx:end_idx],args.data, model)
+        train_inputs, train_outputs_x, train_outputs_y, train_outputs_z = loadData(train_indices[batch_idx:end_idx],args.data, model)
         feed_dict[model.image_input] = train_inputs
-        feed_dict[model.waypoint_output] = train_outputs
+        feed_dict[model.waypoint_output_x] = train_outputs_x
+        feed_dict[model.waypoint_output_y] = train_outputs_y
+        feed_dict[model.waypoint_output_z] = train_outputs_z
         #sess.run([model.train_summary_op, model.train_step], feed_dict=feed_dict)
         sess.run(model.train_step, feed_dict=feed_dict)
         batch_idx = batch_idx + batch_size
@@ -218,7 +231,7 @@ def main():
           summary = sess.run(model.train_summ, feed_dict=feed_dict)
           train_writer.add_summary(summary, iters)
         #Clear references to data:
-        train_inputs = train_outputs = feed_dict[model.image_input] = feed_dict[model.waypoint_output] = None
+        train_inputs = train_outputs = feed_dict[model.image_input] = feed_dict[model.waypoint_output_x] = feed_dict[model.waypoint_output_y] = feed_dict[model.waypoint_output_z] = None
 
       val_summary, val_cost, resnet_output = sess.run([model.val_summ, model.objective, model.resnet_output], feed_dict=val_dict)
       print('Validation Summary = ', val_cost)
