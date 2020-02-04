@@ -23,6 +23,7 @@ def backProject(state,coord_type, f):
     out_state.append(x)
     out_state.append(y)
     out_state.append(z)
+  print(coord_type)
   print(out_state)
   return np.array(out_state)
       
@@ -33,13 +34,13 @@ if __name__ == "__main__":
   parser.add_argument('fname', help='pickle file')
   parser.add_argument('--coord_type', help='pickle file')
   args = parser.parse_args()
-  print(args.coord_type)
   with open(args.fname,'rb') as f:
     data = pickle.load(f)
   #fig_list = []
   #ax_list = []
   fig_list = plt.figure()
   ax_list = plt.axes(projection='3d')
+  color_list = [(1,0,0),(0,1,0),(0,0,1),(1,1,0),(1,0,1),(0,1,1)]
   for ii in data['idx']:
     #fig_list.append(plt.figure())
     #ax_list.append(plt.axes(projection='3d'))
@@ -52,8 +53,8 @@ if __name__ == "__main__":
       output = data['data'][ii][jj]
       if args.coord_type is not None:
         output = backProject(output,args.coord_type, data['foc_l'])
-      c = float(jj+1)/num_samples
-      ax_list.plot3D(output[0::3],output[1::3],output[2::3], color=(1,0,0,c))
+      c = color_list[ii] + (float(jj+1)/num_samples,)
+      ax_list.plot3D(output[0::3],output[1::3],output[2::3], color=c, marker='o')
       #l,r = ax_list.xlim()
       #ax_list.set_xlim(0,4)
       #ax_list.set_ylim(-2,2)
