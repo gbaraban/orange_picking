@@ -74,7 +74,7 @@ def resnet8(img_input, output_dim, scope='Prediction', reuse=False, f=0.25, reg=
         logits = []
         for ii in range(3):
           temp = Dense(output_dim/3)(x)
-          temp = Activation('softmax')(temp)
+          #temp = Activation('softmax')(temp)
           logits.append(temp)
 
     return logits
@@ -112,18 +112,20 @@ class OrangeClassNet:
     self.min = np.array(min_xyz)
     self.max = np.array(max_xyz)
     self.bins = bins
-    self.output_dim = self.num_points*3
+    self.output_dim = self.bins*3
     #Inputs
     self.image_input = tf.placeholder(tf.float32,shape=[None,self.w,self.h,3*self.num_images],name='image_input')
-    self.waypoint_output_x = tf.placeholder(tf.float32,shape=[None,self.output_dim/3],name="waypoints_x")
-    self.waypoint_output_y = tf.placeholder(tf.float32,shape=[None,self.output_dim/3],name="waypoints_y")
-    self.waypoint_output_z = tf.placeholder(tf.float32,shape=[None,self.output_dim/3],name="waypoints_z")
+    self.waypoint_output_x = tf.placeholder(tf.float32,shape=[None,self.num_points],name="waypoints_x")
+    self.waypoint_output_y = tf.placeholder(tf.float32,shape=[None,self.num_points],name="waypoints_y")
+    self.waypoint_output_z = tf.placeholder(tf.float32,shape=[None,self.num_points],name="waypoints_z")
     self.waypoint_output = [self.waypoint_output_x, self.waypoint_output_y, self.waypoint_output_z]
     #Network Architecture
-    self.softmax = resnet8(self.image_input,output_dim=self.output_dim, f=self.f, reg=self.reg)
+    self.logits = resnet8(self.image_input,output_dim=self.output_dim, f=self.f, reg=self.reg)
     #Training
-    self.losses = [tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self.waypoint_output[ii], logits=self.softmax[ii])) for ii in range(3)]
-    self.objective = self.losses[0] + self.losses[1] + self.losses[2]
+    self.losses = [tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self.waypoint_output[ii], logits=self.logits[ii])) for ii in range(3)]
+    #self.losses = [tf.nn.softmax_cross_entropy_with_logits(labels=self.waypoint_output[ii], logits=self.logits[ii]) for ii in range(3)]
+    self.objective = (self.losses[0] + self.losses[1] + self.losses[2])
+    #self.objective = tf.reduce_mean(self.losses[0] + self.losses[1] + self.losses[2])
     self.learning_fac = tf.Variable(self.learning_fac_init)
     opt_op = tf.train.AdamOptimizer(self.learning_fac).minimize(self.objective)
     self.train_step = opt_op

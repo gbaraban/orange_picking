@@ -81,11 +81,11 @@ def parseFiles(idx,traj_data,trial_dir, model):
     point = (point*model.bins).astype(int)
     local_pts.append(point)
   local_pts = np.array(local_pts)
-  local_pts.resize(model.output_dim)
+  local_pts.resize(model.num_points*3)
   return image, local_pts
 
 def loadData(idx,run_dir,model,dt = 1):
-  num_points = model.output_dim/3
+  num_points = model.num_points
   time_window = num_points*dt
   #Assume reduced N is constant for all trials
   trial_list = os.listdir(run_dir)
@@ -130,6 +130,7 @@ def main():
   parser.add_argument('--gpus', help='gpu to use')
   parser.add_argument('--num_images', type=int, default=2, help='number of input images')
   parser.add_argument('--batch_size', type=int, default=256, help='batch size')
+  parser.add_argument('--learning_rate', type=float, default=256, help='batch size')
   parser.add_argument('--num_pts', type=int, default=2, help='number of output waypoints')
   parser.add_argument('--capacity', type=float, default=1, help='network capacity')
   parser.add_argument('--cam_coord', type=float, default=-1, help='use focal length coordinates')
@@ -147,7 +148,7 @@ def main():
   #f_depths = [64, 64, 64]
   batch_size = args.batch_size#512#1024#64
   num_epochs = args.epochs
-  learning_rate = 5e-2#50#e-1
+  learning_rate = args.learning_rate#50#e-1
   learn_rate_decay = 0#1000 / num_epochs
   save_variables_divider = 10
   log_path = './model/logs'
@@ -163,9 +164,12 @@ def main():
   # Load in Data
   train_indices, val_indices = parseDirData(args.data, args.seed, args.resample, val_perc, args.num_pts)
   num_train_samples = train_indices.shape[0]
+  num_val_samples = val_indices.shape[0]
 
   # Train model
-  print ('Training...  with samples: ' + str(num_train_samples))
+  print ('Training...')
+  print ('Training Samples: ' + str(num_train_samples))
+  print ('Validation Samples: ' + str(num_val_samples))
   val_inputs, val_outputs_x, val_outputs_y, val_outputs_z = loadData(val_indices,args.data, model)
   val_dict = {model.image_input: val_inputs, 
               model.waypoint_output[0]: val_outputs_x,
@@ -233,10 +237,12 @@ def main():
         #Clear references to data:
         train_inputs = train_outputs = feed_dict[model.image_input] = feed_dict[model.waypoint_output_x] = feed_dict[model.waypoint_output_y] = feed_dict[model.waypoint_output_z] = None
 
-      val_summary, val_cost, resnet_output = sess.run([model.val_summ, model.objective, model.resnet_output], feed_dict=val_dict)
+      val_summary, val_cost, resnet_output, raw_losses = sess.run([model.val_summ, model.objective, model.logits, model.losses], feed_dict=val_dict)
       print('Validation Summary = ', val_cost)
+      resnet_output = np.array(resnet_output)
+      print(raw_losses)
       for ii in plotting_data['idx']:
-          plotting_data['data'][ii].append(resnet_output[ii])
+          plotting_data['data'][ii].append(resnet_output[:,ii,:])
       with open(plot_data_path+'/data.pickle','wb') as f:
           pickle.dump(plotting_data,f,pickle.HIGHEST_PROTOCOL)
 
