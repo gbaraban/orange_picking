@@ -77,11 +77,15 @@ def parseFiles(idx,traj_data,trial_dir, model):
         image_depth = x#model.foc_l/x
         point = np.array((image_depth,image_left, image_up))
     #Convert into bins
-    point = (point - model.min)/(model.max-model.min)
-    point = (point*model.bins).astype(int)
-    local_pts.append(point)
+    bin_nums = (point - model.min)/(model.max-model.min)
+    bin_nums = (point*model.bins).astype(int)
+    bin_nums = np.clip(bin_nums,a_min=0,a_max=model.bins-1)
+    labels = np.zeros((3,model.bins))
+    for ii in range(3):
+      labels[ii,bin_nums[ii]] = 1
+    local_pts.append(labels)
   local_pts = np.array(local_pts)
-  local_pts.resize(model.num_points*3)
+  local_pts.resize((model.num_points,3,model.bins))
   return image, local_pts
 
 def loadData(idx,run_dir,model,dt = 1):
@@ -114,11 +118,14 @@ def loadData(idx,run_dir,model,dt = 1):
     idx_final = image_idx + metadata['N']*time_window/metadata['tf']
     offset_idx = np.floor(np.linspace(image_idx,idx_final,num_points+1))
     image, waypoint = parseFiles(offset_idx,traj_data,trial_dir, model)
-    waypoints_x.append(waypoint[0])
-    waypoints_y.append(waypoint[1])
-    waypoints_z.append(waypoint[2])
+    waypoints_x.append(waypoint[:,0,:])
+    waypoints_y.append(waypoint[:,1,:])
+    waypoints_z.append(waypoint[:,2,:])
     images.append(image)
-  return np.array(images), np.array(waypoints_x).reshape(-1,1), np.array(waypoints_y).reshape(-1,1), np.array(waypoints_z).reshape(-1,1)
+  waypoints_x = np.array(waypoints_x)
+  waypoints_y = np.array(waypoints_y)
+  waypoints_z = np.array(waypoints_z)
+  return np.array(images), np.array(waypoints_x).reshape(-1,model.num_points,model.bins), np.array(waypoints_y).reshape(-1,model.num_points,model.bins), np.array(waypoints_z).reshape(-1,model.num_points,model.bins)
 
 def main():
   parser = argparse.ArgumentParser()
@@ -241,8 +248,9 @@ def main():
       print('Validation Summary = ', val_cost)
       resnet_output = np.array(resnet_output)
       print(raw_losses)
+      print(resnet_output.shape)
       for ii in plotting_data['idx']:
-          plotting_data['data'][ii].append(resnet_output[:,ii,:])
+          plotting_data['data'][ii].append(resnet_output[:,:,ii,:])
       with open(plot_data_path+'/data.pickle','wb') as f:
           pickle.dump(plotting_data,f,pickle.HIGHEST_PROTOCOL)
 

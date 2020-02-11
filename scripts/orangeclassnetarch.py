@@ -10,7 +10,7 @@ import numpy as np
 import io
 
 #From https://github.com/uzh-rpg/sim2real_drone_racing/blob/master/learning/deep_drone_racing_learner/src/ddr_learner/models/nets.py
-def resnet8(img_input, output_dim, scope='Prediction', reuse=False, f=0.25, reg=True):
+def resnet8(img_input, num_pts, bins, scope='Prediction', reuse=False, f=0.25, reg=True):
     """
     Define model architecture. The parameter 'f' controls the network width.
     """
@@ -72,10 +72,12 @@ def resnet8(img_input, output_dim, scope='Prediction', reuse=False, f=0.25, reg=
 
         # Output channel
         logits = []
-        for ii in range(3):
-          temp = Dense(output_dim/3)(x)
-          #temp = Activation('softmax')(temp)
-          logits.append(temp)
+        for ii in range(num_pts):
+            temp_list = []
+            for jj in range(3):
+              temp = Dense(bins)(x)
+              temp_list.append(temp)
+            logits.append(temp_list)
 
     return logits
 
@@ -112,19 +114,23 @@ class OrangeClassNet:
     self.min = np.array(min_xyz)
     self.max = np.array(max_xyz)
     self.bins = bins
-    self.output_dim = self.bins*3
     #Inputs
     self.image_input = tf.placeholder(tf.float32,shape=[None,self.w,self.h,3*self.num_images],name='image_input')
-    self.waypoint_output_x = tf.placeholder(tf.float32,shape=[None,self.num_points],name="waypoints_x")
-    self.waypoint_output_y = tf.placeholder(tf.float32,shape=[None,self.num_points],name="waypoints_y")
-    self.waypoint_output_z = tf.placeholder(tf.float32,shape=[None,self.num_points],name="waypoints_z")
+    self.waypoint_output_x = tf.placeholder(tf.float32,shape=[None,self.num_points,self.bins],name="waypoints_x")
+    self.waypoint_output_y = tf.placeholder(tf.float32,shape=[None,self.num_points,self.bins],name="waypoints_y")
+    self.waypoint_output_z = tf.placeholder(tf.float32,shape=[None,self.num_points,self.bins],name="waypoints_z")
     self.waypoint_output = [self.waypoint_output_x, self.waypoint_output_y, self.waypoint_output_z]
     #Network Architecture
-    self.logits = resnet8(self.image_input,output_dim=self.output_dim, f=self.f, reg=self.reg)
+    self.logits = resnet8(self.image_input,self.num_points,self.bins, f=self.f, reg=self.reg)
     #Training
-    self.losses = [tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self.waypoint_output[ii], logits=self.logits[ii])) for ii in range(3)]
+    self.losses = []#[tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self.waypoint_output[ii], logits=self.logits[ii])) for ii in range(3)]
+    for ii in range(self.num_points):
+        for jj in range(3):
+            temp = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self.waypoint_output[jj][:,ii,:], logits=self.logits[ii][jj]))
+            self.losses.append(temp)
+
     #self.losses = [tf.nn.softmax_cross_entropy_with_logits(labels=self.waypoint_output[ii], logits=self.logits[ii]) for ii in range(3)]
-    self.objective = (self.losses[0] + self.losses[1] + self.losses[2])
+    self.objective = sum(self.losses)
     #self.objective = tf.reduce_mean(self.losses[0] + self.losses[1] + self.losses[2])
     self.learning_fac = tf.Variable(self.learning_fac_init)
     opt_op = tf.train.AdamOptimizer(self.learning_fac).minimize(self.objective)

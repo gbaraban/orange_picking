@@ -52,7 +52,6 @@ def xyzfrombins(state,data):
     out_list.append(o[2])
   return np.array(out_list)
     
-
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
   parser.add_argument('fname', help='pickle file')
