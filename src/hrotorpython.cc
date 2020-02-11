@@ -9,6 +9,8 @@
 #include "yawvelocityconstraint.h"
 #include "constraintcost.h"
 #include "yawcost.h"
+#include "rpcost.h"
+#include "direction_constraint.h"
 #include "hrotor.h"
 #include "ddp.h"
 #include "so3.h"
@@ -18,11 +20,12 @@ using namespace Eigen;
 using namespace gcop;
 
 typedef Ddp<Body3dState, 12, 4> HrotorDdp;
+typedef ConstraintCost<Body3dState, 12, 4, Dynamic, 3> DirectionConstraintCost;
 
 //Params params;
-void solver_process(int N, double tf, int epochs, Vector3d x0, Vector3d xfp, 
+void solver_process(int N, double tf, int epochs, Vector3d x0, double yaw0, Vector3d xfp, double yawf,
      Vector3d cyl_o, double cyl_r, double cyl_h,
-     Vector12d q, Vector12d qf, Vector4d r, double yawgain,
+     Vector12d q, Vector12d qf, Vector4d r, double yawgain, double rpgain,double dir_gain,
       double stiffness, double stiff_mult, vector<Body3dState> &xout)
 {
 
@@ -39,10 +42,7 @@ void solver_process(int N, double tf, int epochs, Vector3d x0, Vector3d xfp,
   Body3dState xf;
   xf.Clear();
   xf.p = xfp;
-  //Matrix3d final_R;
-  //Vector3d rpy(0,0,atan2(cyl_o(1) - xfp(1),cyl_o(0) - xfp(0)));//yaw towards the obstacle center
-  //SO3::Instance().q2g(final_R,rpy);
-  //xf.R = final_R;
+  SO3::Instance().q2g(xf.R, Vector3d(0,0,yawf)); 
 
   Body3dCost<4> pathcost(sys, tf, xf);
   for (int i = 0; i < 12; ++i)
@@ -57,7 +57,7 @@ void solver_process(int N, double tf, int epochs, Vector3d x0, Vector3d xfp,
   cost.costs.push_back(&pathcost);
   
   //Cylinder Cost
-  Cylinder<Body3dState, 12, 4> cyl(cyl_o, cyl_r, cyl_h);
+  Cylinder<Body3dState, 12, 4> cyl(cyl_o, cyl_r, cyl_h, 0.0); //0 is the collision radius
   ConstraintCost<Body3dState, 12, 4> cylcost(sys, tf, cyl);
   cost.costs.push_back(&cylcost);
 
@@ -73,6 +73,17 @@ void solver_process(int N, double tf, int epochs, Vector3d x0, Vector3d xfp,
   yawcost.gain = yawgain;
   cost.costs.push_back(&yawcost);
 
+  //Roll Pitch Cost
+  RPCost<Body3dState, 12, 4> rpcost(sys,tf);
+  rpcost.gain = rpgain;
+  cost.costs.push_back(&rpcost);
+
+  //Direction Constraint
+  DirectionConstraint<4> direction_constraint(Vector3d(1,0,0),xfp);
+  DirectionConstraintCost direction_cost(sys,tf,direction_constraint);
+  direction_cost.b = dir_gain;
+  cost.costs.push_back(&direction_cost);
+
   // Times
   vector<double> ts(N+1);
   for (int k = 0; k <= N; ++k)
@@ -82,21 +93,22 @@ void solver_process(int N, double tf, int epochs, Vector3d x0, Vector3d xfp,
   xout.resize(N+1);
   xout[0].Clear();
   xout[0].p = x0;
+  SO3::Instance().q2g(xout[0].R, Vector3d(0,0,yaw0));    
 
   // initial controls (e.g. hover at one place)
   vector<Vector4d> us(N);
-  vector<Body3dState> xds(N+1);
+  //vector<Body3dState> xds(N+1);
   vector<Vector4d> uds(N);
   for (int i = 0; i < N; ++i) {
     us[i].head(3).setZero();
     us[i][3] = 9.81*sys.m;
     uds[i].head(3).setZero();
     uds[i][3] = 9.81*sys.m;
-    xds[i].p = xfp;
+    //xds[i].p = xfp;
   }
-  xds[N].p = xfp;
+  //xds[N].p = xfp;
   //xds[N].R = final_R;
-  pathcost.SetReference(&xds,&uds);
+  pathcost.SetReference(NULL,&uds);
 
   HrotorDdp ddp(sys, cost, ts, xout, us);
   ddp.mu = 1;
@@ -132,8 +144,8 @@ gcophrotor_trajgen(PyObject *self, PyObject *args)
   int N;
   double tf;
   int epochs;
-  double x0x, x0y, x0z;
-  double xfx, xfy, xfz;
+  double x0x, x0y, x0z, yaw0;
+  double xfx, xfy, xfz, yawf;
   double cx, cy, cz;
   double cyl_r;
   double cyl_h;
@@ -141,10 +153,12 @@ gcophrotor_trajgen(PyObject *self, PyObject *args)
   Vector12d qf;
   Vector4d r;
   double yawgain;
+  double rpgain;
+  double dir_gain;
   double stiffness;
   double stiff_mult;
-  if (!PyArg_ParseTuple(args, "idi(ddd)(ddd)(ddd)dd(dddddddddddd)(dddddddddddd)(dddd)ddd", 
-        &N, &tf, &epochs, &x0x, &x0y, &x0z, &xfx, &xfy, &xfz, 
+  if (!PyArg_ParseTuple(args, "idi(ddd)d(ddd)d(ddd)dd(dddddddddddd)(dddddddddddd)(dddd)ddddd", 
+        &N, &tf, &epochs, &x0x, &x0y, &x0z, &yaw0, &xfx, &xfy, &xfz, &yawf,
         &cx, &cy, &cz, &cyl_r, &cyl_h, 
         &(q[0]), &(q[1]), &(q[2]), &(q[3]),
         &(q[4]), &(q[5]), &(q[6]), &(q[7]),
@@ -152,7 +166,7 @@ gcophrotor_trajgen(PyObject *self, PyObject *args)
         &(qf[0]), &(qf[1]), &(qf[2]), &(qf[3]),
         &(qf[4]), &(qf[5]), &(qf[6]), &(qf[7]),
         &(qf[8]), &(qf[9]), &(qf[10]), &(qf[11]),
-        &(r[0]), &(r[1]), &(r[2]), &(r[3]),&yawgain,
+        &(r[0]), &(r[1]), &(r[2]), &(r[3]),&yawgain,&rpgain,&dir_gain,
         &stiffness, &stiff_mult)) {
     cout << "Parse Failed" << endl;
     return NULL;
@@ -161,8 +175,8 @@ gcophrotor_trajgen(PyObject *self, PyObject *args)
   Vector3d x0(x0x,x0y,x0z);
   Vector3d xfp(xfx,xfy,xfz);
   Vector3d cyl_o(cx,cy,cz);
-  solver_process(N, tf, epochs, x0, xfp, 
-                 cyl_o, cyl_r, cyl_h, q,qf,r,yawgain,
+  solver_process(N, tf, epochs, x0, yaw0, xfp, yawf,
+                 cyl_o, cyl_r, cyl_h, q,qf,r,yawgain,rpgain,dir_gain,
                  stiffness, stiff_mult, xs);
   //Construct return object
   PyObject* listObj = PyList_New(xs.size());
