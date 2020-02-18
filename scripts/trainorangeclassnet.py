@@ -136,14 +136,15 @@ def main():
   parser.add_argument('--resample', action='store_true', help='resample data')
   parser.add_argument('--gpus', help='gpu to use')
   parser.add_argument('--num_images', type=int, default=2, help='number of input images')
-  parser.add_argument('--batch_size', type=int, default=256, help='batch size')
-  parser.add_argument('--learning_rate', type=float, default=256, help='batch size')
-  parser.add_argument('--num_pts', type=int, default=2, help='number of output waypoints')
+  parser.add_argument('--batch_size', type=int, default=1024, help='batch size')
+  parser.add_argument('--learning_rate', type=float, default=5e-3, help='batch size')
+  parser.add_argument('--num_pts', type=int, default=1, help='number of output waypoints')
   parser.add_argument('--capacity', type=float, default=1, help='network capacity')
   parser.add_argument('--cam_coord', type=float, default=-1, help='use focal length coordinates')
   parser.add_argument('--min', type=tuple, default=(0,-0.5,-0.5), help='minimum xyz ')
   parser.add_argument('--max', type=tuple, default=(1,0.5,0.5), help='maximum xyz')
   parser.add_argument('--bins', type=int, default=100, help='number of bins per coordinate')
+  parser.add_argument('--dense', type=int, default=0, help='number of additional dense layers')
   args = parser.parse_args()
 
   if (args.gpus is not None):
@@ -156,7 +157,7 @@ def main():
   batch_size = args.batch_size#512#1024#64
   num_epochs = args.epochs
   learning_rate = args.learning_rate#50#e-1
-  learn_rate_decay = 0#1000 / num_epochs
+  learn_rate_decay = 10 / num_epochs
   save_variables_divider = 10
   log_path = './model/logs'
   save_path = createStampedFolder(os.path.join(log_path, 'variable_log'))
@@ -166,7 +167,7 @@ def main():
   # Make model
   print ('Building model')
   model = OrangeClassNet(args.capacity, args.num_images, args.num_pts,
-                         args.cam_coord, args.min, args.max, args.bins)
+                         args.cam_coord, args.min, args.max, args.bins, args.dense)
 
   # Load in Data
   train_indices, val_indices = parseDirData(args.data, args.seed, args.resample, val_perc, args.num_pts)
@@ -226,7 +227,9 @@ def main():
       print('Epoch: ', epoch)
       batch_idx = 0
       # Decay learning rate
-      model.learning_fac.assign(np.exp(-epoch*learn_rate_decay)*learning_rate)
+      new_learn_rate = np.exp(-epoch*learn_rate_decay)*learning_rate
+      print('Learning Rate Set to: ' + str(new_learn_rate))
+      model.learning_fac.assign(new_learn_rate)
       while batch_idx < num_train_samples:
         end_idx = min(batch_idx + batch_size, num_train_samples)
         train_inputs, train_outputs_x, train_outputs_y, train_outputs_z = loadData(train_indices[batch_idx:end_idx],args.data, model)

@@ -10,7 +10,7 @@ import numpy as np
 import io
 
 #From https://github.com/uzh-rpg/sim2real_drone_racing/blob/master/learning/deep_drone_racing_learner/src/ddr_learner/models/nets.py
-def resnet8(img_input, num_pts, bins, scope='Prediction', reuse=False, f=0.25, reg=True):
+def resnet8(img_input, num_pts, bins, scope='Prediction', reuse=False, f=0.25, reg=True, dense = 0):
     """
     Define model architecture. The parameter 'f' controls the network width.
     """
@@ -66,9 +66,14 @@ def resnet8(img_input, num_pts, bins, scope='Prediction', reuse=False, f=0.25, r
 
         x = Flatten()(x7)
         x = Activation('relu')(x)
-        x = Dropout(0.5)(x)
+        if kr is not None:
+          x = Dropout(0.5)(x)
         x = Dense(int(256*f))(x)
         x = Activation('relu')(x)
+        
+        for ii in range(dense):#Add more dense layers
+            x = Dense(int(256*f))(x)
+            x = Activation('relu')(x)
 
         # Output channel
         logits = []
@@ -101,7 +106,7 @@ class OrangeClassNet:
   #  image = tf.expand_dims(image, 0)
   #  return image
 
-  def __init__(self, capacity = 1, num_img = 2, num_pts = 1, focal_l = -1, min_xyz = (0,-0.5,-0.5), max_xyz = (1,0.5,0.5), bins = 100):
+  def __init__(self, capacity = 1, num_img = 2, num_pts = 1, focal_l = -1, min_xyz = (0,-0.5,-0.5), max_xyz = (1,0.5,0.5), bins = 100, dense = 1):
     #Parameters
     self.w = 300
     self.h = 200
@@ -121,7 +126,7 @@ class OrangeClassNet:
     self.waypoint_output_z = tf.placeholder(tf.float32,shape=[None,self.num_points,self.bins],name="waypoints_z")
     self.waypoint_output = [self.waypoint_output_x, self.waypoint_output_y, self.waypoint_output_z]
     #Network Architecture
-    self.logits = resnet8(self.image_input,self.num_points,self.bins, f=self.f, reg=self.reg)
+    self.logits = resnet8(self.image_input,self.num_points,self.bins, f=self.f, reg=self.reg, dense=dense)
     #Training
     self.losses = []#[tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self.waypoint_output[ii], logits=self.logits[ii])) for ii in range(3)]
     for ii in range(self.num_points):
