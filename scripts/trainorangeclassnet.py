@@ -82,7 +82,16 @@ def parseFiles(idx,traj_data,trial_dir, model):
     bin_nums = np.clip(bin_nums,a_min=0,a_max=model.bins-1)
     labels = np.zeros((3,model.bins))
     for ii in range(3):
-      labels[ii,bin_nums[ii]] = 1
+      #Adding smoothing to labels
+      labels[ii,bin_nums[ii]] = 0.5
+      if bin_nums[ii] > 0:
+        labels[ii,bin_nums[ii]-1] = 0.25
+      else:
+        labels[ii,bin_nums[ii]] += 0.25
+      if bin_nums[ii] < (model.bins-1):
+        labels[ii,bin_nums[ii] + 1] = 0.25
+      else:
+        labels[ii,bin_nums[ii]] += 0.25
     local_pts.append(labels)
   local_pts = np.array(local_pts)
   local_pts.resize((model.num_points,3,model.bins))
