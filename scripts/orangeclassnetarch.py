@@ -68,20 +68,26 @@ def resnet8(img_input, num_pts, bins, scope='Prediction', reuse=False, f=0.25, r
         x = Activation('relu')(x)
         if kr is not None:
           x = Dropout(0.5)(x)
-        x = Dense(int(256*f))(x)
+        x = Dense(int(4096*f))(x)
         x = Activation('relu')(x)
         
-        for ii in range(dense):#Add more dense layers
-            x = Dense(int(256*f))(x)
-            x = Activation('relu')(x)
+        # for ii in range(dense):#Add more dense layers
+        x = Dense(int(2048*f))(x)
+        x = Activation('relu')(x)
 
+        x = Dense(int(1024*f))(x)
+        x = Activation('relu')(x)
+
+        
         # Output channel
         logits = []
+
         for ii in range(num_pts):
             temp_list = []
             for jj in range(3):
               temp = Dense(bins)(x)
               temp_list.append(temp)
+            
             logits.append(temp_list)
 
     return logits
@@ -108,8 +114,8 @@ class OrangeClassNet:
 
   def __init__(self, capacity = 1, num_img = 2, num_pts = 1, focal_l = -1, min_xyz = (0,-0.5,-0.5), max_xyz = (1,0.5,0.5), bins = 100, dense = 1):
     #Parameters
-    self.w = 300
-    self.h = 200
+    self.w = 640 #300
+    self.h = 380 #200 
     self.num_points = num_pts
     self.num_images = num_img
     self.f = capacity#5.0#2.0#1.5#125#1#0.25
@@ -131,14 +137,14 @@ class OrangeClassNet:
     self.losses = []#[tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self.waypoint_output[ii], logits=self.logits[ii])) for ii in range(3)]
     for ii in range(self.num_points):
         for jj in range(3):
-            temp = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self.waypoint_output[jj][:,ii,:], logits=self.logits[ii][jj]))
+            temp = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(labels=self.waypoint_output[jj][:,ii,:], logits=self.logits[ii][jj]))
             self.losses.append(temp)
 
     #self.losses = [tf.nn.softmax_cross_entropy_with_logits(labels=self.waypoint_output[ii], logits=self.logits[ii]) for ii in range(3)]
     self.objective = sum(self.losses)
     #self.objective = tf.reduce_mean(self.losses[0] + self.losses[1] + self.losses[2])
     self.learning_fac = tf.Variable(self.learning_fac_init)
-    opt_op = tf.train.AdamOptimizer(self.learning_fac).minimize(self.objective)
+    opt_op = tf.compat.v1.train.AdamOptimizer(self.learning_fac).minimize(self.objective)
     self.train_step = opt_op
     #self.iterations = tf.Variable(0)
     #self.waypoint_list = []
@@ -149,4 +155,4 @@ class OrangeClassNet:
     self.val_summ = tf.summary.scalar('Validation Objective Function', self.objective)
     self.lf_summ = tf.summary.scalar('Learning Factor', self.learning_fac)
     #self.val_image_summ = tf.summary.image('Validation Image',self.generate_image)
-    self.merge = tf.summary.merge_all()
+    self.merge = tf.compat.v1.train.AdamOptimizer()

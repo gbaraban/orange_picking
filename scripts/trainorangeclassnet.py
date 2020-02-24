@@ -42,6 +42,8 @@ def parseDirData(run_dir, seed, resample, val_perc, num_pts, dt = 1):
   train_idx = num_samples - val_idx
   val_indices = rand_idx[-val_idx:]
   train_indices = rand_idx[:train_idx]
+  # print(train_indices)
+  # print(val_indices)
   return train_indices, val_indices
 
 def parseFiles(idx,traj_data,trial_dir, model):
@@ -53,7 +55,8 @@ def parseFiles(idx,traj_data,trial_dir, model):
     temp_image = img.open(trial_dir+'image'+str(temp_idx)+'.png').resize((model.w,model.h))
     temp_image = np.array(temp_image.getdata()).reshape(temp_image.size[0],temp_image.size[1],3)
     temp_image = temp_image[:,:,0:3]/255.0 #Cut out alpha
-    temp_image = temp_image/255.0
+    # temp_image = temp_image/255.0
+    
     if image is None:
         image = temp_image
     else:
@@ -80,18 +83,26 @@ def parseFiles(idx,traj_data,trial_dir, model):
     bin_nums = (point - model.min)/(model.max-model.min)
     bin_nums = (point*model.bins).astype(int)
     bin_nums = np.clip(bin_nums,a_min=0,a_max=model.bins-1)
+
     labels = np.zeros((3,model.bins))
-    for ii in range(3):
-      #Adding smoothing to labels
-      labels[ii,bin_nums[ii]] = 0.5
-      if bin_nums[ii] > 0:
-        labels[ii,bin_nums[ii]-1] = 0.25
-      else:
-        labels[ii,bin_nums[ii]] += 0.25
-      if bin_nums[ii] < (model.bins-1):
-        labels[ii,bin_nums[ii] + 1] = 0.25
-      else:
-        labels[ii,bin_nums[ii]] += 0.25
+    
+    mean = 1
+    stdev = 1
+    for j in range(len(bin_nums)):
+      for i in range(labels.shape[1]):
+        labels[j][i] = mean * (np.exp((-np.power(bin_nums[j]-i, 2))/(2 * np.power(stdev, 2))))
+
+    # for ii in range(3):
+    #   #Adding smoothing to labels
+    #   labels[ii,bin_nums[ii]] = 0.5
+    #   if bin_nums[ii] > 0:
+    #     labels[ii,bin_nums[ii]-1] = 0.25
+    #   else:
+    #     labels[ii,bin_nums[ii]] += 0.25
+    #   if bin_nums[ii] < (model.bins-1):
+    #     labels[ii,bin_nums[ii] + 1] = 0.25
+    #   else:
+    #     labels[ii,bin_nums[ii]] += 0.25
     local_pts.append(labels)
   local_pts = np.array(local_pts)
   local_pts.resize((model.num_points,3,model.bins))
@@ -100,6 +111,7 @@ def parseFiles(idx,traj_data,trial_dir, model):
 def loadData(idx,run_dir,model,dt = 1):
   num_points = model.num_points
   time_window = num_points*dt
+  # print(idx)
   #Assume reduced N is constant for all trials
   trial_list = os.listdir(run_dir)
   trial_dir = trial_list[0]
@@ -160,13 +172,13 @@ def main():
     os.environ["CUDA_VISIBLE_DEVICES"]=args.gpus
 
   # Model and optimization params
-  val_perc = 0.01
+  val_perc = 0.2
   #g_depths = [64, 64, 64]
   #f_depths = [64, 64, 64]
   batch_size = args.batch_size#512#1024#64
   num_epochs = args.epochs
   learning_rate = args.learning_rate#50#e-1
-  learn_rate_decay = 10 / num_epochs
+  learn_rate_decay = 500 / num_epochs
   save_variables_divider = 10
   log_path = './model/logs'
   save_path = createStampedFolder(os.path.join(log_path, 'variable_log'))
@@ -238,7 +250,7 @@ def main():
       # Decay learning rate
       new_learn_rate = np.exp(-epoch*learn_rate_decay)*learning_rate
       print('Learning Rate Set to: ' + str(new_learn_rate))
-      model.learning_fac.assign(new_learn_rate)
+      model.learning_fac.assign(new_learn_rate) 
       while batch_idx < num_train_samples:
         end_idx = min(batch_idx + batch_size, num_train_samples)
         train_inputs, train_outputs_x, train_outputs_y, train_outputs_z = loadData(train_indices[batch_idx:end_idx],args.data, model)
