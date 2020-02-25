@@ -6,6 +6,7 @@ import os
 from orangeclassnetarch import *
 from datetime import datetime
 import PIL.Image as img
+import copy
 
 def addTimestamp(input_path):
     return input_path + datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
@@ -86,7 +87,7 @@ def parseFiles(idx,traj_data,trial_dir, model):
 
     labels = np.zeros((3,model.bins))
     
-    mean = 1
+    mean = 0.4
     stdev = 1
     for j in range(len(bin_nums)):
       for i in range(labels.shape[1]):
@@ -108,10 +109,9 @@ def parseFiles(idx,traj_data,trial_dir, model):
   local_pts.resize((model.num_points,3,model.bins))
   return image, local_pts
 
-def loadData(idx,run_dir,model,dt = 1):
+def loadData(idx,run_dir,model,mean_image,dt = 1):
   num_points = model.num_points
   time_window = num_points*dt
-  # print(idx)
   #Assume reduced N is constant for all trials
   trial_list = os.listdir(run_dir)
   trial_dir = trial_list[0]
@@ -142,11 +142,48 @@ def loadData(idx,run_dir,model,dt = 1):
     waypoints_x.append(waypoint[:,0,:])
     waypoints_y.append(waypoint[:,1,:])
     waypoints_z.append(waypoint[:,2,:])
+    image = np.array(image) - mean_image
     images.append(image)
   waypoints_x = np.array(waypoints_x)
   waypoints_y = np.array(waypoints_y)
   waypoints_z = np.array(waypoints_z)
   return np.array(images), np.array(waypoints_x).reshape(-1,model.num_points,model.bins), np.array(waypoints_y).reshape(-1,model.num_points,model.bins), np.array(waypoints_z).reshape(-1,model.num_points,model.bins)
+
+def compute_mean_image(idx,run_dir,model,dt = 1):
+  num_points = model.num_points
+  time_window = num_points*dt
+  #Assume reduced N is constant for all trials
+  trial_list = os.listdir(run_dir)
+  trial_dir = trial_list[0]
+  reduced_N = -1
+  with open(run_dir+"/"+trial_dir+"/metadata.pickle",'rb') as data_f:
+    data = pickle.load(data_f, encoding='latin1')
+    N = data['N']
+    tf = data['tf']
+    h = float(N)/tf
+    reduced_N = int(N - time_window*h)
+  
+  trial_num = np.floor(idx/reduced_N).astype(int)
+  image_num = np.mod(idx,reduced_N)
+  mean_image = np.zeros((model.w,model.h, 3))
+  i = 0.0
+  for trial_idx, image_idx in zip(trial_num,image_num):
+    trial_dir = run_dir+"/"+trial_list[trial_idx]+"/"
+    traj_data = []
+    with open(trial_dir+"trajdata.pickle",'rb') as data_f:
+      traj_data = pickle.load(data_f, encoding='latin1')
+    metadata = []
+    with open(trial_dir+"metadata.pickle",'rb') as data_f:
+      metadata = pickle.load(data_f, encoding='latin1')
+    idx_final = image_idx + metadata['N']*time_window/metadata['tf']
+    offset_idx = np.floor(np.linspace(image_idx,idx_final,num_points+1))
+    image, waypoint = parseFiles(offset_idx,traj_data,trial_dir, model)
+    mean_image = np.multiply(mean_image, i/(i+1)) + np.multiply(np.array(image), 1/(i+1))
+  
+  return mean_image
+  
+
+
 
 def main():
   parser = argparse.ArgumentParser()
@@ -178,7 +215,7 @@ def main():
   batch_size = args.batch_size#512#1024#64
   num_epochs = args.epochs
   learning_rate = args.learning_rate#50#e-1
-  learn_rate_decay = 500 / num_epochs
+  learn_rate_decay = 100 / num_epochs
   save_variables_divider = 10
   log_path = './model/logs'
   save_path = createStampedFolder(os.path.join(log_path, 'variable_log'))
@@ -199,11 +236,17 @@ def main():
   print ('Training...')
   print ('Training Samples: ' + str(num_train_samples))
   print ('Validation Samples: ' + str(num_val_samples))
-  val_inputs, val_outputs_x, val_outputs_y, val_outputs_z = loadData(val_indices,args.data, model)
-  val_dict = {model.image_input: val_inputs, 
-              model.waypoint_output[0]: val_outputs_x,
-              model.waypoint_output[1]: val_outputs_y,
-              model.waypoint_output[2]: val_outputs_z}
+  data_loc = copy.deepcopy(args.data)
+  mean_img_loc = data_loc + "../mean_img" 
+  if not (os.path.exists(mean_img_loc)):
+    mean_image = compute_mean_image(train_indices, data_loc, model)
+    np.save(mean_img_loc, mean_image)
+  else:
+    mean_image = np.load(mean_img_loc)
+  # mean_image = np.zeros((model.w,model.h, 3))
+
+  val_inputs, val_outputs_x, val_outputs_y, val_outputs_z = loadData(val_indices,data_loc,model,mean_image)
+
   print ('Validation Loaded')
   train_path = addTimestamp(os.path.join(log_path, 'train_'))
   val_path = addTimestamp(os.path.join(log_path, 'validation_'))
@@ -251,9 +294,10 @@ def main():
       new_learn_rate = np.exp(-epoch*learn_rate_decay)*learning_rate
       print('Learning Rate Set to: ' + str(new_learn_rate))
       model.learning_fac.assign(new_learn_rate) 
+      
       while batch_idx < num_train_samples:
         end_idx = min(batch_idx + batch_size, num_train_samples)
-        train_inputs, train_outputs_x, train_outputs_y, train_outputs_z = loadData(train_indices[batch_idx:end_idx],args.data, model)
+        train_inputs, train_outputs_x, train_outputs_y, train_outputs_z = loadData(train_indices[batch_idx:end_idx],data_loc, model, mean_image)
         feed_dict[model.image_input] = train_inputs
         feed_dict[model.waypoint_output_x] = train_outputs_x
         feed_dict[model.waypoint_output_y] = train_outputs_y
@@ -268,7 +312,31 @@ def main():
         #Clear references to data:
         train_inputs = train_outputs = feed_dict[model.image_input] = feed_dict[model.waypoint_output_x] = feed_dict[model.waypoint_output_y] = feed_dict[model.waypoint_output_z] = None
 
-      val_summary, val_cost, resnet_output, raw_losses = sess.run([model.val_summ, model.objective, model.logits, model.losses], feed_dict=val_dict)
+      val_batch_idx = 0
+      num_validation = len(val_indices)
+      #val_summary = 0
+      val_cost = np.zeros((1,))
+      resnet_output = np.zeros((1, 3, 0, model.bins)) # 2nd arg for num_waypoints
+      raw_losses = np.zeros((3,))
+
+      while val_batch_idx < num_validation:
+        val_batch_endx = min(val_batch_idx + batch_size, num_validation)
+        val_dict = {model.image_input: val_inputs[val_batch_idx:val_batch_endx], 
+            model.waypoint_output[0]: val_outputs_x[val_batch_idx:val_batch_endx],
+            model.waypoint_output[1]: val_outputs_y[val_batch_idx:val_batch_endx],
+            model.waypoint_output[2]: val_outputs_z[val_batch_idx:val_batch_endx]}
+        
+        val_summary_temp, val_cost_temp, resnet_output_temp, raw_losses_temp = sess.run([model.val_summ, model.objective, model.logits, model.losses], feed_dict=val_dict)
+        val_writer.add_summary(val_summary_temp, iters)
+
+        #val_summary_temp
+        val_cost = np.multiply(val_cost, (float(val_batch_idx)/val_batch_endx)) + np.multiply(val_cost_temp, (float(val_batch_endx-val_batch_idx)/val_batch_endx))
+        resnet_output_temp = np.array(resnet_output_temp)
+        resnet_output = np.concatenate((resnet_output, resnet_output_temp), axis=2)
+        raw_losses = np.multiply(raw_losses_temp, (float(val_batch_idx)/val_batch_endx)) + np.multiply(np.array(raw_losses_temp), (float(val_batch_endx-val_batch_idx)/val_batch_endx))
+
+        val_batch_idx = val_batch_endx
+      
       print('Validation Summary = ', val_cost)
       resnet_output = np.array(resnet_output)
       print(raw_losses)
@@ -278,7 +346,7 @@ def main():
       with open(plot_data_path+'/data.pickle','wb') as f:
           pickle.dump(plotting_data,f,pickle.HIGHEST_PROTOCOL)
 
-      val_writer.add_summary(val_summary, iters)
+      #val_writer.add_summary(val_summary, iters)
 
       train_writer.flush()
       val_writer.flush()
