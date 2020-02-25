@@ -172,7 +172,7 @@ def main():
     os.environ["CUDA_VISIBLE_DEVICES"]=args.gpus
 
   # Model and optimization params
-  val_perc = 0.2
+  val_perc = 0.002
   #g_depths = [64, 64, 64]
   #f_depths = [64, 64, 64]
   batch_size = args.batch_size#512#1024#64

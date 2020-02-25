@@ -136,7 +136,7 @@ class OrangeClassNet:
     #Training
     self.losses = []#[tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self.waypoint_output[ii], logits=self.logits[ii])) for ii in range(3)]
     for ii in range(self.num_points):
-        for jj in range(3):
+        for jj in range(1,2):
             temp = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(labels=self.waypoint_output[jj][:,ii,:], logits=self.logits[ii][jj]))
             self.losses.append(temp)
 
@@ -155,4 +155,4 @@ class OrangeClassNet:
     self.val_summ = tf.summary.scalar('Validation Objective Function', self.objective)
     self.lf_summ = tf.summary.scalar('Learning Factor', self.learning_fac)
     #self.val_image_summ = tf.summary.image('Validation Image',self.generate_image)
-    self.merge = tf.compat.v1.train.AdamOptimizer()
+    self.merge = tf.summary.merge_all()
