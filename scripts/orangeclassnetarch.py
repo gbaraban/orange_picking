@@ -20,7 +20,7 @@ def resnet8(img_input, num_pts, bins, scope='Prediction', reuse=False, f=0.25, r
         kr = regularizers.l2(1e-4)
 
     with tf.variable_scope(scope, reuse=reuse):
-        x1 = Conv2D(int(32*f), (5, 5), strides=[2, 2], padding='same')(img_input)
+        x1 = Conv2D(int(32*f), (5, 5), strides=[2, 2], padding='same', kernel_initializer='he_normal')(img_input)
         x1 = MaxPooling2D(pool_size=(3, 3), strides=[2, 2])(x1)
 
         # First residual block
@@ -34,7 +34,7 @@ def resnet8(img_input, num_pts, bins, scope='Prediction', reuse=False, f=0.25, r
                     kernel_initializer="he_normal",
                     kernel_regularizer=kr)(x2)
 
-        x1 = Conv2D(int(32*f), (1, 1), strides=[2, 2], padding='same')(x1)
+        x1 = Conv2D(int(32*f), (1, 1), strides=[2, 2], padding='same', kernel_initializer='he_normal')(x1)
         x3 = add([x1, x2])
 
         # Second residual block
@@ -47,7 +47,7 @@ def resnet8(img_input, num_pts, bins, scope='Prediction', reuse=False, f=0.25, r
                     kernel_initializer="he_normal",
                     kernel_regularizer=kr)(x4)
 
-        x3 = Conv2D(int(64*f), (1, 1), strides=[2, 2], padding='same')(x3)
+        x3 = Conv2D(int(64*f), (1, 1), strides=[2, 2], padding='same', kernel_initializer='he_normal')(x3)
         x5 = add([x3, x4])
 
         # Third residual block
@@ -61,21 +61,21 @@ def resnet8(img_input, num_pts, bins, scope='Prediction', reuse=False, f=0.25, r
                     kernel_initializer="he_normal",
                     kernel_regularizer=kr)(x6)
 
-        x5 = Conv2D(int(128*f), (1, 1), strides=[2, 2], padding='same')(x5)
+        x5 = Conv2D(int(128*f), (1, 1), strides=[2, 2], padding='same', kernel_initializer='he_normal')(x5)
         x7 = add([x5, x6])
 
         x = Flatten()(x7)
         x = Activation('relu')(x)
         if kr is not None:
           x = Dropout(0.5)(x)
-        x = Dense(int(4096*f))(x)
+        x = Dense(int(4096*f), kernel_initializer='he_normal')(x)
         x = Activation('relu')(x)
         
         # for ii in range(dense):#Add more dense layers
-        x = Dense(int(2048*f))(x)
+        x = Dense(int(2048*f), kernel_initializer='he_normal')(x)
         x = Activation('relu')(x)
 
-        x = Dense(int(1024*f))(x)
+        x = Dense(int(1024*f), kernel_initializer='he_normal')(x)
         x = Activation('relu')(x)
 
         
@@ -85,7 +85,7 @@ def resnet8(img_input, num_pts, bins, scope='Prediction', reuse=False, f=0.25, r
         for ii in range(num_pts):
             temp_list = []
             for jj in range(3):
-              temp = Dense(bins)(x)
+              temp = Dense(bins, kernel_initializer='he_normal')(x)
               temp_list.append(temp)
             
             logits.append(temp_list)
@@ -155,4 +155,4 @@ class OrangeClassNet:
     self.val_summ = tf.summary.scalar('Validation Objective Function', self.objective)
     self.lf_summ = tf.summary.scalar('Learning Factor', self.learning_fac)
     #self.val_image_summ = tf.summary.image('Validation Image',self.generate_image)
-    self.merge = tf.compat.v1.train.AdamOptimizer()
+    self.merge = tf.summary.merge_all()
