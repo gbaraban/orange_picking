@@ -53,7 +53,7 @@ def parseFiles(idx,traj_data,trial_dir, model):
   image = None
   for ii in range(model.num_images):
     temp_idx = max(0,image_idx - ii)
-    temp_image = img.open(trial_dir+'image'+str(temp_idx)+'.png').resize((model.w,model.h))
+    temp_image = img.open(trial_dir+'image'+str(temp_idx)+'.png').resize((model.h,model.w))
     temp_image = np.array(temp_image.getdata()).reshape(temp_image.size[0],temp_image.size[1],3)
     temp_image = temp_image[:,:,0:3]/255.0 #Cut out alpha
     # temp_image = temp_image/255.0
@@ -165,7 +165,7 @@ def compute_mean_image(idx,run_dir,model,dt = 1):
   
   trial_num = np.floor(idx/reduced_N).astype(int)
   image_num = np.mod(idx,reduced_N)
-  mean_image = np.zeros((model.w,model.h, 3))
+  mean_image = np.zeros((model.h,model.w, 3))
   i = 0.0
   for trial_idx, image_idx in zip(trial_num,image_num):
     trial_dir = run_dir+"/"+trial_list[trial_idx]+"/"
@@ -237,13 +237,14 @@ def main():
   print ('Training Samples: ' + str(num_train_samples))
   print ('Validation Samples: ' + str(num_val_samples))
   data_loc = copy.deepcopy(args.data)
-  mean_img_loc = data_loc + "../mean_img" 
+  data_loc_name = data_loc.strip("..").strip(".").replace("/", "_")
+  mean_img_loc = data_loc + "../mean_img" + data_loc_name 
   if not (os.path.exists(mean_img_loc)):
     mean_image = compute_mean_image(train_indices, data_loc, model)
     np.save(mean_img_loc, mean_image)
   else:
     mean_image = np.load(mean_img_loc)
-  # mean_image = np.zeros((model.w,model.h, 3))
+  # mean_image = np.zeros((model.h, model.w, 3))
 
   val_inputs, val_outputs_x, val_outputs_y, val_outputs_z = loadData(val_indices,data_loc,model,mean_image)
 

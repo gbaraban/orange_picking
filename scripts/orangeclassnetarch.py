@@ -126,7 +126,7 @@ class OrangeClassNet:
     self.max = np.array(max_xyz)
     self.bins = bins
     #Inputs
-    self.image_input = tf.placeholder(tf.float32,shape=[None,self.w,self.h,3*self.num_images],name='image_input')
+    self.image_input = tf.placeholder(tf.float32,shape=[None,self.h,self.w,3*self.num_images],name='image_input')
     self.waypoint_output_x = tf.placeholder(tf.float32,shape=[None,self.num_points,self.bins],name="waypoints_x")
     self.waypoint_output_y = tf.placeholder(tf.float32,shape=[None,self.num_points,self.bins],name="waypoints_y")
     self.waypoint_output_z = tf.placeholder(tf.float32,shape=[None,self.num_points,self.bins],name="waypoints_z")
