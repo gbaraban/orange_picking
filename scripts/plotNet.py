@@ -61,8 +61,8 @@ if __name__ == "__main__":
   prob_threshold = 1e-3
   parser = argparse.ArgumentParser()
   parser.add_argument('fname', help='pickle file')
-  parser.add_argument('--coord_type', help='pickle file')
-  parser.add_argument('--bin', help='pickle file')
+  #parser.add_argument('--coord_type', help='pickle file')
+  parser.add_argument('--bin', default=1, help='pickle file')
   args = parser.parse_args()
   with open(args.fname,'rb') as f:
     data = pickle.load(f)
@@ -81,7 +81,11 @@ if __name__ == "__main__":
     #  truth = backProject(truth,args.coord_type, data['foc_l'])
     num_epochs = len(data['data'][ii])
     step = int(num_epochs/5)
-    for jj in range(0,num_epochs, step):#Iterate over epochs
+    if step < 2:
+      epoch_range = range(0,num_epochs)
+    else:
+      epoch_range = range(0,num_epochs,step)
+    for jj in epoch_range:#Iterate over epochs
       print('Point: ' + str(ii+1) + ' of ' + str(len(data['idx'])) + ' Iteration: ' + str(jj+1) + ' of ' + str(len(data['data'][ii])))
       truth_bin_nums = np.argmax(truth,axis=2)
       print('True Value(s): ' + str(truth_bin_nums.T))
@@ -91,6 +95,7 @@ if __name__ == "__main__":
       #  output = backProject(output,args.coord_type, data['foc_l'])
       if args.bin is not None:
         probs = probsfromlogits(output)
+        print(probs)
         flag = False
         fig = None
         ax = None
