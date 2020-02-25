@@ -68,9 +68,11 @@ def parseFiles(idx,traj_data,trial_dir, model):
   p0 = np.array(traj_data[image_idx][0])
   local_pts = []
   idx = idx[1:]#Cut out first point (will be (0,0,0)
+  ctr = 0
   for i in idx:
     state = traj_data[i]
     point = np.matmul(R0.T,np.array(state[0]) - p0)
+    #print('i = ' + str(ctr) + 'point = ' + str(point))
     if model.foc_l > 0:
         #Convert into image coordinates
         x = float(point[0])#Local Forward
@@ -81,9 +83,12 @@ def parseFiles(idx,traj_data,trial_dir, model):
         image_depth = x#model.foc_l/x
         point = np.array((image_depth,image_left, image_up))
     #Convert into bins
-    bin_nums = (point - model.min)/(model.max-model.min)
+    min_i = model.min[ctr]
+    max_i = model.max[ctr]
+    bin_nums = (point - min_i)/(max_i-min_i)
     bin_nums = (point*model.bins).astype(int)
     bin_nums = np.clip(bin_nums,a_min=0,a_max=model.bins-1)
+    ctr += 1
 
     labels = np.zeros((3,model.bins))
     
@@ -204,6 +209,8 @@ def main():
   parser.add_argument('--bins', type=int, default=100, help='number of bins per coordinate')
   parser.add_argument('--dense', type=int, default=0, help='number of additional dense layers')
   args = parser.parse_args()
+  args.min = [(0,-0.5,-0.1),(0,-1,-0.15),(0,-1.5,-0.2),(0,-2,-0.3),(0,-3,-0.5)]
+  args.max = [(1,0.5,0.1),(2,1,0.15),(4,1.5,0.2),(6,2,0.3),(7.3,0.5)]
 
   if (args.gpus is not None):
     os.environ["CUDA_VISIBLE_DEVICES"]=args.gpus

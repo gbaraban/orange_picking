@@ -136,7 +136,7 @@ class OrangeClassNet:
     #Training
     self.losses = []#[tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=self.waypoint_output[ii], logits=self.logits[ii])) for ii in range(3)]
     for ii in range(self.num_points):
-        for jj in range(1,2):
+        for jj in range(3):
             temp = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(labels=self.waypoint_output[jj][:,ii,:], logits=self.logits[ii][jj]))
             self.losses.append(temp)
 
