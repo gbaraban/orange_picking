@@ -210,7 +210,7 @@ def main():
   parser.add_argument('--dense', type=int, default=0, help='number of additional dense layers')
   args = parser.parse_args()
   args.min = [(0,-0.5,-0.1),(0,-1,-0.15),(0,-1.5,-0.2),(0,-2,-0.3),(0,-3,-0.5)]
-  args.max = [(1,0.5,0.1),(2,1,0.15),(4,1.5,0.2),(6,2,0.3),(7.3,0.5)]
+  args.max = [(1,0.5,0.1),(2,1,0.15),(4,1.5,0.2),(6,2,0.3),(7,0.3,0.5)]
 
   if (args.gpus is not None):
     os.environ["CUDA_VISIBLE_DEVICES"]=args.gpus
@@ -245,11 +245,13 @@ def main():
   print ('Validation Samples: ' + str(num_val_samples))
   data_loc = copy.deepcopy(args.data)
   data_loc_name = data_loc.strip("..").strip(".").replace("/", "_")
-  mean_img_loc = data_loc + "../mean_img" + data_loc_name 
+  mean_img_loc = data_loc + "../mean_img" + data_loc_name + '.npy' 
   if not (os.path.exists(mean_img_loc)):
+    print('mean image file not found')
     mean_image = compute_mean_image(train_indices, data_loc, model)
     np.save(mean_img_loc, mean_image)
   else:
+    print('mean image file found')
     mean_image = np.load(mean_img_loc)
   # mean_image = np.zeros((model.h, model.w, 3))
 
@@ -324,7 +326,7 @@ def main():
       num_validation = len(val_indices)
       #val_summary = 0
       val_cost = np.zeros((1,))
-      resnet_output = np.zeros((1, 3, 0, model.bins)) # 2nd arg for num_waypoints
+      resnet_output = np.zeros((args.num_pts, 3, 0, model.bins)) # 2nd arg for num_waypoints
       raw_losses = np.zeros((3,))
 
       while val_batch_idx < num_validation:
