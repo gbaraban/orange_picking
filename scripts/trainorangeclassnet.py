@@ -1,5 +1,6 @@
 import tensorflow as tf
 import numpy as np
+import scipy.special as scispec
 import argparse
 import pickle
 import os
@@ -68,9 +69,11 @@ def parseFiles(idx,traj_data,trial_dir, model):
   p0 = np.array(traj_data[image_idx][0])
   local_pts = []
   idx = idx[1:]#Cut out first point (will be (0,0,0)
+  ctr = 0
   for i in idx:
     state = traj_data[i]
     point = np.matmul(R0.T,np.array(state[0]) - p0)
+    #print('i = ' + str(ctr) + 'point = ' + str(point))
     if model.foc_l > 0:
         #Convert into image coordinates
         x = float(point[0])#Local Forward
@@ -81,9 +84,14 @@ def parseFiles(idx,traj_data,trial_dir, model):
         image_depth = x#model.foc_l/x
         point = np.array((image_depth,image_left, image_up))
     #Convert into bins
-    bin_nums = (point - model.min)/(model.max-model.min)
+    min_i = model.min[ctr]
+    max_i = model.max[ctr]
+    bin_nums = (point - min_i)/(max_i-min_i)
     bin_nums = (point*model.bins).astype(int)
+    if (max(bin_nums) > model.bins-1) or (min(bin_nums) < 0):
+        print(str(point) + ' is out of bounds: ' + str(min_i) + ' ' + str(max_i))
     bin_nums = np.clip(bin_nums,a_min=0,a_max=model.bins-1)
+    ctr += 1
 
     labels = np.zeros((3,model.bins))
     
@@ -128,6 +136,7 @@ def loadData(idx,run_dir,model,mean_image,dt = 1):
   waypoints_z = []
   trial_num = np.floor(idx/reduced_N).astype(int)
   image_num = np.mod(idx,reduced_N)
+  count = 0
   for trial_idx, image_idx in zip(trial_num,image_num):
     trial_dir = run_dir+"/"+trial_list[trial_idx]+"/"
     traj_data = []
@@ -144,6 +153,9 @@ def loadData(idx,run_dir,model,mean_image,dt = 1):
     waypoints_z.append(waypoint[:,2,:])
     image = np.array(image) - mean_image
     images.append(image)
+    count += 1
+    # if(count % 100 == 0):
+    #   print(count)
   waypoints_x = np.array(waypoints_x)
   waypoints_y = np.array(waypoints_y)
   waypoints_z = np.array(waypoints_z)
@@ -182,6 +194,29 @@ def compute_mean_image(idx,run_dir,model,dt = 1):
   
   return mean_image
   
+def acc_metric(logits,x,y,z, model):
+    soft_probs = scispec.softmax(logits,axis=4)
+    truth = [x,y,z]
+    pt_list = []
+    for pt in range(model.num_points):
+        coord_list = []
+        for ii in range(3):
+            bin_length = float(model.max[pt][ii] - model.min[pt][ii])/model.bins
+            logit_bin = np.argmax(logits[pt][ii],axis=1)
+            print(truth[ii].shape)
+            true_bin = np.argmax(truth[ii][:,pt,:],axis=1)
+            dist = (logit_bin - true_bin)*bin_lenth
+            coord_list.append(dist)
+        x_diff = coord_list[0]
+        y_diff = coord_list[1]
+        z_diff = coord_list[2]
+        print(x_diff.shape)
+        dist = np.hstack([x_diff, y_diff, z_diff])
+        print(dist.shape)
+        dist = np.linalg.norm(dist,axis=0)
+        dist = np.mean(dist)
+        pt_list.append(pt_list)
+    return pt_list
 
 
 
@@ -204,12 +239,14 @@ def main():
   parser.add_argument('--bins', type=int, default=100, help='number of bins per coordinate')
   parser.add_argument('--dense', type=int, default=0, help='number of additional dense layers')
   args = parser.parse_args()
+  args.min = [(0,-0.5,-0.1),(0,-1,-0.15),(0,-1.5,-0.2),(0,-2,-0.3),(0,-3,-0.5)]
+  args.max = [(1,0.5,0.1),(2,1,0.15),(4,1.5,0.2),(6,2,0.3),(7,0.3,0.5)]
 
   if (args.gpus is not None):
     os.environ["CUDA_VISIBLE_DEVICES"]=args.gpus
 
   # Model and optimization params
-  val_perc = 0.2
+  val_perc = 0.075
   #g_depths = [64, 64, 64]
   #f_depths = [64, 64, 64]
   batch_size = args.batch_size#512#1024#64
@@ -237,12 +274,20 @@ def main():
   print ('Training Samples: ' + str(num_train_samples))
   print ('Validation Samples: ' + str(num_val_samples))
   data_loc = copy.deepcopy(args.data)
+<<<<<<< HEAD
+  data_loc_name = data_loc.strip("..").strip(".").strip("/").replace("/", "_")
+  mean_img_loc = data_loc + "../mean_img_" + data_loc_name + '.npy' 
+  print(mean_img_loc)
+=======
   data_loc_name = data_loc.strip("..").strip(".").replace("/", "_")
-  mean_img_loc = data_loc + "../mean_img" + data_loc_name 
+  mean_img_loc = data_loc + "../mean_img_" + data_loc_name + '.npy' 
+>>>>>>> 6c1072e84fd56da7b93e369dfc08770a5fc4807b
   if not (os.path.exists(mean_img_loc)):
+    print('mean image file not found')
     mean_image = compute_mean_image(train_indices, data_loc, model)
     np.save(mean_img_loc, mean_image)
   else:
+    print('mean image file found')
     mean_image = np.load(mean_img_loc)
   # mean_image = np.zeros((model.h, model.w, 3))
 
@@ -308,7 +353,9 @@ def main():
         batch_idx = batch_idx + batch_size
         iters = iters + 1
         if iters % 20 == 0:
-          summary = sess.run(model.train_summ, feed_dict=feed_dict)
+          summary, logits = sess.run([model.train_summ,model.logits], feed_dict=feed_dict)
+          accuracy = acc_metric(logits,train_outputs_x,train_outputs_y,train_outputs_z, model)
+          print(accuracy)
           train_writer.add_summary(summary, iters)
         #Clear references to data:
         train_inputs = train_outputs = feed_dict[model.image_input] = feed_dict[model.waypoint_output_x] = feed_dict[model.waypoint_output_y] = feed_dict[model.waypoint_output_z] = None
@@ -317,8 +364,9 @@ def main():
       num_validation = len(val_indices)
       #val_summary = 0
       val_cost = np.zeros((1,))
-      resnet_output = np.zeros((1, 3, 0, model.bins)) # 2nd arg for num_waypoints
+      resnet_output = np.zeros((args.num_pts, 3, 0, model.bins)) # 2nd arg for num_waypoints
       raw_losses = np.zeros((3,))
+      accuracy = []
 
       while val_batch_idx < num_validation:
         val_batch_endx = min(val_batch_idx + batch_size, num_validation)
@@ -333,12 +381,15 @@ def main():
         #val_summary_temp
         val_cost = np.multiply(val_cost, (float(val_batch_idx)/val_batch_endx)) + np.multiply(val_cost_temp, (float(val_batch_endx-val_batch_idx)/val_batch_endx))
         resnet_output_temp = np.array(resnet_output_temp)
+        accuracy.append(acc_metric(resnet_output_temp,val_dict[model.waypoint_output[0],val_dict[model.waypoint_output[1],val_dict[model.waypoint_output[2],model))
         resnet_output = np.concatenate((resnet_output, resnet_output_temp), axis=2)
         raw_losses = np.multiply(raw_losses_temp, (float(val_batch_idx)/val_batch_endx)) + np.multiply(np.array(raw_losses_temp), (float(val_batch_endx-val_batch_idx)/val_batch_endx))
 
         val_batch_idx = val_batch_endx
       
+      accuracy = np.mean(accuracy,axis=0)
       print('Validation Summary = ', val_cost)
+      print('Accuracy = ',accuracy)
       resnet_output = np.array(resnet_output)
       print(raw_losses)
       print(resnet_output.shape)
@@ -353,9 +404,12 @@ def main():
       val_writer.flush()
       # Save variables
       if ((epoch + 1) % save_variables_divider == 0 or (epoch == 0) or (epoch == num_epochs - 1)):
+          print("Saving variables")
           if epoch == 0:
+            print("For epoch 0")
             saver.save(sess, os.path.join(save_path, 'variables'), epoch)
           else:
+            print("For epoch ", epoch)
             saver.save(sess, os.path.join(save_path, 'variables'), epoch, write_meta_graph=False)
       # Re-shuffle data after each epoch
       rand_idx = np.random.permutation(num_train_samples)
