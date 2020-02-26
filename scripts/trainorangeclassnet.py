@@ -88,6 +88,8 @@ def parseFiles(idx,traj_data,trial_dir, model):
     max_i = model.max[ctr]
     bin_nums = (point - min_i)/(max_i-min_i)
     bin_nums = (point*model.bins).astype(int)
+    if (max(bin_nums) > model.bins-1) or (min(bin_nums) < 0):
+        print(str(point) + ' is out of bounds: ' + str(min_i) + ' ' + str(max_i))
     bin_nums = np.clip(bin_nums,a_min=0,a_max=model.bins-1)
     ctr += 1
 
