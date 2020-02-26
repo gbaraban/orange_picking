@@ -1,5 +1,6 @@
 import tensorflow as tf
 import numpy as np
+import scipy.special as scispec
 import argparse
 import pickle
 import os
@@ -191,6 +192,29 @@ def compute_mean_image(idx,run_dir,model,dt = 1):
   
   return mean_image
   
+def acc_metric(logits,x,y,z, model):
+    soft_probs = scispec.softmax(logits,axis=4)
+    truth = [x,y,z]
+    pt_list = []
+    for pt in range(model.num_points):
+        coord_list = []
+        for ii in range(3):
+            bin_length = float(model.max[pt][ii] - model.min[pt][ii])/model.bins
+            logit_bin = np.argmax(logits[pt][ii],axis=1)
+            print(truth[ii].shape)
+            true_bin = np.argmax(truth[ii][:,pt,:],axis=1)
+            dist = (logit_bin - true_bin)*bin_lenth
+            coord_list.append(dist)
+        x_diff = coord_list[0]
+        y_diff = coord_list[1]
+        z_diff = coord_list[2]
+        print(x_diff.shape)
+        dist = np.hstack([x_diff, y_diff, z_diff])
+        print(dist.shape)
+        dist = np.linalg.norm(dist,axis=0)
+        dist = np.mean(dist)
+        pt_list.append(pt_list)
+    return pt_list
 
 
 
@@ -248,9 +272,14 @@ def main():
   print ('Training Samples: ' + str(num_train_samples))
   print ('Validation Samples: ' + str(num_val_samples))
   data_loc = copy.deepcopy(args.data)
+<<<<<<< HEAD
   data_loc_name = data_loc.strip("..").strip(".").strip("/").replace("/", "_")
   mean_img_loc = data_loc + "../mean_img_" + data_loc_name + '.npy' 
   print(mean_img_loc)
+=======
+  data_loc_name = data_loc.strip("..").strip(".").replace("/", "_")
+  mean_img_loc = data_loc + "../mean_img_" + data_loc_name + '.npy' 
+>>>>>>> 6c1072e84fd56da7b93e369dfc08770a5fc4807b
   if not (os.path.exists(mean_img_loc)):
     print('mean image file not found')
     mean_image = compute_mean_image(train_indices, data_loc, model)
@@ -322,7 +351,9 @@ def main():
         batch_idx = batch_idx + batch_size
         iters = iters + 1
         if iters % 20 == 0:
-          summary = sess.run(model.train_summ, feed_dict=feed_dict)
+          summary, logits = sess.run([model.train_summ,model.logits], feed_dict=feed_dict)
+          accuracy = acc_metric(logits,train_outputs_x,train_outputs_y,train_outputs_z, model)
+          print(accuracy)
           train_writer.add_summary(summary, iters)
         #Clear references to data:
         train_inputs = train_outputs = feed_dict[model.image_input] = feed_dict[model.waypoint_output_x] = feed_dict[model.waypoint_output_y] = feed_dict[model.waypoint_output_z] = None
@@ -333,6 +364,7 @@ def main():
       val_cost = np.zeros((1,))
       resnet_output = np.zeros((args.num_pts, 3, 0, model.bins)) # 2nd arg for num_waypoints
       raw_losses = np.zeros((3,))
+      accuracy = []
 
       while val_batch_idx < num_validation:
         val_batch_endx = min(val_batch_idx + batch_size, num_validation)
@@ -347,12 +379,15 @@ def main():
         #val_summary_temp
         val_cost = np.multiply(val_cost, (float(val_batch_idx)/val_batch_endx)) + np.multiply(val_cost_temp, (float(val_batch_endx-val_batch_idx)/val_batch_endx))
         resnet_output_temp = np.array(resnet_output_temp)
+        accuracy.append(acc_metric(resnet_output_temp,val_dict[model.waypoint_output[0],val_dict[model.waypoint_output[1],val_dict[model.waypoint_output[2],model))
         resnet_output = np.concatenate((resnet_output, resnet_output_temp), axis=2)
         raw_losses = np.multiply(raw_losses_temp, (float(val_batch_idx)/val_batch_endx)) + np.multiply(np.array(raw_losses_temp), (float(val_batch_endx-val_batch_idx)/val_batch_endx))
 
         val_batch_idx = val_batch_endx
       
+      accuracy = np.mean(accuracy,axis=0)
       print('Validation Summary = ', val_cost)
+      print('Accuracy = ',accuracy)
       resnet_output = np.array(resnet_output)
       print(raw_losses)
       print(resnet_output.shape)
