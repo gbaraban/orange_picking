@@ -136,6 +136,7 @@ def loadData(idx,run_dir,model,mean_image,dt = 1):
   waypoints_z = []
   trial_num = np.floor(idx/reduced_N).astype(int)
   image_num = np.mod(idx,reduced_N)
+  count = 0
   for trial_idx, image_idx in zip(trial_num,image_num):
     trial_dir = run_dir+"/"+trial_list[trial_idx]+"/"
     traj_data = []
@@ -152,6 +153,9 @@ def loadData(idx,run_dir,model,mean_image,dt = 1):
     waypoints_z.append(waypoint[:,2,:])
     image = np.array(image) - mean_image
     images.append(image)
+    count += 1
+    # if(count % 100 == 0):
+    #   print(count)
   waypoints_x = np.array(waypoints_x)
   waypoints_y = np.array(waypoints_y)
   waypoints_z = np.array(waypoints_z)
@@ -242,7 +246,7 @@ def main():
     os.environ["CUDA_VISIBLE_DEVICES"]=args.gpus
 
   # Model and optimization params
-  val_perc = 0.002
+  val_perc = 0.075
   #g_depths = [64, 64, 64]
   #f_depths = [64, 64, 64]
   batch_size = args.batch_size#512#1024#64
@@ -270,8 +274,14 @@ def main():
   print ('Training Samples: ' + str(num_train_samples))
   print ('Validation Samples: ' + str(num_val_samples))
   data_loc = copy.deepcopy(args.data)
+<<<<<<< HEAD
+  data_loc_name = data_loc.strip("..").strip(".").strip("/").replace("/", "_")
+  mean_img_loc = data_loc + "../mean_img_" + data_loc_name + '.npy' 
+  print(mean_img_loc)
+=======
   data_loc_name = data_loc.strip("..").strip(".").replace("/", "_")
   mean_img_loc = data_loc + "../mean_img_" + data_loc_name + '.npy' 
+>>>>>>> 6c1072e84fd56da7b93e369dfc08770a5fc4807b
   if not (os.path.exists(mean_img_loc)):
     print('mean image file not found')
     mean_image = compute_mean_image(train_indices, data_loc, model)
@@ -394,9 +404,12 @@ def main():
       val_writer.flush()
       # Save variables
       if ((epoch + 1) % save_variables_divider == 0 or (epoch == 0) or (epoch == num_epochs - 1)):
+          print("Saving variables")
           if epoch == 0:
+            print("For epoch 0")
             saver.save(sess, os.path.join(save_path, 'variables'), epoch)
           else:
+            print("For epoch ", epoch)
             saver.save(sess, os.path.join(save_path, 'variables'), epoch, write_meta_graph=False)
       # Re-shuffle data after each epoch
       rand_idx = np.random.permutation(num_train_samples)

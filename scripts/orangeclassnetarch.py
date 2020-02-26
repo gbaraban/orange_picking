@@ -65,6 +65,7 @@ def resnet8(img_input, num_pts, bins, scope='Prediction', reuse=False, f=0.25, r
         x7 = add([x5, x6])
 
         x = Flatten()(x7)
+        print(x.shape.dims)
         x = Activation('relu')(x)
         if kr is not None:
           x = Dropout(0.5)(x)
