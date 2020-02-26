@@ -43,7 +43,7 @@ def probsfromlogits(state):
   return np.array(out_list)
     
       
-def xyzfrombins(state,data):
+def xyzfrombins(state,pt,data):
   #print(state.shape)
   state = state.reshape(3,-1)
   xs = state[0,:]
@@ -51,7 +51,7 @@ def xyzfrombins(state,data):
   zs = state[2,:]
   out_list = []
   for x,y,z in zip(xs,ys,zs):
-    o = np.array((x,y,z))*(data['max'] - data['min'])/float(data['bins']) + data['min']
+    o = np.array((x,y,z))*(data['max'][pt] - data['min'][pt])/float(data['bins']) + data['min'][pt]
     out_list.append(o[0])
     out_list.append(o[1])
     out_list.append(o[2])
@@ -95,7 +95,7 @@ if __name__ == "__main__":
       #  output = backProject(output,args.coord_type, data['foc_l'])
       if args.bin is not None:
         probs = probsfromlogits(output)
-        print(probs)
+        #print(probs)
         flag = False
         fig = None
         ax = None
@@ -112,20 +112,23 @@ if __name__ == "__main__":
                           fig = plt.figure()
                           ax = plt.axes(projection='3d')
                           flag = True
-                        xyz = xyzfrombins(np.array([xx,yy,zz]),data)
+                        xyz = xyzfrombins(np.array([xx,yy,zz]),pt,data)
+                        #print(xyz)
                         ax.plot3D([xyz[0]],[xyz[1]],[xyz[2]],color=(color_list[ii]+(localprob,)),marker='o')
-                        print([xx,yy,zz,localprob])
+                        #print([xx,yy,zz,localprob])
         if flag:
           #for pt in range(probs.shape[0]):
           x_bin_num = truth_bin_nums[0,:]
           y_bin_num = truth_bin_nums[1,:]
           z_bin_num = truth_bin_nums[2,:]
-          true_xyz = xyzfrombins(np.array([x_bin_num,y_bin_num,z_bin_num]),data)
-          ax.plot3D([true_xyz[0]],[true_xyz[1]],[true_xyz[2]],'g+')
-          ax.set_xlim3d(data['min'][0],data['max'][0])
-          ax.set_ylim3d(data['min'][1],data['max'][1])
-          ax.set_zlim3d(data['min'][2],data['max'][2])
+          for pt in range(len(x_bin_num)):
+            true_xyz = xyzfrombins(np.array([x_bin_num[pt],y_bin_num[pt],z_bin_num[pt]]),pt,data)
+            ax.plot3D([true_xyz[0]],[true_xyz[1]],[true_xyz[2]],'g+')
+          #ax.set_xlim3d(data['min'][0],data['max'][0])
+          #ax.set_ylim3d(data['min'][1],data['max'][1])
+          #ax.set_zlim3d(data['min'][2],data['max'][2])
           plt.show()
+          fig.savefig('pt'+str(ii)+'iter'+str(jj)+'.png')
         else:
           print('No points above probability threshold of: ' + str(prob_threshold))
 
@@ -141,4 +144,4 @@ if __name__ == "__main__":
       #l,r = ax_list.zlim()
       #zlim(min(0,l),max(0,r))
 
-  plt.show()
+  #plt.show()
