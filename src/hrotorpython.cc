@@ -14,6 +14,7 @@
 #include "hrotor.h"
 #include "ddp.h"
 #include "so3.h"
+#include <Eigen/Geometry>
 
 using namespace std;
 using namespace Eigen;
@@ -23,7 +24,7 @@ typedef Ddp<Body3dState, 12, 4> HrotorDdp;
 typedef ConstraintCost<Body3dState, 12, 4, Dynamic, 3> DirectionConstraintCost;
 
 //Params params;
-void solver_process(int N, double tf, int epochs, Vector3d x0, double yaw0, Vector3d xfp, double yawf,
+void solver_process(int N, double tf, int epochs, Vector3d x0, Matrix3d R0, Vector3d xfp, double yawf,
      Vector3d cyl_o, double cyl_r, double cyl_h,
      Vector12d q, Vector12d qf, Vector4d r, double yawgain, double rpgain,double dir_gain,
       double stiffness, double stiff_mult, vector<Body3dState> &xout)
@@ -93,7 +94,8 @@ void solver_process(int N, double tf, int epochs, Vector3d x0, double yaw0, Vect
   xout.resize(N+1);
   xout[0].Clear();
   xout[0].p = x0;
-  SO3::Instance().q2g(xout[0].R, Vector3d(0,0,yaw0));    
+  xout[0].R = R0;
+  //SO3::Instance().q2g(xout[0].R, Vector3d(0,0,yaw0));    
 
   // initial controls (e.g. hover at one place)
   vector<Vector4d> us(N);
@@ -138,6 +140,78 @@ void solver_process(int N, double tf, int epochs, Vector3d x0, double yaw0, Vect
 }
 
 static PyObject *
+gcophrotor_trajgen_R(PyObject *self, PyObject *args)
+{
+  
+  int N;
+  double tf;
+  int epochs;
+  double x0x, x0y, x0z;
+  double R01, R02, R03;
+  double R04, R05, R06;
+  double R07, R08, R09;
+  double xfx, xfy, xfz, yawf;
+  double cx, cy, cz;
+  double cyl_r;
+  double cyl_h;
+  Vector12d q;
+  Vector12d qf;
+  Vector4d r;
+  double yawgain;
+  double rpgain;
+  double dir_gain;
+  double stiffness;
+  double stiff_mult;
+  if (!PyArg_ParseTuple(args, "idi(ddd)d(ddd)d(ddd)dd(dddddddddddd)(dddddddddddd)(dddd)ddddd", 
+        &N, &tf, &epochs, &x0x, &x0y, &x0z, 
+        &R01, &R02, &R03, 
+        &R04, &R05, &R06, 
+        &R07, &R08, R09, 
+        &xfx, &xfy, &xfz, &yawf,
+        &cx, &cy, &cz, &cyl_r, &cyl_h, 
+        &(q[0]), &(q[1]), &(q[2]), &(q[3]),
+        &(q[4]), &(q[5]), &(q[6]), &(q[7]),
+        &(q[8]), &(q[9]), &(q[10]), &(q[11]),
+        &(qf[0]), &(qf[1]), &(qf[2]), &(qf[3]),
+        &(qf[4]), &(qf[5]), &(qf[6]), &(qf[7]),
+        &(qf[8]), &(qf[9]), &(qf[10]), &(qf[11]),
+        &(r[0]), &(r[1]), &(r[2]), &(r[3]),&yawgain,&rpgain,&dir_gain,
+        &stiffness, &stiff_mult)) {
+    cout << "Parse Failed" << endl;
+    return NULL;
+  }
+  vector<Body3dState> xs(N+1);
+  Vector3d x0(x0x,x0y,x0z);
+  Vector3d xfp(xfx,xfy,xfz);
+  Vector3d cyl_o(cx,cy,cz);
+  Matrix3d R0;
+  R0 << R01, R02, R03,
+        R04, R05, R06,
+        R07, R08, R09;
+  solver_process(N, tf, epochs, x0, R0, xfp, yawf,
+                 cyl_o, cyl_r, cyl_h, q,qf,r,yawgain,rpgain,dir_gain,
+                 stiffness, stiff_mult, xs);
+  //Construct return object
+  PyObject* listObj = PyList_New(xs.size());
+  if (!listObj) throw logic_error("Failed to make list Object");
+  for (int ii = 0; ii < xs.size(); ++ii) {
+    Vector3d pos = xs[ii].p;
+    Matrix3d rot = xs[ii].R;
+    PyObject *tuple = Py_BuildValue("(ddd)((ddd),(ddd),(ddd))",
+                                     pos(0),pos(1),pos(2),
+                                     rot(0,0),rot(0,1),rot(0,2),
+                                     rot(1,0),rot(1,1),rot(1,2),
+                                     rot(2,0),rot(2,1),rot(2,2));
+    if (!tuple) {
+      Py_DECREF(listObj);
+      throw logic_error("Failed to make tuple");
+    }
+    PyList_SET_ITEM(listObj, ii, tuple);
+  }
+  return listObj;
+}
+
+static PyObject *
 gcophrotor_trajgen(PyObject *self, PyObject *args)
 {
   
@@ -175,7 +249,9 @@ gcophrotor_trajgen(PyObject *self, PyObject *args)
   Vector3d x0(x0x,x0y,x0z);
   Vector3d xfp(xfx,xfy,xfz);
   Vector3d cyl_o(cx,cy,cz);
-  solver_process(N, tf, epochs, x0, yaw0, xfp, yawf,
+  Matrix3d R0;
+  R0 << cos(yaw0), -sin(yaw0), 0, sin(yaw0), cos(yaw0), 0, 0, 0, 1;
+  solver_process(N, tf, epochs, x0, R0, xfp, yawf,
                  cyl_o, cyl_r, cyl_h, q,qf,r,yawgain,rpgain,dir_gain,
                  stiffness, stiff_mult, xs);
   //Construct return object
@@ -200,6 +276,7 @@ gcophrotor_trajgen(PyObject *self, PyObject *args)
 
 static PyMethodDef pyMethods[] = {
   {"trajgen", gcophrotor_trajgen, METH_VARARGS, "Generate a trajectory."},
+  {"trajgen_R", gcophrotor_trajgen_R, METH_VARARGS, "Generate a trajectory (with R fully define)."},
   {NULL, NULL, 0, NULL}
 };
 
