@@ -27,8 +27,8 @@ def gcop_solve(odom,tree_pos,orange_pos):
        5,5,5)#velocity
   r = (.1,.1,.1,1)
   yaw_g = 10
-  tree_R = #0.6
-  treeHeight = #1.6
+  #tree_R = #0.6
+  #treeHeight = #1.6
   rp_g = 0
   direction_gain = 0 
   p0 = (odom.pose.pose.position.x, odom.pose.pose.position.y, odom.pose.pose.position.z)
@@ -39,30 +39,37 @@ def gcop_solve(odom,tree_pos,orange_pos):
                                   tuple(q),tuple(qf),tuple(r),yaw_g,rp_g,direction_gain,
                                   stiffness,stiff_mult)
   pts_per_sec = float(N)/tf
-  indices = np.floor(np.array([1 2 3])*pts_per_sec).astype(int)
+  indices = np.floor(np.array([1, 2, 3])*pts_per_sec).astype(int)
   point_list = [ref_traj[temp][0] for temp in indices]
   return point_list
 
 def main():
-  vrpn_topic = 'vrpn_something'
-  image_topic = 'camera/something'
+  vrpn_topic = '/vrpn_client/matrice/pose'
+  image_topic = '/camera/color/image_raw'
   parser = argparse.ArgumentParser()
   parser.add_argument('bag_dir', help='bag dir')
   args = parser.parse_args()
-  
+  f = open(args.bag_dir + "/bag_data.txt")
+  location={}
+  for line in f:
+    data = line.strip(" ").strip("\n").split(",")
+    location[data[0]] = [float(data[1]), float(data[2]), float(data[3])]
   #Get list of bags
   bag_list = os.listdir(args.bag_dir)
   print(bag_list)
   ctr = 0
   bridge = CvBridge()
   for bag_name in bag_list:
+    print(bag_name)
+    if not bag_name.endswith(".bag"):
+      continue
     filename = args.bag_dir + '/' + bag_name
     bag = rosbag.Bag(filename)
     save_folder = arg.bag_dir + '/bag' + str(ctr)
     os.makedirs(save_folder)
     data_dict = dict()
-    tree_pos = #something
-    orange_pos = #something
+    tree_pos = location["tree"]
+    orange_pos = location[bag_name]
     image = None
     odom = None
     image_t = -1
@@ -78,7 +85,7 @@ def main():
       if (image is not None) and (odom is not None):
         #Save Image
         cv_img = bridge.imgmsg_to_cv2(image, desired_encoding+"passthrough")
-        cv2.imwrite(save_folder,"image" + str(image_idx) ".png",cv_img)
+        cv2.imwrite(save_folder,"image" + str(image_idx) + ".png",cv_img)
         #Calculate GCOP
         data_dict[image_idx] = gcop_solve(odom,tree_pos,orange_pos)
         #Clean Up
