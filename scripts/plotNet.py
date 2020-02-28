@@ -62,7 +62,8 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser()
   parser.add_argument('fname', help='pickle file')
   #parser.add_argument('--coord_type', help='pickle file')
-  parser.add_argument('--bin', default=1, help='pickle file')
+  parser.add_argument('--bin', default=1, help='use classification')
+  parser.add_argument('--last', default=1, help='only show the last epoch')
   args = parser.parse_args()
   with open(args.fname,'rb') as f:
     data = pickle.load(f)
@@ -80,11 +81,14 @@ if __name__ == "__main__":
     #if args.coord_type is not None:
     #  truth = backProject(truth,args.coord_type, data['foc_l'])
     num_epochs = len(data['data'][ii])
-    step = int(num_epochs/5)
-    if step < 2:
-      epoch_range = range(0,num_epochs)
+    if args.last is None:
+      step = int(num_epochs/5)
+      if step < 2:
+        epoch_range = range(0,num_epochs)
+      else:
+        epoch_range = range(0,num_epochs,step)
     else:
-      epoch_range = range(0,num_epochs,step)
+      epoch_range = range(num_epochs-1,num_epochs)
     for jj in epoch_range:#Iterate over epochs
       print('Point: ' + str(ii+1) + ' of ' + str(len(data['idx'])) + ' Iteration: ' + str(jj+1) + ' of ' + str(len(data['data'][ii])))
       truth_bin_nums = np.argmax(truth,axis=2)
@@ -114,6 +118,8 @@ if __name__ == "__main__":
                           flag = True
                         xyz = xyzfrombins(np.array([xx,yy,zz]),pt,data)
                         #print(xyz)
+                        #if localprob*10 < 1:
+                        #  localprob *= 10
                         ax.plot3D([xyz[0]],[xyz[1]],[xyz[2]],color=(color_list[ii]+(localprob,)),marker='o')
                         #print([xx,yy,zz,localprob])
         if flag:
@@ -122,8 +128,12 @@ if __name__ == "__main__":
           y_bin_num = truth_bin_nums[1,:]
           z_bin_num = truth_bin_nums[2,:]
           for pt in range(len(x_bin_num)):
+            #Plot truth
             true_xyz = xyzfrombins(np.array([x_bin_num[pt],y_bin_num[pt],z_bin_num[pt]]),pt,data)
             ax.plot3D([true_xyz[0]],[true_xyz[1]],[true_xyz[2]],'g+')
+            #Plot argmax
+            argmax_xyz = xyzfrombins(np.array([np.argmax(probs[pt,0,:]),np.argmax(probs[pt,1,:]),np.argmax(probs[pt,2,:])]),pt,data)
+            ax.plot3D([argmax_xyz[0]],[argmax_xyz[1]],[argmax_xyz[2]],'yx')
           #ax.set_xlim3d(data['min'][0],data['max'][0])
           #ax.set_ylim3d(data['min'][1],data['max'][1])
           #ax.set_zlim3d(data['min'][2],data['max'][2])
