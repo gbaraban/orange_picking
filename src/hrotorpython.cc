@@ -162,11 +162,11 @@ gcophrotor_trajgen_R(PyObject *self, PyObject *args)
   double dir_gain;
   double stiffness;
   double stiff_mult;
-  if (!PyArg_ParseTuple(args, "idi(ddd)d(ddd)d(ddd)dd(dddddddddddd)(dddddddddddd)(dddd)ddddd", 
+  if (!PyArg_ParseTuple(args, "idi(ddd)(ddddddddd)(ddd)d(ddd)dd(dddddddddddd)(dddddddddddd)(dddd)ddddd", 
         &N, &tf, &epochs, &x0x, &x0y, &x0z, 
         &R01, &R02, &R03, 
         &R04, &R05, &R06, 
-        &R07, &R08, R09, 
+        &R07, &R08, &R09, 
         &xfx, &xfy, &xfz, &yawf,
         &cx, &cy, &cz, &cyl_r, &cyl_h, 
         &(q[0]), &(q[1]), &(q[2]), &(q[3]),
