@@ -48,15 +48,17 @@ def parseDirData(run_dir, seed, resample, val_perc, num_pts, dt = 1):
   # print(val_indices)
   return train_indices, val_indices
 
-def parseFiles(idx,traj_data,trial_dir, model):
+def parseFiles(idx,traj_data, t_dir, trial_loc, model):
+  trial_dir = trial_loc + t_dir
   idx = idx.astype(int)
   image_idx = idx[0]
   image = None
   for ii in range(model.num_images):
     temp_idx = max(0,image_idx - ii)
-    temp_image = img.open(trial_dir+'image'+str(temp_idx)+'.png').resize((model.h,model.w))
-    temp_image = np.array(temp_image.getdata()).reshape(temp_image.size[0],temp_image.size[1],3)
-    temp_image = temp_image[:,:,0:3]/255.0 #Cut out alpha
+    img_dir = trial_loc.rstrip("/") + "_np/" + t_dir + "/"
+    temp_image = np.load(img_dir+'image'+str(temp_idx)+'.npy') #.resize((model.w,model.h))
+    #temp_image = np.array(temp_image.getdata()).reshape(temp_image.size[1],temp_image.size[0],3)
+    #temp_image = temp_image[:,:,0:3]/255.0 #Cut out alpha
     # temp_image = temp_image/255.0
     
     if image is None:
@@ -118,7 +120,7 @@ def parseFiles(idx,traj_data,trial_dir, model):
   local_pts.resize((model.num_points,3,model.bins))
   return image, local_pts
 
-def loadData(idx,run_dir,model,mean_image,dt = 1):
+def loadData(idx,run_dir,model,dt = 1):
   num_points = model.num_points
   time_window = num_points*dt
   #Assume reduced N is constant for all trials
@@ -148,11 +150,13 @@ def loadData(idx,run_dir,model,mean_image,dt = 1):
       metadata = pickle.load(data_f, encoding='latin1')
     idx_final = image_idx + metadata['N']*time_window/metadata['tf']
     offset_idx = np.floor(np.linspace(image_idx,idx_final,num_points+1))
-    image, waypoint = parseFiles(offset_idx,traj_data,trial_dir, model)
+    image, waypoint = parseFiles(offset_idx,traj_data,trial_list[trial_idx] + "/", run_dir + "/", model)
     waypoints_x.append(waypoint[:,0,:])
     waypoints_y.append(waypoint[:,1,:])
     waypoints_z.append(waypoint[:,2,:])
-    image = np.array(image) - mean_image
+    image = np.array(image) #- mean_image
+    #if not image.shape == mean_image.shape:
+    #    print("check_mean")
     images.append(image)
     count += 1
     # if(count % 100 == 0):
@@ -190,9 +194,10 @@ def compute_mean_image(idx,run_dir,model,dt = 1):
       metadata = pickle.load(data_f, encoding='latin1')
     idx_final = image_idx + metadata['N']*time_window/metadata['tf']
     offset_idx = np.floor(np.linspace(image_idx,idx_final,num_points+1))
-    image, waypoint = parseFiles(offset_idx,traj_data,trial_dir, model)
+    image, waypoint = parseFiles(offset_idx,traj_data,trial_list[trial_idx] + "/", run_dir + "/", model)
     mean_image = np.multiply(mean_image, i/(i+1)) + np.multiply(np.array(image), 1/(i+1))
-    i += 1 
+    i += 1
+  
   return mean_image
   
 def acc_metric(logits,x,y,z, model):
@@ -245,7 +250,7 @@ def main():
     os.environ["CUDA_VISIBLE_DEVICES"]=args.gpus
 
   # Model and optimization params
-  val_perc = 0.1
+  val_perc = 0.07
   #g_depths = [64, 64, 64]
   #f_depths = [64, 64, 64]
   batch_size = args.batch_size#512#1024#64
@@ -274,7 +279,8 @@ def main():
   print ('Validation Samples: ' + str(num_val_samples))
   data_loc = copy.deepcopy(args.data)
   data_loc_name = data_loc.strip("..").strip(".").strip("/").replace("/", "_")
-  mean_img_loc = data_loc + "../mean_img_" + data_loc_name + '.npy' 
+  mean_img_loc = data_loc + "../mean_imgv2_" + data_loc_name + '.npy' 
+  print(mean_img_loc)
   if not (os.path.exists(mean_img_loc)):
     print('mean image file not found')
     mean_image = compute_mean_image(train_indices, data_loc, model)
@@ -282,9 +288,10 @@ def main():
   else:
     print('mean image file found')
     mean_image = np.load(mean_img_loc)
-  # mean_image = np.zeros((model.h, model.w, 3))
+  # mean_image = np.zeros((model.w, model.h, 3))
 
-  val_inputs, val_outputs_x, val_outputs_y, val_outputs_z = loadData(val_indices,data_loc,model,mean_image)
+  print("Loading Validation")
+  val_inputs, val_outputs_x, val_outputs_y, val_outputs_z = loadData(val_indices,data_loc,model)
 
   print ('Validation Loaded')
   train_path = addTimestamp(os.path.join(log_path, 'train_'))
@@ -336,7 +343,7 @@ def main():
       
       while batch_idx < num_train_samples:
         end_idx = min(batch_idx + batch_size, num_train_samples)
-        train_inputs, train_outputs_x, train_outputs_y, train_outputs_z = loadData(train_indices[batch_idx:end_idx],data_loc, model, mean_image)
+        train_inputs, train_outputs_x, train_outputs_y, train_outputs_z = loadData(train_indices[batch_idx:end_idx],data_loc, model)
         feed_dict[model.image_input] = train_inputs
         feed_dict[model.waypoint_output_x] = train_outputs_x
         feed_dict[model.waypoint_output_y] = train_outputs_y
@@ -347,6 +354,8 @@ def main():
         iters = iters + 1
         if iters % 20 == 0:
           summary, logits = sess.run([model.train_summ,model.logits], feed_dict=feed_dict)
+          print(np.array(logits).shape)
+          exit(0)
           accuracy = acc_metric(logits,train_outputs_x,train_outputs_y,train_outputs_z, model)
           print('Training Accuracy: ' + str(accuracy))
           train_writer.add_summary(summary, iters)

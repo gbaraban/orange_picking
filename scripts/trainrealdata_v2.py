@@ -25,16 +25,17 @@ def createStampedFolder(folder_path):
 
 def parseDirData(run_dir, seed, resample, val_perc, num_pts, dt = 1):
   trial_list = os.listdir(run_dir)
+  num_list = []
+  traj_data = []
   num_samples = 0
-  time_window = num_pts*dt
   for trial_dir in trial_list:
-    with open(run_dir+"/"+trial_dir+"/metadata.pickle",'rb') as data_f:
-      data = pickle.load(data_f)#, encoding='latin1')
-      N = data['N']
-      tf = data['tf']
-      h = float(N)/tf
-      reduced_N = int(N - time_window*h)
-      num_samples += reduced_N
+    trial_list = os.listdir(run_dir+'/'+trial_dir)
+    num_samples_i = len(trial_list) - 1
+    num_list.append(num_samples_i)
+    with open(run_dir+'/'+trial_dir+'/data.pickle','rb') as f:
+      data = pickle.load(f,encoding='latin1')
+      traj_data.append(data)
+    num_samples += num_samples_i
   np.random.seed(seed)
   if resample:
     rand_idx = np.random.choice(num_samples, size=num_samples, replace=True)
@@ -46,43 +47,39 @@ def parseDirData(run_dir, seed, resample, val_perc, num_pts, dt = 1):
   train_indices = rand_idx[:train_idx]
   # print(train_indices)
   # print(val_indices)
-  return train_indices, val_indices
+  return train_indices, val_indices, num_list, traj_data
 
-def parseFiles(idx,traj_data,trial_dir, model):
+def parseFiles(idx,num_list,run_dir,model,traj_data):
   idx = idx.astype(int)
-  image_idx = idx[0]
+  trial_idx = 0
+  while True:
+    #print(num_list[trial_idx])
+    if num_list[trial_idx] <= idx:
+      #print(num_list[trial_idx])
+      idx = idx - num_list[trial_idx]
+      trial_idx += 1
+    else:
+      break
+  #print((idx,trial_idx))
+  trial_list = os.listdir(run_dir)
+  trial = trial_list[trial_idx]
   image = None
+  image_idx = idx
   for ii in range(model.num_images):
     temp_idx = max(0,image_idx - ii)
-    temp_image = img.open(trial_dir+'image'+str(temp_idx)+'.png').resize((model.h,model.w))
-    temp_image = np.array(temp_image.getdata()).reshape(temp_image.size[0],temp_image.size[1],3)
-    temp_image = temp_image[:,:,0:3]/255.0 #Cut out alpha
+    img_run_dir = run_dir.rstrip("/") + "_np"
+    temp_image = np.load(img_run_dir+'/'+ trial + '/image' + str(temp_idx) + '.npy') #.resize((model.h,model.w))
+    #temp_image = np.array(temp_image.getdata()).reshape(temp_image.size[0],temp_image.size[1],3)
+    #temp_image = temp_image[:,:,0:3]/255.0 #Cut out alpha
     # temp_image = temp_image/255.0
-    
     if image is None:
         image = temp_image
     else:
         image = np.concatenate((image,temp_image),axis=2)
-  #print(image_idx)
-  #print(traj_data)
-  R0 = np.array(traj_data[image_idx][1])
-  p0 = np.array(traj_data[image_idx][0])
+  points = traj_data[trial_idx][idx]
   local_pts = []
-  idx = idx[1:]#Cut out first point (will be (0,0,0)
   ctr = 0
-  for i in idx:
-    state = traj_data[i]
-    point = np.matmul(R0.T,np.array(state[0]) - p0)
-    #print('i = ' + str(ctr) + 'point = ' + str(point))
-    if model.foc_l > 0:
-        #Convert into image coordinates
-        x = float(point[0])#Local Forward
-        y = float(point[1])#Local Left
-        z = float(point[2])#Local Up
-        image_up = model.foc_l*z/x
-        image_left = model.foc_l*y/x
-        image_depth = x#model.foc_l/x
-        point = np.array((image_depth,image_left, image_up))
+  for point in points:
     #Convert into bins
     min_i = model.min[ctr]
     max_i = model.max[ctr]
@@ -93,107 +90,36 @@ def parseFiles(idx,traj_data,trial_dir, model):
             #print(str(point) + ' is out of bounds: ' + str(min_i) + ' ' + str(max_i))
     bin_nums = np.clip(bin_nums_scaled,a_min=0,a_max=model.bins-1)
     ctr += 1
-
-    labels = np.zeros((3,model.bins))
-    
-    mean = 0.99
-    stdev = 0.0001
+    labels = np.zeros((3,model.bins))    
+    mean = 0.4
+    stdev = 1
     for j in range(len(bin_nums)):
       for i in range(labels.shape[1]):
         labels[j][i] = mean * (np.exp((-np.power(bin_nums[j]-i, 2))/(2 * np.power(stdev, 2))))
-
-    # for ii in range(3):
-    #   #Adding smoothing to labels
-    #   labels[ii,bin_nums[ii]] = 0.5
-    #   if bin_nums[ii] > 0:
-    #     labels[ii,bin_nums[ii]-1] = 0.25
-    #   else:
-    #     labels[ii,bin_nums[ii]] += 0.25
-    #   if bin_nums[ii] < (model.bins-1):
-    #     labels[ii,bin_nums[ii] + 1] = 0.25
-    #   else:
-    #     labels[ii,bin_nums[ii]] += 0.25
     local_pts.append(labels)
   local_pts = np.array(local_pts)
   local_pts.resize((model.num_points,3,model.bins))
   return image, local_pts
 
-def loadData(idx,run_dir,model,mean_image,dt = 1):
-  num_points = model.num_points
-  time_window = num_points*dt
-  #Assume reduced N is constant for all trials
-  trial_list = os.listdir(run_dir)
-  trial_dir = trial_list[0]
-  reduced_N = -1
-  with open(run_dir+"/"+trial_dir+"/metadata.pickle",'rb') as data_f:
-    data = pickle.load(data_f, encoding='latin1')
-    N = data['N']
-    tf = data['tf']
-    h = float(N)/tf
-    reduced_N = int(N - time_window*h)
+def loadData(idx,num_list,run_dir,model,traj_data):
   images = []
   waypoints_x = []
   waypoints_y = []
   waypoints_z = []
-  trial_num = np.floor(idx/reduced_N).astype(int)
-  image_num = np.mod(idx,reduced_N)
-  count = 0
-  for trial_idx, image_idx in zip(trial_num,image_num):
-    trial_dir = run_dir+"/"+trial_list[trial_idx]+"/"
-    traj_data = []
-    with open(trial_dir+"trajdata.pickle",'rb') as data_f:
-      traj_data = pickle.load(data_f, encoding='latin1')
-    metadata = []
-    with open(trial_dir+"metadata.pickle",'rb') as data_f:
-      metadata = pickle.load(data_f, encoding='latin1')
-    idx_final = image_idx + metadata['N']*time_window/metadata['tf']
-    offset_idx = np.floor(np.linspace(image_idx,idx_final,num_points+1))
-    image, waypoint = parseFiles(offset_idx,traj_data,trial_dir, model)
+  for ii in idx:
+    image, waypoint = parseFiles(ii,num_list,run_dir,model,traj_data)
+    images.append(np.array(image)) #- mean_image))
     waypoints_x.append(waypoint[:,0,:])
     waypoints_y.append(waypoint[:,1,:])
     waypoints_z.append(waypoint[:,2,:])
-    image = np.array(image) - mean_image
-    images.append(image)
-    count += 1
-    # if(count % 100 == 0):
-    #   print(count)
   waypoints_x = np.array(waypoints_x)
   waypoints_y = np.array(waypoints_y)
   waypoints_z = np.array(waypoints_z)
   return np.array(images), np.array(waypoints_x).reshape(-1,model.num_points,model.bins), np.array(waypoints_y).reshape(-1,model.num_points,model.bins), np.array(waypoints_z).reshape(-1,model.num_points,model.bins)
 
 def compute_mean_image(idx,run_dir,model,dt = 1):
-  num_points = model.num_points
-  time_window = num_points*dt
-  #Assume reduced N is constant for all trials
-  trial_list = os.listdir(run_dir)
-  trial_dir = trial_list[0]
-  reduced_N = -1
-  with open(run_dir+"/"+trial_dir+"/metadata.pickle",'rb') as data_f:
-    data = pickle.load(data_f, encoding='latin1')
-    N = data['N']
-    tf = data['tf']
-    h = float(N)/tf
-    reduced_N = int(N - time_window*h)
-  
-  trial_num = np.floor(idx/reduced_N).astype(int)
-  image_num = np.mod(idx,reduced_N)
-  mean_image = np.zeros((model.h,model.w, 3))
-  i = 0.0
-  for trial_idx, image_idx in zip(trial_num,image_num):
-    trial_dir = run_dir+"/"+trial_list[trial_idx]+"/"
-    traj_data = []
-    with open(trial_dir+"trajdata.pickle",'rb') as data_f:
-      traj_data = pickle.load(data_f, encoding='latin1')
-    metadata = []
-    with open(trial_dir+"metadata.pickle",'rb') as data_f:
-      metadata = pickle.load(data_f, encoding='latin1')
-    idx_final = image_idx + metadata['N']*time_window/metadata['tf']
-    offset_idx = np.floor(np.linspace(image_idx,idx_final,num_points+1))
-    image, waypoint = parseFiles(offset_idx,traj_data,trial_dir, model)
-    mean_image = np.multiply(mean_image, i/(i+1)) + np.multiply(np.array(image), 1/(i+1))
-    i += 1 
-  return mean_image
+  print('ERROR: WE SHOULDN"T BE HERE')
+  exit(0)
   
 def acc_metric(logits,x,y,z, model):
     soft_probs = logits#scispec.softmax(logits,axis=4)
@@ -264,7 +190,7 @@ def main():
                          args.cam_coord, args.min, args.max, args.bins, args.dense)
 
   # Load in Data
-  train_indices, val_indices = parseDirData(args.data, args.seed, args.resample, val_perc, args.num_pts)
+  train_indices, val_indices, num_list, traj_data = parseDirData(args.data, args.seed, args.resample, val_perc, args.num_pts)
   num_train_samples = train_indices.shape[0]
   num_val_samples = val_indices.shape[0]
 
@@ -274,7 +200,8 @@ def main():
   print ('Validation Samples: ' + str(num_val_samples))
   data_loc = copy.deepcopy(args.data)
   data_loc_name = data_loc.strip("..").strip(".").strip("/").replace("/", "_")
-  mean_img_loc = data_loc + "../mean_img_" + data_loc_name + '.npy' 
+  mean_img_loc = data_loc + "../mean_imgv2_" + data_loc_name + '.npy'
+  print(mean_img_loc) 
   if not (os.path.exists(mean_img_loc)):
     print('mean image file not found')
     mean_image = compute_mean_image(train_indices, data_loc, model)
@@ -284,7 +211,7 @@ def main():
     mean_image = np.load(mean_img_loc)
   # mean_image = np.zeros((model.h, model.w, 3))
 
-  val_inputs, val_outputs_x, val_outputs_y, val_outputs_z = loadData(val_indices,data_loc,model,mean_image)
+  val_inputs, val_outputs_x, val_outputs_y, val_outputs_z = loadData(val_indices,num_list,data_loc,model,traj_data)
 
   print ('Validation Loaded')
   train_path = addTimestamp(os.path.join(log_path, 'train_'))
@@ -336,7 +263,7 @@ def main():
       
       while batch_idx < num_train_samples:
         end_idx = min(batch_idx + batch_size, num_train_samples)
-        train_inputs, train_outputs_x, train_outputs_y, train_outputs_z = loadData(train_indices[batch_idx:end_idx],data_loc, model, mean_image)
+        train_inputs, train_outputs_x, train_outputs_y, train_outputs_z = loadData(train_indices[batch_idx:end_idx],num_list,data_loc, model,traj_data)
         feed_dict[model.image_input] = train_inputs
         feed_dict[model.waypoint_output_x] = train_outputs_x
         feed_dict[model.waypoint_output_y] = train_outputs_y
