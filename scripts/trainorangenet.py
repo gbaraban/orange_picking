@@ -1,19 +1,102 @@
-import tensorflow as tf
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torch.optim import lr_scheduler
 import numpy as np
-import argparse
-import pickle
+import torchvision
+from torchvision import datasets, models, transforms
+import time
 import os
-from orangenetarch import *
-from datetime import datetime
+import copy
+import argparse
 import PIL.Image as img
+import signal
+import sys
+import torch.utils.data import Dataset, DataLoader
+from orangeTransforms import *
+from torch.utils.tensorboard import SummaryWriter
+
+
+class SubSet(Dataset):
+    def __init__(self,dataset,idx):
+        self.ds = dataset
+        self.idx = idx
+    def __len__(self):
+        return len(self.idx)
+    def __getitem__(self,i):
+        return self.ds[self.idx[i]]
+
+class OrangeDataSet(Dataset):
+    def __init__(self, root_dir, num_images, num_pts, pt_trans, img_trans, dt = 1, reduce_N = True):
+        self.point_transform = pt_trans
+        self.image_transform = img_trans
+        self.num_pts = num_pts
+        self.num_images = num_images
+        self.dt = dt
+        self.num_list = []
+        self.traj_list = []
+        self.run_dir = root_dir
+        self.trial_list = os.listdir(root_dir)
+        self.num_samples = 0
+        if reduce_N:
+            time_window = num_pts*dt
+        else:
+            time_window = 0
+        for trial_dir in trial_list:
+            with open(run_dir+'/'+trial_dir+'/data.pickle','rb') as f:
+                data = pickle.load(f,encoding='latin1')
+                self.traj_list.append(data)
+            with open(run_dir+"/"+trial_dir+"/metadata.pickle",'rb') as data_f:
+                data = pickle.load(data_f)#, encoding='latin1')
+                N = data['N']
+                if reduce_N:
+                    tf = data['tf']
+                    h = float(N)/tf
+                    reduced_N = int(N - time_window*h)
+                    self.num_samples += reduced_N
+                    self.num_list.append(reduced_N)
+                else:
+                    self.num_samples += N
+                    self.num_list.append(N)
+
+    def __len__(self):
+        return self.num_samples
+    
+    def __getitem__(self,i):
+        idx = i
+        trial_idx = 0
+        while True:
+            if num_list[trial_idx] <= idx:
+                idx = idx-num_list[trial_idx]
+                trial_idx += 1
+            else:
+                break
+        trial = self.trial_list[trial_idx]
+        image = None
+        image_idx = idx
+        for ii in range(self.num_images):
+            temp_idx = max(0,image_idx - ii)
+            img_run_dir = run_dir.rstrip("/") + "_np"
+            temp_image = np.load(imag_run_dir+'/'+trial+'/image'+str(temp_idx)+'.npy')
+            if self.image_transform:
+                temp_image = self.image_transform(temp_image)
+            if image is None:
+                image = temp_image
+            else:
+                image = np.concatenate((image,temp_image),axis=2)
+        points = self.traj_list[trial_idx][idx]
+        if self.point_transform:
+           points = self.point_transform(points)
+        return {'image':image, 'points':points}
 
 def addTimestamp(input_path):
     return input_path + datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
 
 def createStampedFolder(folder_path):
     stamped_dir = os.path.join(
-        folder_path,
-        datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
+            folder_path,
+            datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
     try:
         os.makedirs(stamped_dir)
         return stamped_dir
@@ -21,219 +104,224 @@ def createStampedFolder(folder_path):
         if e.errno != errno.EEXIST:
             raise # This was not a "directory exist" error..
 
-def parseDirData(run_dir, seed, resample, val_perc, num_pts, dt = 1):
-  trial_list = os.listdir(run_dir)
-  num_samples = 0
-  time_window = num_pts*dt
-  for trial_dir in trial_list:
-    with open(run_dir+"/"+trial_dir+"/metadata.pickle",'rb') as data_f:
-      data = pickle.load(data_f)#, encoding='latin1')
-      N = data['N']
-      tf = data['tf']
-      h = float(N)/tf
-      reduced_N = int(N - time_window*h)
-      num_samples += reduced_N
-  np.random.seed(seed)
-  if resample:
-    rand_idx = np.random.choice(num_samples, size=num_samples, replace=True)
-  else:
-    rand_idx = np.random.permutation(num_samples)
-  val_idx = np.ceil(num_samples*val_perc).astype(int)
-  train_idx = num_samples - val_idx
-  val_indices = rand_idx[-val_idx:]
-  train_indices = rand_idx[:train_idx]
-  return train_indices, val_indices
+def save_model(i = 'Last'):
+    name = save_path+'/model' + str(i) + '.pth.tar'
+    torch.save(model.state_dict(),save_path)
 
-def parseFiles(idx,traj_data,trial_dir, model):
-  idx = idx.astype(int)
-  image_idx = idx[0]
-  image = None
-  for ii in range(model.num_images):
-    temp_idx = max(0,image_idx - ii)
-    temp_image = img.open(trial_dir+'image'+str(temp_idx)+'.png').resize((model.w,model.h))
-    temp_image = np.array(temp_image.getdata()).reshape(temp_image.size[0],temp_image.size[1],3)
-    temp_image = temp_image[:,:,0:3]/255.0 #Cut out alpha
-    temp_image = temp_image/255.0
-    if image is None:
-        image = temp_image
-    else:
-        image = np.concatenate((image,temp_image),axis=2)
-  R0 = np.array(traj_data[image_idx][1])
-  p0 = np.array(traj_data[image_idx][0])
-  local_pts = []
-  idx = idx[1:]#Cut out first point (will be (0,0,0)
-  for i in idx:
-    state = traj_data[i]
-    point = np.matmul(R0.T,np.array(state[0]) - p0)
-    if model.foc_l > 0:
-        #Convert into image coordinates
-        x = float(point[0])#Local Forward
-        y = float(point[1])#Local Left
-        z = float(point[2])#Local Up
-        image_up = model.foc_l*z/x
-        image_left = model.foc_l*y/x
-        image_depth = x#model.foc_l/x
-        point = np.array((image_depth,image_left, image_up))
-    local_pts.append(point)
-  local_pts = np.array(local_pts)
-  local_pts.resize(model.output_dim)
-  return image, local_pts
+def signal_handler(signal, frame):
+    print('Closing....')
+    save_model()
+    writer.close()
+    print('Done')
+    sys.exit(0)
 
-def loadData(idx,run_dir,model,dt = 1):
-  num_points = model.output_dim/3
-  time_window = num_points*dt
-  #Assume reduced N is constant for all trials
-  trial_list = os.listdir(run_dir)
-  trial_dir = trial_list[0]
-  reduced_N = -1
-  with open(run_dir+"/"+trial_dir+"/metadata.pickle",'rb') as data_f:
-    data = pickle.load(data_f, encoding='latin1')
-    N = data['N']
-    tf = data['tf']
-    h = float(N)/tf
-    reduced_N = int(N - time_window*h)
-  images = []
-  waypoints = []
-  trial_num = np.floor(idx/reduced_N).astype(int)
-  image_num = np.mod(idx,reduced_N)
-  for trial_idx, image_idx in zip(trial_num,image_num):
-    trial_dir = run_dir+"/"+trial_list[trial_idx]+"/"
-    traj_data = []
-    with open(trial_dir+"trajdata.pickle",'rb') as data_f:
-      traj_data = pickle.load(data_f, encoding='latin1')
-    metadata = []
-    with open(trial_dir+"metadata.pickle",'rb') as data_f:
-      metadata = pickle.load(data_f, encoding='latin1')
-    idx_final = image_idx + metadata['N']*time_window/metadata['tf']
-    offset_idx = np.floor(np.linspace(image_idx,idx_final,num_points+1))
-    image, waypoint = parseFiles(offset_idx,traj_data,trial_dir, model)
-    waypoints.append(waypoint)
-    images.append(image)
-  return np.array(images), np.array(waypoints)
+def acc_metric(model,logits,point_batch):
+    shape = logits.size().item()
+    acc_list = []
+    for pt in range(shape[2]):
+        batch_list = []
+        for ii in range(shape[0]):
+            coord_list = []
+            for coord in range(3):
+                prob = nn.Softmax(logits[ii,coord,pt,:]).numpy()
+                max_pred = np.argmax(prob)
+                true_pred = np.argmax(point_batch[ii,pt,coord,:])
+                bin_size = (model.max_list[pt][coord] - model.min_list[pt][coord])/model.bins
+                d = (true_pred - max_pred)*bin_size
+                coord_list.append(d)
+            d = np.vstack([coord_list[0],coord_list[1],coord_list[2]])
+            batch_list.append(np.linalg.norm(d))
+        batch_mean = np.mean(batch_list)
+        acc_list.append(batch_mean)
+    return acc_list
 
 def main():
-  parser = argparse.ArgumentParser()
-  parser.add_argument('data', help='data file')
-  parser.add_argument('--load', help='model to load')
-  parser.add_argument('--epochs', type=int, default=10000, help='number of epochs to train for')
-  parser.add_argument('--seed', type=int, default=0, help='random seed')
-  parser.add_argument('--resample', action='store_true', help='resample data')
-  parser.add_argument('--gpus', help='gpu to use')
-  parser.add_argument('--num_images', type=int, default=2, help='number of input images')
-  parser.add_argument('--batch_size', type=int, default=256, help='batch size')
-  parser.add_argument('--num_pts', type=int, default=2, help='number of output waypoints')
-  parser.add_argument('--capacity', type=float, default=1, help='network capacity')
-  parser.add_argument('--cam_coord', type=float, default=-1, help='use focal length coordinates')
-  args = parser.parse_args()
-
-  if (args.gpus is not None):
-    os.environ["CUDA_VISIBLE_DEVICES"]=args.gpus
-
-  # Model and optimization params
-  val_perc = 0.01
-  #g_depths = [64, 64, 64]
-  #f_depths = [64, 64, 64]
-  batch_size = args.batch_size#512#1024#64
-  num_epochs = args.epochs
-  learning_rate = 5e-2#50#e-1
-  learn_rate_decay = 0#1000 / num_epochs
-  save_variables_divider = 10
-  log_path = './model/logs'
-  save_path = createStampedFolder(os.path.join(log_path, 'variable_log'))
-
-  ######################
-
-  # Make model
-  print ('Building model')
-  model = OrangeResNet(args.capacity, args.num_images, args.num_pts, args.cam_coord)
-
-  # Load in Data
-  train_indices, val_indices = parseDirData(args.data, args.seed, args.resample, val_perc, args.num_pts)
-  num_train_samples = train_indices.shape[0]
-
-  # Train model
-  print ('Training...')
-  val_inputs, val_outputs = loadData(val_indices,args.data, model)
-  val_dict = {model.image_input: val_inputs, model.waypoint_output: val_outputs}
-  print ('Validation Loaded')
-  train_path = addTimestamp(os.path.join(log_path, 'train_'))
-  val_path = addTimestamp(os.path.join(log_path, 'validation_'))
-  plot_data_path = addTimestamp(os.path.join(log_path, 'plot_data_'))
-  train_writer = tf.summary.FileWriter(train_path, graph=tf.get_default_graph())
-  val_writer = tf.summary.FileWriter(val_path, graph=tf.get_default_graph())
-  os.makedirs(plot_data_path)
-
-  saver = tf.train.Saver()
-  init = tf.global_variables_initializer()
-  feed_dict = {}#model.keep_prob: 0.9}
-  print ('Writers Set Up')
-
-  with tf.Session() as sess:# Load model if specified 
-    if args.load:
-      saver.restore(sess, tf.train.latest_checkpoint(args.load))
-      uninit_vars_op = tf.report_uninitialized_variables()
-      uninit_vars = sess.run(uninit_vars_op)
-      uninit_vars_op.mark_used()
-      if uninit_vars.size != 0:
-        print(uninit_vars)#, sep=',')
-        sess.close()
-        raise RuntimeError('Uninitialized variables present')
+    signal.signal(signal.SIGINT,signal_handler)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('data', help='data folder')
+    parser.add_argument('--load', help='model to load')
+    parser.add_argument('--epochs', type=int, default=10000, help='number of epochs to train for')
+    parser.add_argument('--seed', type=int, default=0, help='random seed')
+    parser.add_argument('--resample', action='store_true', help='resample data')
+    parser.add_argument('--gpu', help='gpu to use')
+    parser.add_argument('--num_images', type=int, default=1, help='number of input images')
+    parser.add_argument('--batch_size', type=int, default=1024, help='batch size')
+    parser.add_argument('--learning_rate', type=float, default=5e-3, help='batch size')
+    parser.add_argument('--num_pts', type=int, default=3, help='number of output waypoints')
+    parser.add_argument('--capacity', type=float, default=1, help='network capacity')
+    parser.add_argument('--min', type=tuple, default=(0,-0.5,-0.5), help='minimum xyz ')
+    parser.add_argument('--max', type=tuple, default=(1,0.5,0.5), help='maximum xyz')
+    parser.add_argument('--bins', type=int, default=30, help='number of bins per coordinate')
+    parser.add_argument('-j', type=int, default=4, help='number of loader workers')
+    args = parser.parse_args()
+    args.min = [(0,-0.5,-0.1),(0,-1,-0.15),(0,-1.5,-0.2),(0,-2,-0.3),(0,-3,-0.5)]
+    args.max = [(1,0.5,0.1),(2,1,0.15),(4,1.5,0.2),(6,2,0.3),(7,0.3,0.5)]
+    
+    #Data Transforms
+    pt_trans = transforms.Compose([pointToBins(args.min,args.max,args.bins),GaussLabels(1,0,args.bins)])
+    #Load Mean image
+    data_loc = copy.deepcopy(args.data)
+    data_loc_name = data_loc.strip("..").strip(".").strip("/").replace("/", "_")
+    mean_img_loc = data_loc + "../mean_imgv2_" + data_loc_name + '.npy' 
+    if not (os.path.exists(mean_img_loc)):
+        print('mean image file not found')
+        mean_image = compute_mean_image(train_indices, data_loc, model)
+        np.save(mean_img_loc, mean_image)
     else:
-      sess.run(init)
-    print ('Session')
-    iters = 0
-    plotting_data = dict()
-    plotting_data['idx'] = range(5)
-    plotting_data['truth'] = val_outputs[plotting_data['idx']]
-    plotting_data['data'] = list()
-    plotting_data['foc_l'] = args.cam_coord
-    for ii in plotting_data['idx']:
-      plotting_data['data'].append([])
+        print('mean image file found')
+        mean_image = np.load(mean_img_loc)
+  # mean_image = np.zeros((model.w, model.h, 3))
+    img_trans = None #TODO: Change this
+    #Create dataset class
+    dataclass = OrangeDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans)
+    
+    #Break up into validation and training
+    val_perc = 0.07
+    np.random.seed(args.seed)
+    if args.resample:
+        rand_idx = np.random.choice(len(dataclass),size=len(dataclass),replace=True)
+    else:
+        rand_idx = np.random.permutation(len(dataclass))
+    val_idx = np.ceil(len(dataclass)*val_perc).astype(int)
+    train_idx = len(dataclass) - val_idx
+    val_idx = rand_idx[-val_idx:]
+    train_idx = rand_idx[:train_idx]
+    train_data = SubSet(dataclass,train_idx)
+    val_data = SubSet(dataclass,val_idx)
+    
+    #Create DataLoaders
+    train_loader = DataLoader(train_data,batch_size=args.batch_size,shuffle=True,num_workers=args.j)
+    val_loader = DataLoader(val_data,batch_size=args.batch_size,shuffle=False,num_workers=args.j)
+    print ('Training Samples: ' + str(len(train_data))
+    print ('Validation Samples: ' + str(len(val_data))
+
+    #Create Model
+    model = OrangeNet(args.capacity,args.num_images,args.num_pts,args.bins)
+    if args.load:
+        if os.path.isfile(args.load):
+            checkpoint = torch.load(args.load)
+            model.load_state_dict(checkpoint)
+            print("Loaded Checkpoint: ",args.load)
+        else:
+            print('No checkpoint found at: ',args.load)
+    #CUDA Check
+    use_cuda = torch.cuda.is_available()
+    if use_cuda:
+        if args.gpu:
+            device = torch.device('cuda:'+str(args.gpu))
+            model = model.to(device)
+        else:
+            device = torch.device('cuda')
+            model = model.to(device)
+            if (torch.cuda.device_count() > 1):
+                model = nn.DataParallel(model)
+    else:
+        device = torch.device('cpu')
+    
+    #Create Optimizer
+    learning_rate = args.learning_rate
+    learn_rate_decay = 100 / num_epochs
+    optimizer = optim.Adam(model.parameters(), lr = args.learning_rate)
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=learn_rate_decay)
+    #ReduceLROnPlateau is an interesting idea
+
+    #Save Parameters
+    save_variables_divider = 10
+    log_path = './model/logs'
+    save_path = createStampedFolder(os.path.join(log_path, 'variable_log'))
+    tensorboard_path = addTimestamp(os.path.join(log_path, 'tensorboard_'))
+    #val_path = addTimestamp(os.path.join(log_path, 'validation_'))
+    plot_data_path = addTimestamp(os.path.join(log_path, 'plot_data_'))
+
+    print ('Training...')
+    writer = SummaryWriter(tensorboard_path)
+    #val_writer = SummaryWriter(val_path)
+    #graph_writer = Su
+    #os.makedirs(plot_data_path)
+
+    #print ('Writers Set Up')
+
+    #iters = 0
+    #plotting_data = dict()
+    #plotting_data['idx'] = range(5)
+    #plotting_data['truth'] = [val_outputs_x[plotting_data['idx']],
+    #                          val_outputs_y[plotting_data['idx']],
+    #                          val_outputs_z[plotting_data['idx']]]
+    #plotting_data['data'] = list()
+    #plotting_data['foc_l'] = args.cam_coord
+    #plotting_data['min'] = model.min
+    #plotting_data['max'] = model.max
+    #plotting_data['bins'] = model.bins
+    #for ii in plotting_data['idx']:
+    #  plotting_data['data'].append([])
     #print(plotting_data)
+    loss = nn.CrossEntropyLoss()
+    since = time.time()
     for epoch in range(num_epochs):
-      print('Epoch: ', epoch)
-      batch_idx = 0
-      # Decay learning rate
-      model.learning_fac.assign(np.exp(-epoch*learn_rate_decay)*learning_rate)
-      while batch_idx < num_train_samples:
-        end_idx = min(batch_idx + batch_size, num_train_samples)
-        train_inputs, train_outputs = loadData(train_indices[batch_idx:end_idx],args.data, model)
-        feed_dict[model.image_input] = train_inputs
-        feed_dict[model.waypoint_output] = train_outputs
-        #sess.run([model.train_summary_op, model.train_step], feed_dict=feed_dict)
-        sess.run(model.train_step, feed_dict=feed_dict)
-        batch_idx = batch_idx + batch_size
-        iters = iters + 1
-        if iters % 20 == 0:
-          summary = sess.run(model.train_summ, feed_dict=feed_dict)
-          train_writer.add_summary(summary, iters)
-        #Clear references to data:
-        train_inputs = train_outputs = feed_dict[model.image_input] = feed_dict[model.waypoint_output] = None
-
-      val_summary, val_cost, resnet_output = sess.run([model.val_summ, model.objective, model.resnet_output], feed_dict=val_dict)
-      print('Validation Summary = ', val_cost)
-      for ii in plotting_data['idx']:
-          plotting_data['data'][ii].append(resnet_output[ii])
-      with open(plot_data_path+'/data.pickle','wb') as f:
-          pickle.dump(plotting_data,f,pickle.HIGHEST_PROTOCOL)
-
-      val_writer.add_summary(val_summary, iters)
-
-      train_writer.flush()
-      val_writer.flush()
-      # Save variables
-      if ((epoch + 1) % save_variables_divider == 0 or (epoch == 0) or (epoch == num_epochs - 1)):
-          if epoch == 0:
-            saver.save(sess, os.path.join(save_path, 'variables'), epoch)
-          else:
-            saver.save(sess, os.path.join(save_path, 'variables'), epoch, write_meta_graph=False)
-      # Re-shuffle data after each epoch
-      rand_idx = np.random.permutation(num_train_samples)
-      train_indices = train_indices[rand_idx]
-  train_writer.flush()
-  val_writer.flush()
-  print("Done")
-
+        print('Epoch: ', epoch)
+        #Train
+        for ctr, batch in enumerate(train_loader):
+            image_batch = batch['image'].to(device)
+            point_batch = batch['points'].to(device)
+            optimizer.zero_grad()
+            model.train()
+            with torch.set_grad_enabled(True):
+                logits = model(image_batch)
+                logits = logits.view(-1,3,model.num_points,model.bins)
+                logits_x = logits[:,0,:,:]
+                logits_y = logits[:,1,:,:]
+                logits_z = logits[:,2,:,:]
+                #TODO: Check loss syntax
+                loss_x = sum([loss(logits_x[:,temp,:],point_batch[:,temp,0]) for temp in range(model.num_points)])
+                loss_y = sum([loss(logits_y[:,temp,:],point_batch[:,temp,1]) for temp in range(model.num_points)])
+                loss_z = sum([loss(logits_z[:,temp,:],point_batch[:,temp,2]) for temp in range(model.num_points)])
+                batch_loss = loss_x + loss_y + loss_z
+                batch_loss.backward()
+                optimizer.step()
+                writer.add_scalar('train_loss',batch_loss,ctr+epoch*len(train_loader))#TODO: possibly loss.item
+                writer.add_scalar('train_loss_x',loss_x,ctr+epoch*len(train_loader))#TODO: possibly loss.item
+                writer.add_scalar('train_loss_y',loss_y,ctr+epoch*len(train_loader))#TODO: possibly loss.item
+                writer.add_scalar('train_loss_z',loss_z,ctr+epoch*len(train_loader))#TODO: possibly loss.item
+                acc_list = acc_metric(logits,point_batch)
+                for ii, acc in enumerate(acc_list):
+                    writer.add_scalar('train_acc_'+str(ii),acc,ctr+epoch*len(train_loader))
+        #Validation
+        val_loss = [0,0,0]
+        val_acc = np.zeros(model.num_points)
+        for batch in val_loader:
+            with torch.set_grad_enabled(False):
+                image_batch = batch['image'].to(device)
+                point_batch = batch['points'].to(device)
+                model.eval()
+                logits = model(image_batch)
+                logits = logits.view(-1,3,model.num_points,model.bins)
+                logits_x = logits[:,0:model.bins]
+                logits_y = logits[:,model.bins:2*model.bins]
+                logits_z = logits[:,2*model.bins:3*model.bins]
+                #TODO: Check loss syntax
+                val_loss[0] += sum([loss(logits_x[:,temp,:],point_batch[:,temp,0]) for temp in range(model.num_points)])
+                val_loss[1] += sum([loss(logits_y[:,temp,:],point_batch[:,temp,1]) for temp in range(model.num_points)])
+                val_loss[2] += sum([loss(logits_y[:,temp,:],point_batch[:,temp,2]) for temp in range(model.num_points)])
+                val_acc_list = acc_metric(logits,point_batch)
+                for ii, acc in enumerate(val_acc_list):
+                    val_acc[ii] += acc
+        val_loss = [val_loss[temp]/len(val_loader) for temp in range(3)]
+        val_acc = val_acc/len(val_loader)
+        writer.add_scalar('val_loss',sum(val_loss),(epoch+1)*len(train_loader))#TODO: possibly loss.item
+        writer.add_scalar('val_loss_x',val_loss[0],(epoch+1)*len(train_loader))#TODO: possibly loss.item
+        writer.add_scalar('val_loss_y',val_loss[1],(epoch+1)*len(train_loader))#TODO: possibly loss.item
+        writer.add_scalar('val_loss_z',val_loss[2],(epoch+1)*len(train_loader))#TODO: possibly loss.item
+        for ii, acc in enumerate(val_acc):
+            writer.add_scalar('val_acc_'+str(ii),acc,(epoch+1)*len(train_loader))
+        #Adjust LR
+        scheduler.step()
+        print('Learning Rate Set to: ',scheduler.get_lr())
+        # Save variables
+        if ((epoch + 1) % save_variables_divider == 0 or (epoch == 0) or (epoch == num_epochs - 1)):
+            print("Saving variables")
+            save_model(epoch)
+    writer.close()
+    print("Done")
 
 if __name__ == '__main__':
     main()
