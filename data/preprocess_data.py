@@ -3,9 +3,9 @@ from PIL import Image as img
 import os
 import time
 
-mean_img = np.load("mean_imgv2_data_real_world_traj_bag.npy")
+mean_img = np.load("mean_img_data_temp.npy")
 
-data_loc = "real_world_traj_bag"
+data_loc = "temp"
 np_data_loc = data_loc.rstrip("/") + "_np"
 if not os.path.exists(np_data_loc):
     os.mkdir(np_data_loc)

@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 
 #TODO: Add custom image transformations here
 
@@ -12,13 +13,14 @@ class pointToBins(object):
         local_pts = []
         for ctr, point in enumerate(points):
             #Convert into bins
-            min_i = self.min_list[ctr]
-            max_i = self.max_list[ctr]
+            min_i = np.array(self.min_list[ctr])
+            max_i = np.array(self.max_list[ctr])
+            point = np.array(point)
             bin_nums = (point - min_i)/(max_i-min_i)
             bin_nums_scaled = (bin_nums*self.bins).astype(int)
-            bin_nums = np.clip(bin_nums_scaled,a_min=0,a_max=model.bins-1)
+            bin_nums = np.clip(bin_nums_scaled,a_min=0,a_max=self.bins-1)
             local_pts.append(bin_nums)
-        return local_pts
+        return np.array(local_pts)
 
 class GaussLabels(object):
     def __init__(self,mean,stdev,bins):
@@ -28,13 +30,14 @@ class GaussLabels(object):
 
     def __call__(self,bin_list):
         label_list = []
-        for bins in bin_list:#TODO: Double check this
+        num_points = len(bin_list)
+        for bins in bin_list:
             labels = np.zeros((3,self.bins))
-            for j in range(len(bins)):#
+            for coord in range(3):#
                 for i in range(labels.shape[1]):
-                    labels[j][i] = mean * (np.exp((-np.power(bin_nums[j]-i, 2))/(2 * np.power(stdev, 2))))
+                    labels[coord][i] = self.mean * (np.exp((-np.power(bins[coord]-i, 2))/(2 * np.power(self.stdev, 2))))
             label_list.append(labels)
         label_list = np.array(label_list)
-        label_list.resize((model.num_points,3,model.bins))
+        label_list.resize((num_points,3,self.bins))
         return label_list
 

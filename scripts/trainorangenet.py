@@ -9,86 +9,22 @@ from torchvision import datasets, models, transforms
 import time
 import os
 import copy
+from datetime import datetime
 import argparse
 import PIL.Image as img
 import signal
 import sys
-import torch.utils.data import Dataset, DataLoader
-from orangeTransforms import *
-from torch.utils.tensorboard import SummaryWriter
+from torch.utils.data import Dataset, DataLoader
+from customTransforms import *
+from orangenetarch import *
+from customDatasets import *
+from torch.utils.tensorboard import SummaryWriter 
+import gc
 
-
-class SubSet(Dataset):
-    def __init__(self,dataset,idx):
-        self.ds = dataset
-        self.idx = idx
-    def __len__(self):
-        return len(self.idx)
-    def __getitem__(self,i):
-        return self.ds[self.idx[i]]
-
-class OrangeDataSet(Dataset):
-    def __init__(self, root_dir, num_images, num_pts, pt_trans, img_trans, dt = 1, reduce_N = True):
-        self.point_transform = pt_trans
-        self.image_transform = img_trans
-        self.num_pts = num_pts
-        self.num_images = num_images
-        self.dt = dt
-        self.num_list = []
-        self.traj_list = []
-        self.run_dir = root_dir
-        self.trial_list = os.listdir(root_dir)
-        self.num_samples = 0
-        if reduce_N:
-            time_window = num_pts*dt
-        else:
-            time_window = 0
-        for trial_dir in trial_list:
-            with open(run_dir+'/'+trial_dir+'/data.pickle','rb') as f:
-                data = pickle.load(f,encoding='latin1')
-                self.traj_list.append(data)
-            with open(run_dir+"/"+trial_dir+"/metadata.pickle",'rb') as data_f:
-                data = pickle.load(data_f)#, encoding='latin1')
-                N = data['N']
-                if reduce_N:
-                    tf = data['tf']
-                    h = float(N)/tf
-                    reduced_N = int(N - time_window*h)
-                    self.num_samples += reduced_N
-                    self.num_list.append(reduced_N)
-                else:
-                    self.num_samples += N
-                    self.num_list.append(N)
-
-    def __len__(self):
-        return self.num_samples
-    
-    def __getitem__(self,i):
-        idx = i
-        trial_idx = 0
-        while True:
-            if num_list[trial_idx] <= idx:
-                idx = idx-num_list[trial_idx]
-                trial_idx += 1
-            else:
-                break
-        trial = self.trial_list[trial_idx]
-        image = None
-        image_idx = idx
-        for ii in range(self.num_images):
-            temp_idx = max(0,image_idx - ii)
-            img_run_dir = run_dir.rstrip("/") + "_np"
-            temp_image = np.load(imag_run_dir+'/'+trial+'/image'+str(temp_idx)+'.npy')
-            if self.image_transform:
-                temp_image = self.image_transform(temp_image)
-            if image is None:
-                image = temp_image
-            else:
-                image = np.concatenate((image,temp_image),axis=2)
-        points = self.traj_list[trial_idx][idx]
-        if self.point_transform:
-           points = self.point_transform(points)
-        return {'image':image, 'points':points}
+#Global variables
+save_path = None
+model = None
+writer = None
 
 def addTimestamp(input_path):
     return input_path + datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
@@ -105,28 +41,45 @@ def createStampedFolder(folder_path):
             raise # This was not a "directory exist" error..
 
 def save_model(i = 'Last'):
-    name = save_path+'/model' + str(i) + '.pth.tar'
-    torch.save(model.state_dict(),save_path)
+    global save_path
+    global model
+    if model is not None and save_path is not None:
+        print('Saving...')
+        name = save_path+'/model' + str(i) + '.pth.tar'
+        torch.save(model.state_dict(),name)
 
 def signal_handler(signal, frame):
-    print('Closing....')
+    global writer
+    print('')
     save_model()
-    writer.close()
+    if writer is not None:
+        print('Closing Writer...')
+        writer.close()
     print('Done')
     sys.exit(0)
 
-def acc_metric(model,logits,point_batch):
-    shape = logits.size().item()
+def dl_signal(signal,frame):
+    #print("DL signal called")
+    sys.exit(0)
+
+def dl_init(x):
+    signal.signal(signal.SIGINT,dl_signal)
+
+def acc_metric(args,logits,point_batch):
+    softmax = nn.Softmax(dim=0)
+    shape = logits.size()#.item()
     acc_list = []
+    logits = logits.detach()
     for pt in range(shape[2]):
         batch_list = []
         for ii in range(shape[0]):
             coord_list = []
             for coord in range(3):
-                prob = nn.Softmax(logits[ii,coord,pt,:]).numpy()
+                prob = np.array(softmax(logits[ii,coord,pt,:]))#.numpy()
                 max_pred = np.argmax(prob)
-                true_pred = np.argmax(point_batch[ii,pt,coord,:])
-                bin_size = (model.max_list[pt][coord] - model.min_list[pt][coord])/model.bins
+                #true_pred = np.argmax(point_batch[ii,pt,coord,:])
+                true_pred = np.array(point_batch[ii,pt,coord])
+                bin_size = (args.max[pt][coord] - args.min[pt][coord])/args.bins
                 d = (true_pred - max_pred)*bin_size
                 coord_list.append(d)
             d = np.vstack([coord_list[0],coord_list[1],coord_list[2]])
@@ -137,6 +90,9 @@ def acc_metric(model,logits,point_batch):
 
 def main():
     signal.signal(signal.SIGINT,signal_handler)
+    global model
+    global save_path
+    global writer
     parser = argparse.ArgumentParser()
     parser.add_argument('data', help='data folder')
     parser.add_argument('--load', help='model to load')
@@ -158,22 +114,22 @@ def main():
     args.max = [(1,0.5,0.1),(2,1,0.15),(4,1.5,0.2),(6,2,0.3),(7,0.3,0.5)]
     
     #Data Transforms
-    pt_trans = transforms.Compose([pointToBins(args.min,args.max,args.bins),GaussLabels(1,0,args.bins)])
+    pt_trans = transforms.Compose([pointToBins(args.min,args.max,args.bins)])#,GaussLabels(1,1e-10,args.bins)])
     #Load Mean image
     data_loc = copy.deepcopy(args.data)
     data_loc_name = data_loc.strip("..").strip(".").strip("/").replace("/", "_")
     mean_img_loc = data_loc + "../mean_imgv2_" + data_loc_name + '.npy' 
     if not (os.path.exists(mean_img_loc)):
         print('mean image file not found')
-        mean_image = compute_mean_image(train_indices, data_loc, model)
+        mean_image = compute_mean_image(train_indices, data_loc, model)#TODO:Add this in
         np.save(mean_img_loc, mean_image)
     else:
         print('mean image file found')
         mean_image = np.load(mean_img_loc)
   # mean_image = np.zeros((model.w, model.h, 3))
-    img_trans = None #TODO: Change this
+    img_trans = None 
     #Create dataset class
-    dataclass = OrangeDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans)
+    dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans)
     
     #Break up into validation and training
     val_perc = 0.07
@@ -190,10 +146,10 @@ def main():
     val_data = SubSet(dataclass,val_idx)
     
     #Create DataLoaders
-    train_loader = DataLoader(train_data,batch_size=args.batch_size,shuffle=True,num_workers=args.j)
+    train_loader = DataLoader(train_data,batch_size=args.batch_size,shuffle=True,num_workers=args.j, worker_init_fn=dl_init)
     val_loader = DataLoader(val_data,batch_size=args.batch_size,shuffle=False,num_workers=args.j)
-    print ('Training Samples: ' + str(len(train_data))
-    print ('Validation Samples: ' + str(len(val_data))
+    print ('Training Samples: ' + str(len(train_data)))
+    print ('Validation Samples: ' + str(len(val_data)))
 
     #Create Model
     model = OrangeNet(args.capacity,args.num_images,args.num_pts,args.bins)
@@ -205,7 +161,9 @@ def main():
         else:
             print('No checkpoint found at: ',args.load)
     #CUDA Check
+    #torch.backends.cudnn.enabled = False #TODO:FIX THIS
     use_cuda = torch.cuda.is_available()
+    print('Cuda Flag: ',use_cuda)
     if use_cuda:
         if args.gpu:
             device = torch.device('cuda:'+str(args.gpu))
@@ -217,10 +175,11 @@ def main():
                 model = nn.DataParallel(model)
     else:
         device = torch.device('cpu')
+    print('Device: ', device)
     
     #Create Optimizer
     learning_rate = args.learning_rate
-    learn_rate_decay = 100 / num_epochs
+    learn_rate_decay = 100 / args.epochs
     optimizer = optim.Adam(model.parameters(), lr = args.learning_rate)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=learn_rate_decay)
     #ReduceLROnPlateau is an interesting idea
@@ -255,26 +214,44 @@ def main():
     #for ii in plotting_data['idx']:
     #  plotting_data['data'].append([])
     #print(plotting_data)
-    loss = nn.CrossEntropyLoss()
+    #loss = nn.CrossEntropyLoss()
     since = time.time()
-    for epoch in range(num_epochs):
+    #gc.collect()
+    #for obj in gc.get_objects():
+    #    try:
+    #        if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
+    #            print(type(obj), obj.size())
+    #    except:
+    #            pass
+    for epoch in range(args.epochs):
         print('Epoch: ', epoch)
         #Train
+        #gc.collect()
         for ctr, batch in enumerate(train_loader):
-            image_batch = batch['image'].to(device)
-            point_batch = batch['points'].to(device)
+            print('Batch: ',ctr)
+            #image_batch = batch['image'].to(device).float()
+            point_batch = batch['points']#.to(device)
             optimizer.zero_grad()
             model.train()
+            #for obj in gc.get_objects():
+            #    try:
+            #        if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
+            #            print(type(obj), obj.size())
+            #    except:
+            #        pass
             with torch.set_grad_enabled(True):
-                logits = model(image_batch)
+                logits = model(batch['image'].to(device))
                 logits = logits.view(-1,3,model.num_points,model.bins)
-                logits_x = logits[:,0,:,:]
-                logits_y = logits[:,1,:,:]
-                logits_z = logits[:,2,:,:]
-                #TODO: Check loss syntax
-                loss_x = sum([loss(logits_x[:,temp,:],point_batch[:,temp,0]) for temp in range(model.num_points)])
-                loss_y = sum([loss(logits_y[:,temp,:],point_batch[:,temp,1]) for temp in range(model.num_points)])
-                loss_z = sum([loss(logits_z[:,temp,:],point_batch[:,temp,2]) for temp in range(model.num_points)])
+                #logits_x = logits[:,0,:,:]
+                #logits_y = logits[:,1,:,:]
+                #logits_z = logits[:,2,:,:]
+                loss_x = 0
+                loss_y = 0
+                loss_z = 0
+                for temp in range(model.num_points):
+                    loss_x += F.cross_entropy(logits[:,0,temp,:],(point_batch.to(device))[:,temp,0])
+                    loss_y += F.cross_entropy(logits[:,1,temp,:],(point_batch.to(device))[:,temp,1])
+                    loss_z += F.cross_entropy(logits[:,2,temp,:],(point_batch.to(device))[:,temp,2])
                 batch_loss = loss_x + loss_y + loss_z
                 batch_loss.backward()
                 optimizer.step()
@@ -282,9 +259,18 @@ def main():
                 writer.add_scalar('train_loss_x',loss_x,ctr+epoch*len(train_loader))#TODO: possibly loss.item
                 writer.add_scalar('train_loss_y',loss_y,ctr+epoch*len(train_loader))#TODO: possibly loss.item
                 writer.add_scalar('train_loss_z',loss_z,ctr+epoch*len(train_loader))#TODO: possibly loss.item
-                acc_list = acc_metric(logits,point_batch)
+                acc_list = acc_metric(args,logits.cpu(),point_batch.cpu())
+                logits = logits.cpu()
                 for ii, acc in enumerate(acc_list):
                     writer.add_scalar('train_acc_'+str(ii),acc,ctr+epoch*len(train_loader))
+                print('Cross-Entropy Loss: ',batch_loss.item(),[loss_x.item(),loss_y.item(),loss_z.item()])
+                print('Accuracy: ',acc_list)
+
+                #image_batch = point_batch = logits = loss_x = loss_y = loss_z = batch_loss = None
+            #del image_batch, point_batch, logits, loss_x, loss_y, loss_z, batch_loss
+            #image_batch = image_batch.cpu()
+            #point_batch = point_batch.cpu()
+            #torch.cuda.empty_cache()
         #Validation
         val_loss = [0,0,0]
         val_acc = np.zeros(model.num_points)
@@ -295,17 +281,17 @@ def main():
                 model.eval()
                 logits = model(image_batch)
                 logits = logits.view(-1,3,model.num_points,model.bins)
-                logits_x = logits[:,0:model.bins]
-                logits_y = logits[:,model.bins:2*model.bins]
-                logits_z = logits[:,2*model.bins:3*model.bins]
-                #TODO: Check loss syntax
-                val_loss[0] += sum([loss(logits_x[:,temp,:],point_batch[:,temp,0]) for temp in range(model.num_points)])
-                val_loss[1] += sum([loss(logits_y[:,temp,:],point_batch[:,temp,1]) for temp in range(model.num_points)])
-                val_loss[2] += sum([loss(logits_y[:,temp,:],point_batch[:,temp,2]) for temp in range(model.num_points)])
+                logits_x = logits[:,0,:,:]
+                logits_y = logits[:,1,:,:]
+                logits_z = logits[:,2,:,:]
+                for temp in range(model.num_points):
+                    val_loss[0] += loss(logits_x[:,temp,:],point_batch[:,temp,0])
+                    val_loss[1] += loss(logits_y[:,temp,:],point_batch[:,temp,1])
+                    val_loss[2] += loss(logits_y[:,temp,:],point_batch[:,temp,2])
                 val_acc_list = acc_metric(logits,point_batch)
                 for ii, acc in enumerate(val_acc_list):
                     val_acc[ii] += acc
-        val_loss = [val_loss[temp]/len(val_loader) for temp in range(3)]
+        val_loss = [val_loss[temp].item()/len(val_loader) for temp in range(3)]
         val_acc = val_acc/len(val_loader)
         writer.add_scalar('val_loss',sum(val_loss),(epoch+1)*len(train_loader))#TODO: possibly loss.item
         writer.add_scalar('val_loss_x',val_loss[0],(epoch+1)*len(train_loader))#TODO: possibly loss.item
@@ -313,11 +299,13 @@ def main():
         writer.add_scalar('val_loss_z',val_loss[2],(epoch+1)*len(train_loader))#TODO: possibly loss.item
         for ii, acc in enumerate(val_acc):
             writer.add_scalar('val_acc_'+str(ii),acc,(epoch+1)*len(train_loader))
+        print('Val Cross-Entropy Loss: ',sum(val_loss),val_loss)
+        print('Val Accuracy: ',acc_list)
         #Adjust LR
         scheduler.step()
         print('Learning Rate Set to: ',scheduler.get_lr())
         # Save variables
-        if ((epoch + 1) % save_variables_divider == 0 or (epoch == 0) or (epoch == num_epochs - 1)):
+        if ((epoch + 1) % save_variables_divider == 0 or (epoch == 0) or (epoch == args.epochs - 1)):
             print("Saving variables")
             save_model(epoch)
     writer.close()
