@@ -223,6 +223,7 @@ def main():
     #            print(type(obj), obj.size())
     #    except:
     #            pass
+    #model = model.to('cpu')
     for epoch in range(args.epochs):
         print('Epoch: ', epoch)
         #Train
@@ -240,7 +241,13 @@ def main():
             #    except:
             #        pass
             with torch.set_grad_enabled(True):
-                logits = model(batch['image'].to(device))
+                batch_imgs = batch['image']
+                batch_imgs = batch_imgs.to(device)
+                #model = model.to(device)
+                logits = model(batch_imgs)
+                print(logits.size())
+                del batch_imgs
+                del batch
                 logits = logits.view(-1,3,model.num_points,model.bins)
                 #logits_x = logits[:,0,:,:]
                 #logits_y = logits[:,1,:,:]
@@ -248,19 +255,27 @@ def main():
                 loss_x = 0
                 loss_y = 0
                 loss_z = 0
+                point_batch = point_batch.to(device)
                 for temp in range(model.num_points):
-                    loss_x += F.cross_entropy(logits[:,0,temp,:],(point_batch.to(device))[:,temp,0])
-                    loss_y += F.cross_entropy(logits[:,1,temp,:],(point_batch.to(device))[:,temp,1])
-                    loss_z += F.cross_entropy(logits[:,2,temp,:],(point_batch.to(device))[:,temp,2])
+                    loss_x += F.cross_entropy(logits[:,0,temp,:],(point_batch)[:,temp,0])
+                    loss_y += F.cross_entropy(logits[:,1,temp,:],(point_batch)[:,temp,1])
+                    loss_z += F.cross_entropy(logits[:,2,temp,:],(point_batch)[:,temp,2])
+                point_batch = point_batch.to('cpu')
+                logits = logits.to('cpu')                
+                acc_list = acc_metric(args,logits,point_batch)
+                del point_batch
+                del logits
+                
                 batch_loss = loss_x + loss_y + loss_z
                 batch_loss.backward()
                 optimizer.step()
+                #model = model.to('cpu')
+                
                 writer.add_scalar('train_loss',batch_loss,ctr+epoch*len(train_loader))#TODO: possibly loss.item
                 writer.add_scalar('train_loss_x',loss_x,ctr+epoch*len(train_loader))#TODO: possibly loss.item
                 writer.add_scalar('train_loss_y',loss_y,ctr+epoch*len(train_loader))#TODO: possibly loss.item
                 writer.add_scalar('train_loss_z',loss_z,ctr+epoch*len(train_loader))#TODO: possibly loss.item
-                acc_list = acc_metric(args,logits.cpu(),point_batch.cpu())
-                logits = logits.cpu()
+                
                 for ii, acc in enumerate(acc_list):
                     writer.add_scalar('train_acc_'+str(ii),acc,ctr+epoch*len(train_loader))
                 #print('Cross-Entropy Loss: ',batch_loss.item(),[loss_x.item(),loss_y.item(),loss_z.item()])
@@ -272,18 +287,21 @@ def main():
             #point_batch = point_batch.cpu()
             #torch.cuda.empty_cache()
         #Validation
+        print("Reach here")
         val_loss = [0,0,0]
         val_acc = np.zeros(model.num_points)
         for batch in val_loader:
             with torch.set_grad_enabled(False):
                 image_batch = batch['image'].to(device)
-                point_batch = batch['points'].to(device)
+                model = model.to(device)
                 model.eval()
                 logits = model(image_batch)
+                del image_batch
                 logits = logits.view(-1,3,model.num_points,model.bins)
                 logits_x = logits[:,0,:,:]
                 logits_y = logits[:,1,:,:]
                 logits_z = logits[:,2,:,:]
+                point_batch = batch['points'].to(device)
                 for temp in range(model.num_points):
                     val_loss[0] += F.cross_entropy(logits_x[:,temp,:],point_batch[:,temp,0])
                     val_loss[1] += F.cross_entropy(logits_y[:,temp,:],point_batch[:,temp,1])
@@ -291,6 +309,9 @@ def main():
                 val_acc_list = acc_metric(args,logits.cpu(),point_batch.cpu())
                 for ii, acc in enumerate(val_acc_list):
                     val_acc[ii] += acc
+                del point_batch
+                model = model.to('cpu')
+                
         val_loss = [val_loss[temp].item()/len(val_loader) for temp in range(3)]
         val_acc = val_acc/len(val_loader)
         writer.add_scalar('val_loss',sum(val_loss),(epoch+1)*len(train_loader))#TODO: possibly loss.item
