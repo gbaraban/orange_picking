@@ -152,7 +152,7 @@ def main():
     print ('Validation Samples: ' + str(len(val_data)))
 
     #Create Model
-    model = OrangeNet(args.capacity,args.num_images,args.num_pts,args.bins)
+    model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins)
     if args.load:
         if os.path.isfile(args.load):
             checkpoint = torch.load(args.load)
@@ -179,7 +179,7 @@ def main():
     
     #Create Optimizer
     learning_rate = args.learning_rate
-    learn_rate_decay = 100 / args.epochs
+    learn_rate_decay = np.power(1e-3,1/float(args.epochs))#0.9991#10 / args.epochs
     optimizer = optim.Adam(model.parameters(), lr = args.learning_rate)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=learn_rate_decay)
     #ReduceLROnPlateau is an interesting idea
@@ -228,7 +228,7 @@ def main():
         #Train
         #gc.collect()
         for ctr, batch in enumerate(train_loader):
-            print('Batch: ',ctr)
+            #print('Batch: ',ctr)
             #image_batch = batch['image'].to(device).float()
             point_batch = batch['points']#.to(device)
             optimizer.zero_grad()
@@ -263,8 +263,8 @@ def main():
                 logits = logits.cpu()
                 for ii, acc in enumerate(acc_list):
                     writer.add_scalar('train_acc_'+str(ii),acc,ctr+epoch*len(train_loader))
-                print('Cross-Entropy Loss: ',batch_loss.item(),[loss_x.item(),loss_y.item(),loss_z.item()])
-                print('Accuracy: ',acc_list)
+                #print('Cross-Entropy Loss: ',batch_loss.item(),[loss_x.item(),loss_y.item(),loss_z.item()])
+                #print('Accuracy: ',acc_list)
 
                 #image_batch = point_batch = logits = loss_x = loss_y = loss_z = batch_loss = None
             #del image_batch, point_batch, logits, loss_x, loss_y, loss_z, batch_loss
@@ -285,10 +285,10 @@ def main():
                 logits_y = logits[:,1,:,:]
                 logits_z = logits[:,2,:,:]
                 for temp in range(model.num_points):
-                    val_loss[0] += loss(logits_x[:,temp,:],point_batch[:,temp,0])
-                    val_loss[1] += loss(logits_y[:,temp,:],point_batch[:,temp,1])
-                    val_loss[2] += loss(logits_y[:,temp,:],point_batch[:,temp,2])
-                val_acc_list = acc_metric(logits,point_batch)
+                    val_loss[0] += F.cross_entropy(logits_x[:,temp,:],point_batch[:,temp,0])
+                    val_loss[1] += F.cross_entropy(logits_y[:,temp,:],point_batch[:,temp,1])
+                    val_loss[2] += F.cross_entropy(logits_y[:,temp,:],point_batch[:,temp,2])
+                val_acc_list = acc_metric(args,logits.cpu(),point_batch.cpu())
                 for ii, acc in enumerate(val_acc_list):
                     val_acc[ii] += acc
         val_loss = [val_loss[temp].item()/len(val_loader) for temp in range(3)]
