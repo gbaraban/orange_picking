@@ -39,7 +39,7 @@ def parse_state(state,targ):
   logR = logRot(state[1])
   return pos[0],pos[1],pos[2], ypr[2], ypr[1], ypr[0], yd, yawcost, logR
 
-def make_plots(ts,states, targ, cyl_o, cyl_r, cyl_h, saveFolder):
+def make_plots(ts,states, targ, cyl_o, cyl_r, cyl_h, saveFolder, truth=None):
   x_list = []
   y_list = []
   z_list = []
@@ -91,6 +91,11 @@ def make_plots(ts,states, targ, cyl_o, cyl_r, cyl_h, saveFolder):
   ax.set_xlim(mid[0]-max_range/2.0,mid[0]+max_range/2.0)
   ax.set_ylim(mid[1]-max_range/2.0,mid[1]+max_range/2.0)
   ax.set_zlim(max(0,mid[2]-max_range/2.0),mid[2]+max_range/2.0)
+  if truth is not None:
+    for point in truth:
+      point_transformed = np.matmul(states[0][1],point) + states[0][0]
+      #print('Truth: ' + str(point_transformed))
+      ax.plot3D([point_transformed[0]],[point_transformed[1]],[point_transformed[2]],'g+')
   #plt.show()
   #Plot x,y,z
   fig1, (ax1,ax2,ax3) = plt.subplots(3,1)

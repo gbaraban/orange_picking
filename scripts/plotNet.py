@@ -63,7 +63,7 @@ if __name__ == "__main__":
   parser.add_argument('fname', help='pickle file')
   #parser.add_argument('--coord_type', help='pickle file')
   parser.add_argument('--bin', default=1, help='use classification')
-  parser.add_argument('--last', default=1, help='only show the last epoch')
+  parser.add_argument('--last', help='only show the last epoch')
   args = parser.parse_args()
   with open(args.fname,'rb') as f:
     data = pickle.load(f)

@@ -5,23 +5,22 @@ import matplotlib.pyplot as plt
 from mpl_toolkits import mplot3d
 import pickle
 
-bag_dir = 'data/bag/'
+bag_dir = 'data/bag_v3/'
 bag_list = os.listdir(bag_dir)
 
 data_list = []
 points_list = []
 for bag in bag_list:
-  with open(bag_dir+'/'+bag+'/data.pickle','rb') as f:
-    data = pickle.load(f,encoding='latin1')
-    data_list.append(data)
+  if os.path.isdir(bag_dir+'/'+bag): 
+    bag_num = bag[3:]
+    with open(bag_dir+'/'+bag+'/data.pickle','rb') as f:
+      data = pickle.load(f)
+      data_list.append(data)
 
 for ii in range(len(data_list)):
-  jj = 0
-  while jj in data_list[ii]:
+  for jj in data_list[ii]:
     points = data_list[ii][jj]
     points_list.append(points)
-    print(jj)
-    jj += 1
   
 for ii in range(0,3):
   fig = plt.figure()
@@ -40,8 +39,10 @@ for ii in range(0,3):
 #  y = [temp[1] for temp in data_ii]
 #  z = [temp[2] for temp in data_ii]
 #  ax.+plot3D(x,y,z,marker='+')#data[ii][:][0],data[ii][:][1],data[ii][:][2], marker = '+')
+  ax.set_xlabel('x (m)')
+  ax.set_ylabel('y (m)')
+  ax.set_zlabel('z (m)')
   plt.show()
 
 
-f.close()
 
