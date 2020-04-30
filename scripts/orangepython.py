@@ -45,12 +45,12 @@ def setUpEnv(brainNames, cameraPos, cameraRot, treePos, orangePos, treeScale = 0
 parser = argparse.ArgumentParser()
 parser.add_argument('--env', help='env file')
 parser.add_argument('--loop', type=bool, help='make infinite data')
-parser.add_argument('--plotonly', type=bool, help='make infinite data')
+parser.add_argument('--plotonly', type=bool, help='skip image generation')
 args = parser.parse_args()
 #Bridge to Unity
 #tracemalloc.start()
 if (args.plotonly == None):
-  env_name = None
+  env_name = 'unity/env_v1'
   train_mode = True
   env = UnityEnvironment(file_name=env_name)
   brainNames = env.brain_names
