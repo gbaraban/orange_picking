@@ -92,7 +92,6 @@ def acc_metric(args,logits,point_batch):
 
 def main():
     signal.signal(signal.SIGINT,signal_handler)
-    print("asdf")
     global model
     global save_path
     global writer
