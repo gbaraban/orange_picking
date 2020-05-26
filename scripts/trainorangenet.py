@@ -18,7 +18,9 @@ from torch.utils.data import Dataset, DataLoader
 from customTransforms import *
 from orangenetarch import *
 from customDatasets import *
+print("summ")
 from torch.utils.tensorboard import SummaryWriter 
+print("gc")
 import gc
 
 #Global variables
@@ -90,6 +92,7 @@ def acc_metric(args,logits,point_batch):
 
 def main():
     signal.signal(signal.SIGINT,signal_handler)
+    print("asdf")
     global model
     global save_path
     global writer
@@ -116,13 +119,15 @@ def main():
     #Data Transforms
     pt_trans = transforms.Compose([pointToBins(args.min,args.max,args.bins)])#,GaussLabels(1,1e-10,args.bins)])
     #Load Mean image
+    print("Test")
     data_loc = copy.deepcopy(args.data)
     data_loc_name = data_loc.strip("..").strip(".").strip("/").replace("/", "_")
-    mean_img_loc = data_loc + "../mean_imgv2_" + data_loc_name + '.npy' 
+    mean_img_loc = data_loc + "/../mean_imgv2_" + data_loc_name + '.npy' 
     if not (os.path.exists(mean_img_loc)):
-        print('mean image file not found')
-        mean_image = compute_mean_image(train_indices, data_loc, model)#TODO:Add this in
-        np.save(mean_img_loc, mean_image)
+        print('mean image file not found', mean_img_loc)
+        return 0
+        #mean_image = compute_mean_image(train_indices, data_loc, model)#TODO:Add this in
+        #np.save(mean_img_loc, mean_image)
     else:
         print('mean image file found')
         mean_image = np.load(mean_img_loc)
@@ -152,7 +157,7 @@ def main():
     print ('Validation Samples: ' + str(len(val_data)))
 
     #Create Model
-    model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins)
+    model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max)
     if args.load:
         if os.path.isfile(args.load):
             checkpoint = torch.load(args.load)
@@ -176,6 +181,7 @@ def main():
     else:
         device = torch.device('cpu')
     print('Device: ', device)
+    print('Model Device: ', next(model.parameters()).device)
     
     #Create Optimizer
     learning_rate = args.learning_rate
@@ -225,6 +231,7 @@ def main():
     #            pass
     #model = model.to('cpu')
     for epoch in range(args.epochs):
+        model = model.to(device)
         print('Epoch: ', epoch)
         #Train
         #gc.collect()
@@ -245,7 +252,7 @@ def main():
                 batch_imgs = batch_imgs.to(device)
                 #model = model.to(device)
                 logits = model(batch_imgs)
-                print(logits.size())
+                #print(logits.size())
                 del batch_imgs
                 del batch
                 logits = logits.view(-1,3,model.num_points,model.bins)
@@ -333,4 +340,5 @@ def main():
     print("Done")
 
 if __name__ == '__main__':
+    print("asdf")
     main()

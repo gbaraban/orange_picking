@@ -8,7 +8,7 @@ import pickle
 from mlagents_envs.environment import UnityEnvironment
 from scipy.spatial.transform import Rotation as R
 import argparse
-from parsetrajfile import *
+from plotting.parsetrajfile import *
 
 #import tracemalloc
 
@@ -52,7 +52,7 @@ args = parser.parse_args()
 if (args.plotonly == None):
   env_name = 'unity/env_v1'
   train_mode = True
-  env = UnityEnvironment(file_name=env_name)
+  env = UnityEnvironment(file_name=env_name, seed=0)
   brainNames = env.brain_names
   env.reset(train_mode=train_mode)
 
