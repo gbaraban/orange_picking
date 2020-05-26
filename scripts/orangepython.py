@@ -5,7 +5,7 @@ import numpy as np
 import sys
 import os
 import pickle
-from mlagents.envs.environment import UnityEnvironment
+from mlagents_envs.environment import UnityEnvironment
 from scipy.spatial.transform import Rotation as R
 import argparse
 from parsetrajfile import *
