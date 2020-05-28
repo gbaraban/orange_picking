@@ -18,21 +18,21 @@ def makeCamAct(x):
   euler = r.as_euler(seq = 'zxy',degrees = True) #using weird unity sequence
   unityEuler = (euler[1],-euler[0],euler[2]) 
   cameraAction = np.hstack((gcopVecToUnity(cameraPos),unityEuler,1))
-  return cameraAction
+  return np.array([cameraAction])
 
 def setUpEnv(env, x0, treePos, orangePos, treeScale = 0.125, orangeScale = 0.07):
   camAct = makeCamAct(x0)
-  treeAct = np.hstack((treePos,1))
-  orangeAct = np.hstack((orangePos,1))
+  treeAct = np.array([np.hstack((treePos,1))])
+  orangeAct = np.array([np.hstack((orangePos,1))])
   names = env.get_behavior_names()
   for n in names:
-    if "tree" in n:
+    if "Tree" in n:
       env.set_actions(n,treeAct)
       continue
-    if "orange" in n:
+    if "Orange" in n:
       env.set_actions(n,orangeAct)
       continue
-    if "cam" in n:
+    if "Cam" in n:
       env.set_actions(n,camAct)
       camName = n
       continue
@@ -48,7 +48,7 @@ def unity_image(env,act,cam_name):
 def save_image_array(image_in,path,name):
   im_np = (image_in*255).astype('uint8')
   image = img.fromarray(im_np)
-  image.save(path + + name + '.png')
+  image.save(path + name + '.png')
 
 def sys_f_linear(x,goal,dt,goal_time=1):
   goal_pt = goal[0]
@@ -63,6 +63,7 @@ def sys_f_linear(x,goal,dt,goal_time=1):
 
 def run_sim(sys_f,env,model,x0,orange,tree,eps=0.1, max_steps=99,dt=0.1,save_path = None):
   x_list = []
+  env.reset()
   camName = setUpEnv(env,x0,orange,tree)
   dist = np.linalg.norm(x0[0:3] - orange)
   x = x0
@@ -119,7 +120,7 @@ def main():
     return
   #Create environment
   env = UnityEnvironment(file_name=None,seed=0)
-  env.reset()
+  #env.reset()
   #Baseline Positions
   x0 = np.array((-10,0,1))
   xmult = np.array((2,2,0.5))
