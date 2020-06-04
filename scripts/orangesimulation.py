@@ -14,41 +14,76 @@ def gcopVecToUnity(v):
 
 def makeCamAct(x):
   #Set up camera action
+  #print("x",x)
   cameraPos = x[0:3]  
   r = R.from_euler('zyx',x[3:6])
   euler = r.as_euler(seq = 'zxy',degrees = True) #using weird unity sequence
   unityEuler = (euler[1],-euler[0],euler[2]) 
-  print("euler: ", unityEuler)
+  #print("euler: ", unityEuler)
   cameraAction = np.hstack((gcopVecToUnity(cameraPos),unityEuler,1))
+  #print("cameraAction: ",cameraAction)
   return np.array([cameraAction])
+
+def shuffleEnv(env):
+  #Baseline Positions
+  x0 = np.array((-10,0,1))
+  xmult = np.array((2,2,0.5))
+  yaw0 = 0
+  ymult = np.pi
+  cameraRot = np.array([[1,0,0],[0,1,0],[0,0,1]])
+  treePosYaw = np.array((0,0,0,0))
+  treemult = np.array((0.5,0.5,0,180))
+  treeHeight = 1.6
+  orangePos = np.array((0,0,0.5))
+  orangeR = 0.6
+  orangeRmult = 0.3
+  orangeHmult = 0.5
+  #randomize environment
+  xoffset = 2*xmult*(np.random.rand(3) - 0.5)
+  x0_i = x0 + xoffset
+  yaw0_i = yaw0 + 2*ymult*(np.random.rand(1) - 0.5)
+  treeoffset = 2*treemult*(np.random.rand(4) - 0.5)
+  treePos_i = treePosYaw + treeoffset
+  theta = 2*np.pi*np.random.random_sample()
+  R_i = orangeR + orangeRmult*np.random.random_sample()# + 0.2
+  orangeoffset = np.array((R_i*np.cos(theta), R_i*np.sin(theta),
+                        orangePos[2] + orangeHmult*np.random.random_sample()))
+  orangePos_i = treePos_i[0:3] + orangeoffset
+  x0_i = np.hstack((x0_i,yaw0_i,0,0))
+  camName = setUpEnv(env,x0_i,treePos_i,orangePos_i)
+  return (x0_i, camName)
+
 
 def setUpEnv(env, x0, treePos, orangePos, treeScale = 0.125, orangeScale = 0.07):
     env.reset()
     camAct = makeCamAct(x0)
-    treeAct = np.array([np.hstack((treePos,1))])
-    orangeAct = np.array([np.hstack((orangePos,1))])
+    treeAct = np.array([np.hstack((gcopVecToUnity(treePos[0:3]),treePos[3],1))])
+    orangeAct = np.array([np.hstack((gcopVecToUnity(orangePos),0,1))])
     names = env.get_behavior_names()
     camName = ""
     for n in names:
-        print(n)
+        #print(n)
         if "Tree" in n:
             env.set_actions(n,treeAct)
-            print("tree set")
+            #print("tree set")
             continue
         if "Orange" in n:
             env.set_actions(n,orangeAct)
-            print("orange set")
+            #print("orange set")
             continue
         if "Cam" in n:
             env.set_actions(n,camAct)
-            print("orange set")
+            #print("Camera set")
             camName = n
             continue
+    env.step()
+    #print("env step")
     return camName
 
 def unity_image(env,act,cam_name):
   env.set_actions(cam_name,act)
   env.step()
+  #print("step called")
   (ds,ts) = env.get_steps(cam_name)
   obs = ds.obs[0][0,:,:,:]
   return obs
@@ -69,9 +104,11 @@ def sys_f_linear(x,goal,dt,goal_time=1):
   new_x = np.hstack((new_pos,yaw,pitch,roll))
   return new_x
 
-def run_sim(sys_f,env,model,x0,orange,tree,eps=0.1, max_steps=99,dt=0.1,save_path = None):
+def run_sim(sys_f,env,model,eps=0.1, max_steps=99,dt=0.1,save_path = None):
   x_list = []
-  camName = setUpEnv(env,x0,orange,tree)
+  print("in run_sim",tree)
+  print("calling setupenv")
+  (x,camName) = shuffleEnv(env)#,x0,orange,tree)
   if camName is "":
       print("camName not set")
       return
@@ -132,19 +169,6 @@ def main():
   #Create environment
   env = UnityEnvironment(file_name=args.env,seed=0)
   #env.reset()
-  #Baseline Positions
-  x0 = np.array((-10,0,1))
-  xmult = np.array((2,2,0.5))
-  yaw0 = 0
-  ymult = np.pi
-  cameraRot = np.array([[1,0,0],[0,1,0],[0,0,1]])
-  treePos = np.array((0,0,0))
-  treemult = np.array((0.5,0.5,0))
-  treeHeight = 1.6
-  orangePos = np.array((0,0,0.5))
-  orangeR = 0.6
-  orangeRmult = 0.3
-  orangeHmult = 0.5
   #Iterate simulations
   run_num = 0
   globalfolder = 'data/Sim' + str(run_num) + '/'
@@ -158,19 +182,7 @@ def main():
     #Filenames
     foldername = "trial" + str(trial_num) + "/"
     os.makedirs(globalfolder + foldername)
-    #randomize environment
-    xoffset = 2*xmult*(np.random.rand(3) - 0.5)
-    x0_i = x0 + xoffset
-    yaw0_i = yaw0 + 2*ymult*(np.random.rand(1) - 0.5)
-    treeoffset = 2*treemult*(np.random.rand(3) - 0.5)
-    treePos_i = treePos + treeoffset
-    theta = 2*np.pi*np.random.random_sample()
-    R_i = orangeR + orangeRmult*np.random.random_sample()# + 0.2
-    orangeoffset = np.array((R_i*np.cos(theta), R_i*np.sin(theta),
-                             orangePos[2] + orangeHmult*np.random.random_sample()))
-    orangePos_i = treePos_i + orangeoffset
-    x0_i = np.hstack((x0_i,yaw0_i,0,0))
-    err_code = run_sim(sys_f,env,model,x0_i,orangePos_i,treePos_i)
+    err_code = run_sim(sys_f,env,model)#,x0_i,orangePos_i,treePos_i)
     if err_code is not 0:
       print('simulation did not converge.  code is: ', err_code) 
   env.close()
