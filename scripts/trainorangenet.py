@@ -1,3 +1,4 @@
+from torch.utils.tensorboard import SummaryWriter
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -17,11 +18,12 @@ import sys
 from torch.utils.data import Dataset, DataLoader
 from customTransforms import *
 from orangenetarch import *
-from customDatasets import *
-print("summ")
-from torch.utils.tensorboard import SummaryWriter 
-print("gc")
+#from customRealDatasets import *
+#print("summ")
+#from torch.utils.tensorboard import SummaryWriter 
+#print("gc")
 import gc
+import random
 
 #Global variables
 save_path = None
@@ -111,10 +113,24 @@ def main():
     parser.add_argument('--max', type=tuple, default=(1,0.5,0.5), help='maximum xyz')
     parser.add_argument('--bins', type=int, default=30, help='number of bins per coordinate')
     parser.add_argument('-j', type=int, default=4, help='number of loader workers')
+    parser.add_argument('--traj', type=int, default=0, help='train trajectories')
+    parser.add_argument('--real', type=int, default=0, help='real world imgs')
+    parser.add_argument('--val', type=float, default=0.10, help='validation percentage')
     args = parser.parse_args()
+
+    if args.traj == 0:
+        args.traj = False
+    else:
+        args.traj = True
+
+    if args.real == 0:
+        from customDatasets import OrangeSimDataSet, SubSet
+    else:
+        from customRealDatasets import OrangeSimDataSet, SubSet
+
     args.min = [(0,-0.5,-0.1),(0,-1,-0.15),(0,-1.5,-0.2),(0,-2,-0.3),(0,-3,-0.5)]
     args.max = [(1,0.5,0.1),(2,1,0.15),(4,1.5,0.2),(6,2,0.3),(7,0.3,0.5)]
-    
+    #args.traj = False
     #Data Transforms
     pt_trans = transforms.Compose([pointToBins(args.min,args.max,args.bins)])#,GaussLabels(1,1e-10,args.bins)])
     #Load Mean image
@@ -133,22 +149,55 @@ def main():
   # mean_image = np.zeros((model.w, model.h, 3))
     img_trans = None 
     #Create dataset class
-    dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans)
-    
+    dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, n_outputs=3)
+
     #Break up into validation and training
-    val_perc = 0.07
+    #val_perc = 0.07
+    val_perc = args.val
     np.random.seed(args.seed)
-    if args.resample:
-        rand_idx = np.random.choice(len(dataclass),size=len(dataclass),replace=True)
+    random.seed(args.seed)
+
+    if not args.traj:
+        print("No traj")
+        if args.resample:
+            rand_idx = np.random.choice(len(dataclass),size=len(dataclass),replace=True)
+        else:
+            rand_idx = np.random.permutation(len(dataclass))
+        val_idx = np.ceil(len(dataclass)*val_perc).astype(int)
+        train_idx = len(dataclass) - val_idx
+        val_idx = rand_idx[-val_idx:]
+        train_idx = rand_idx[:train_idx]
+
     else:
-        rand_idx = np.random.permutation(len(dataclass))
-    val_idx = np.ceil(len(dataclass)*val_perc).astype(int)
-    train_idx = len(dataclass) - val_idx
-    val_idx = rand_idx[-val_idx:]
-    train_idx = rand_idx[:train_idx]
+        print("Traj")
+        val_order = np.ceil(len(dataclass.num_samples_dir_size)*val_perc).astype(int)
+        val_indices = []
+        train_indices = []
+        val_data = {}
+        val_data["order"] = np.array(random.choices(list(dataclass.num_samples_dir_size.keys()), k=val_order))
+
+        for x in val_data["order"]:
+            val_indices.extend(list(range(dataclass.num_samples_dir[x]['start'], dataclass.num_samples_dir[x]['end'])))
+            val_data[x] = dataclass.num_samples_dir[x]
+
+        for i, x in enumerate(list(dataclass.num_samples_dir_size.keys())):
+            if x not in val_data["order"]:
+                train_indices.extend(list(range(dataclass.num_samples_dir[x]['start'], dataclass.num_samples_dir[x]['end'])))
+
+        val_idx = len(val_indices)
+        train_idx = dataclass.num_samples - val_idx
+
+        random.shuffle(train_indices)
+
+        val_idx = np.array(val_indices)
+        train_idx = np.array(train_indices)
+
+        fopen = open('val_data_xyz.pickle', 'wb')
+        pickle.dump(val_data, fopen, pickle.HIGHEST_PROTOCOL)
+
     train_data = SubSet(dataclass,train_idx)
     val_data = SubSet(dataclass,val_idx)
-    
+
     #Create DataLoaders
     train_loader = DataLoader(train_data,batch_size=args.batch_size,shuffle=True,num_workers=args.j, worker_init_fn=dl_init)
     val_loader = DataLoader(val_data,batch_size=args.batch_size,shuffle=False,num_workers=args.j)
@@ -234,6 +283,8 @@ def main():
         print('Epoch: ', epoch)
         #Train
         #gc.collect()
+        acc_total = [0., 0., 0.]
+        elements = 0.
         for ctr, batch in enumerate(train_loader):
             #print('Batch: ',ctr)
             #image_batch = batch['image'].to(device).float()
@@ -261,6 +312,7 @@ def main():
                 loss_x = 0
                 loss_y = 0
                 loss_z = 0
+                b_size = logits.shape[0]
                 point_batch = point_batch.to(device)
                 for temp in range(model.num_points):
                     loss_x += F.cross_entropy(logits[:,0,temp,:],(point_batch)[:,temp,0])
@@ -285,7 +337,15 @@ def main():
                 for ii, acc in enumerate(acc_list):
                     writer.add_scalar('train_acc_'+str(ii),acc,ctr+epoch*len(train_loader))
                 #print('Cross-Entropy Loss: ',batch_loss.item(),[loss_x.item(),loss_y.item(),loss_z.item()])
-                #print('Accuracy: ',acc_list)
+                #print('Training Accuracy: ',acc_list)
+                #print(type(acc_list))
+
+                for i in range(3):
+                    acc_total[i] = ((elements * acc_total[i]) + (b_size * acc_list[i]))/(elements + b_size)
+
+                elements += b_size
+
+                #print(b_size)
 
                 #image_batch = point_batch = logits = loss_x = loss_y = loss_z = batch_loss = None
             #del image_batch, point_batch, logits, loss_x, loss_y, loss_z, batch_loss
@@ -293,7 +353,9 @@ def main():
             #point_batch = point_batch.cpu()
             #torch.cuda.empty_cache()
         #Validation
-        print("Reach here")
+        #print("Reach here")
+        print('Training Accuracy: ',acc_total)
+        #exit()
         val_loss = [0,0,0]
         val_acc = np.zeros(model.num_points)
         for batch in val_loader:
@@ -311,7 +373,7 @@ def main():
                 for temp in range(model.num_points):
                     val_loss[0] += F.cross_entropy(logits_x[:,temp,:],point_batch[:,temp,0])
                     val_loss[1] += F.cross_entropy(logits_y[:,temp,:],point_batch[:,temp,1])
-                    val_loss[2] += F.cross_entropy(logits_y[:,temp,:],point_batch[:,temp,2])
+                    val_loss[2] += F.cross_entropy(logits_z[:,temp,:],point_batch[:,temp,2])
                 val_acc_list = acc_metric(args,logits.cpu(),point_batch.cpu())
                 for ii, acc in enumerate(val_acc_list):
                     val_acc[ii] += acc

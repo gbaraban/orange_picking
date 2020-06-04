@@ -33,11 +33,16 @@ class OrangeSimDataSet(Dataset):
         self.np_dir = root_dir.rstrip("/") + "_np/"
         self.trial_list = os.listdir(root_dir)
         self.num_samples = 0
+        self.num_samples_dir = {}
+        self.num_samples_dir_size = {}
+
         if reduce_N:
             time_window = num_pts*dt
         else:
             time_window = 0
-        for trial_dir in self.trial_list:
+        #for trial_dir in self.trial_list:
+        for i, trial_dir in enumerate(self.trial_list):
+            trial_subdir = os.listdir(root_dir + "/" + trial_dir)
             with open(self.run_dir+'/'+trial_dir+'/trajdata.pickle','rb') as f:
                 data = pickle.load(f)#,encoding='latin1')
                 self.traj_list.append(data)
@@ -54,9 +59,25 @@ class OrangeSimDataSet(Dataset):
                     self.num_samples += N
                     self.num_list.append(N)
 
+            self.num_samples_dir[i] = {}
+            if reduce_N:
+                self.num_samples_dir[i]['start'] = self.num_samples - reduced_N
+            else:
+                self.num_samples_dir[i]['start'] = self.num_samples - N
+
+            self.num_samples_dir[i]['end'] = self.num_samples
+            self.num_samples_dir[i]['size'] = self.num_samples_dir[i]['end'] - self.num_samples_dir[i]['start']
+            self.num_samples_dir[i]['data'] = data
+            self.num_samples_dir[i]['dir'] = trial_dir
+            self.num_samples_dir_size[i] = self.num_samples_dir[i]['size']
+
+
     def __len__(self):
         return self.num_samples
-    
+
+    def getTrajLen(self):
+        pass
+
     def __getitem__(self,i):
         idx = i
         trial_idx = 0

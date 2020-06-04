@@ -6,6 +6,7 @@ from orangenetarch import *
 import torch
 import torch.nn as nn
 import argparse
+import os
 
 def gcopVecToUnity(v):
   temp = np.array((v[0],v[2],v[1]))
@@ -17,26 +18,33 @@ def makeCamAct(x):
   r = R.from_euler('zyx',x[3:6])
   euler = r.as_euler(seq = 'zxy',degrees = True) #using weird unity sequence
   unityEuler = (euler[1],-euler[0],euler[2]) 
+  print("euler: ", unityEuler)
   cameraAction = np.hstack((gcopVecToUnity(cameraPos),unityEuler,1))
   return np.array([cameraAction])
 
 def setUpEnv(env, x0, treePos, orangePos, treeScale = 0.125, orangeScale = 0.07):
-  camAct = makeCamAct(x0)
-  treeAct = np.array([np.hstack((treePos,1))])
-  orangeAct = np.array([np.hstack((orangePos,1))])
-  names = env.get_behavior_names()
-  for n in names:
-    if "Tree" in n:
-      env.set_actions(n,treeAct)
-      continue
-    if "Orange" in n:
-      env.set_actions(n,orangeAct)
-      continue
-    if "Cam" in n:
-      env.set_actions(n,camAct)
-      camName = n
-      continue
-   return camName
+    env.reset()
+    camAct = makeCamAct(x0)
+    treeAct = np.array([np.hstack((treePos,1))])
+    orangeAct = np.array([np.hstack((orangePos,1))])
+    names = env.get_behavior_names()
+    camName = ""
+    for n in names:
+        print(n)
+        if "Tree" in n:
+            env.set_actions(n,treeAct)
+            print("tree set")
+            continue
+        if "Orange" in n:
+            env.set_actions(n,orangeAct)
+            print("orange set")
+            continue
+        if "Cam" in n:
+            env.set_actions(n,camAct)
+            print("orange set")
+            camName = n
+            continue
+    return camName
 
 def unity_image(env,act,cam_name):
   env.set_actions(cam_name,act)
@@ -63,8 +71,10 @@ def sys_f_linear(x,goal,dt,goal_time=1):
 
 def run_sim(sys_f,env,model,x0,orange,tree,eps=0.1, max_steps=99,dt=0.1,save_path = None):
   x_list = []
-  env.reset()
   camName = setUpEnv(env,x0,orange,tree)
+  if camName is "":
+      print("camName not set")
+      return
   dist = np.linalg.norm(x0[0:3] - orange)
   x = x0
   for step in range(max_steps):
@@ -106,6 +116,7 @@ def main():
   parser.add_argument('--max', type=tuple, default=(1,0.5,0.5), help='maximum xyz')
   parser.add_argument('--bins', type=int, default=30, help='number of bins per coordinate')
   parser.add_argument('--iters', type=int, default=30, help='number of simulations')
+  parser.add_argument('--env', type=str, default="unity/env_v3", help='unity filename')
   args = parser.parse_args()
   args.min = [(0,-0.5,-0.1),(0,-1,-0.15),(0,-1.5,-0.2),(0,-2,-0.3),(0,-3,-0.5)]
   args.max = [(1,0.5,0.1),(2,1,0.15),(4,1.5,0.2),(6,2,0.3),(7,0.3,0.5)]
@@ -119,7 +130,7 @@ def main():
     print("No checkpoint found at: ", args.load)
     return
   #Create environment
-  env = UnityEnvironment(file_name=None,seed=0)
+  env = UnityEnvironment(file_name=args.env,seed=0)
   #env.reset()
   #Baseline Positions
   x0 = np.array((-10,0,1))
@@ -162,6 +173,7 @@ def main():
     err_code = run_sim(sys_f,env,model,x0_i,orangePos_i,treePos_i)
     if err_code is not 0:
       print('simulation did not converge.  code is: ', err_code) 
+  env.close()
 
 if __name__ == '__main__':
   main()
