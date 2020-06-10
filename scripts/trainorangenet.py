@@ -24,7 +24,7 @@ from orangenetarch import *
 #print("gc")
 import gc
 import random
-
+import pickle
 #Global variables
 save_path = None
 model = None
@@ -68,6 +68,93 @@ def dl_signal(signal,frame):
 
 def dl_init(x):
     signal.signal(signal.SIGINT,dl_signal)
+
+def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass):
+  idx = idx.astype(int)
+  trial_idx = 0
+
+  while True:
+    if num_list[trial_idx] <= idx:
+      idx = idx - num_list[trial_idx]
+      trial_idx += 1
+    else:
+      break
+
+  trial_list = os.listdir(run_dir)
+  trial = trial_list[trial_idx]
+
+  #image = None
+  #image_idx = idx
+  #print(idx)
+  #print(image_idx)
+  #for ii in range(model.num_images):
+  #  temp_idx = max(0,image_idx - ii)
+  #  img_run_dir = run_dir.rstrip("/") + "_np"
+  #  temp_image = np.load(img_run_dir+'/'+ trial + '/image' + str(temp_idx) + '.npy') #.resize((model.h,model.w))
+  #  #temp_image = np.array(temp_image.getdata()).reshape(temp_image.size[0],temp_image.size[1],3)
+  #  #temp_image = temp_image[:,:,0:3]/255.0 #Cut out alpha
+  #  # temp_image = temp_image/255.0
+  #  if image is None:
+  #      image = temp_image
+  #  else:
+  #      image = np.concatenate((image,temp_image),axis=2)
+  if real:
+    points = traj_data[trial_idx][idx]
+  else:
+    p0 = np.array(traj_data[trial_idx][idx][0])
+    R0 = np.array(traj_data[trial_idx][idx][1])
+    points = []
+    for pt in range(dataclass.num_pts):
+        temp_idx = int(idx + dataclass.h[trial]*dataclass.dt*(pt+1))
+        p = traj_data[trial_idx][temp_idx][0]
+        p = np.array(p)
+        p = np.matmul(R0.T,p-p0)
+        points.append(p)
+
+  local_pts = []
+  ctr = 0
+  #print(points)
+  #exit()
+  for point in points:
+    #Convert into bins
+    min_i = np.array(model.min[ctr])
+    max_i = np.array(model.max[ctr])
+    bin_nums = (point - min_i)/(max_i-min_i)
+    bin_nums_scaled = (bin_nums*model.bins).astype(int)
+    #for temp in range(3):
+        #if (bin_nums_scaled[temp] > model.bins-1) or (bin_nums_scaled[temp] < 0):
+            #print(str(point) + ' is out of bounds: ' + str(min_i) + ' ' + str(max_i))
+    bin_nums = np.clip(bin_nums_scaled,a_min=0,a_max=model.bins-1)
+    ctr += 1
+    labels = np.zeros((3,model.bins))
+    mean = 1
+    stdev = 1E-5
+    for j in range(len(bin_nums)):
+      for i in range(labels.shape[1]):
+        labels[j][i] = mean * (np.exp((-np.power(bin_nums[j]-i, 2))/(2 * np.power(stdev, 2))))
+    local_pts.append(labels)
+  local_pts = np.array(local_pts)
+  local_pts.resize((model.num_points,3,model.bins))
+  return local_pts
+
+def loadData(idx,num_list,run_dir,model,traj_data,real,dataclass):
+  waypoints_x = []
+  waypoints_y = []
+  waypoints_z = []
+
+  for ii in idx:
+    waypoint = parseFiles(ii,num_list,run_dir,model,traj_data,real,dataclass)
+    #images.append(np.array(image)) #- mean_image))
+    waypoints_x.append(waypoint[:,0,:])
+    waypoints_y.append(waypoint[:,1,:])
+    waypoints_z.append(waypoint[:,2,:])
+
+  waypoints_x = np.array(waypoints_x)
+  waypoints_y = np.array(waypoints_y)
+  waypoints_z = np.array(waypoints_z)
+
+  return np.array(waypoints_x).reshape(-1,model.num_points,model.bins), np.array(waypoints_y).reshape(-1,model.num_points,model.bins), np.array(waypoints_z).reshape(-1,model.num_points,model.bins)
+
 
 def acc_metric(args,logits,point_batch):
     softmax = nn.Softmax(dim=0)
@@ -116,6 +203,7 @@ def main():
     parser.add_argument('--traj', type=int, default=0, help='train trajectories')
     parser.add_argument('--real', type=int, default=0, help='real world imgs')
     parser.add_argument('--val', type=float, default=0.10, help='validation percentage')
+    parser.add_argument('--resnet18', type=int, default=0, help='real world imgs')
     args = parser.parse_args()
 
     if args.traj == 0:
@@ -149,7 +237,7 @@ def main():
   # mean_image = np.zeros((model.w, model.h, 3))
     img_trans = None 
     #Create dataset class
-    dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, n_outputs=3)
+    dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans)
 
     #Break up into validation and training
     #val_perc = 0.07
@@ -205,7 +293,7 @@ def main():
     print ('Validation Samples: ' + str(len(val_data)))
 
     #Create Model
-    model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max)
+    model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=3)
     if args.load:
         if os.path.isfile(args.load):
             checkpoint = torch.load(args.load)
@@ -250,23 +338,28 @@ def main():
     writer = SummaryWriter(tensorboard_path)
     #val_writer = SummaryWriter(val_path)
     #graph_writer = Su
-    #os.makedirs(plot_data_path)
+    os.makedirs(plot_data_path)
 
     #print ('Writers Set Up')
 
     #iters = 0
-    #plotting_data = dict()
-    #plotting_data['idx'] = range(5)
-    #plotting_data['truth'] = [val_outputs_x[plotting_data['idx']],
-    #                          val_outputs_y[plotting_data['idx']],
-    #                          val_outputs_z[plotting_data['idx']]]
-    #plotting_data['data'] = list()
-    #plotting_data['foc_l'] = args.cam_coord
-    #plotting_data['min'] = model.min
-    #plotting_data['max'] = model.max
-    #plotting_data['bins'] = model.bins
-    #for ii in plotting_data['idx']:
-    #  plotting_data['data'].append([])
+    if args.traj:
+        plotting_data = dict()
+        data_loc = copy.deepcopy(args.data)
+        val_outputs_x, val_outputs_y, val_outputs_z = loadData(val_idx,dataclass.num_list,data_loc,model,dataclass.traj_list,args.real,dataclass)
+        print(len(val_idx))
+        plotting_data['idx'] = range(len(val_idx))
+        plotting_data['truth'] = [val_outputs_x[plotting_data['idx']],
+                                  val_outputs_y[plotting_data['idx']],
+                                  val_outputs_z[plotting_data['idx']]]
+        plotting_data['data'] = list()
+        #plotting_data['foc_l'] = args.cam_coord
+        plotting_data['min'] = model.min
+        plotting_data['max'] = model.max
+        plotting_data['bins'] = model.bins
+        for ii in plotting_data['idx']:
+            plotting_data['data'].append([])
+
     #print(plotting_data)
     #loss = nn.CrossEntropyLoss()
     since = time.time()
@@ -340,7 +433,7 @@ def main():
                 #print('Training Accuracy: ',acc_list)
                 #print(type(acc_list))
 
-                for i in range(3):
+                for i in range(len(acc_total)):
                     acc_total[i] = ((elements * acc_total[i]) + (b_size * acc_list[i]))/(elements + b_size)
 
                 elements += b_size
@@ -356,8 +449,9 @@ def main():
         #print("Reach here")
         print('Training Accuracy: ',acc_total)
         #exit()
-        val_loss = [0,0,0]
+        val_loss = [0.,0.,0.]
         val_acc = np.zeros(model.num_points)
+        resnet_output = np.zeros((0, 3, args.num_pts, model.bins))
         for batch in val_loader:
             with torch.set_grad_enabled(False):
                 image_batch = batch['image'].to(device)
@@ -375,11 +469,20 @@ def main():
                     val_loss[1] += F.cross_entropy(logits_y[:,temp,:],point_batch[:,temp,1])
                     val_loss[2] += F.cross_entropy(logits_z[:,temp,:],point_batch[:,temp,2])
                 val_acc_list = acc_metric(args,logits.cpu(),point_batch.cpu())
+                logits = logits.to('cpu')
+                resnet_output = np.concatenate((resnet_output,logits), axis=0)
+
                 for ii, acc in enumerate(val_acc_list):
                     val_acc[ii] += acc
                 del point_batch
                 model = model.to('cpu')
-                
+
+        if args.traj:
+            for ii in plotting_data['idx']:
+                plotting_data['data'][ii].append(resnet_output[ii,:,:,:])
+
+            with open(plot_data_path+'/data.pickle','wb') as f:
+                pickle.dump(plotting_data,f,pickle.HIGHEST_PROTOCOL)
         val_loss = [val_loss[temp].item()/len(val_loader) for temp in range(3)]
         val_acc = val_acc/len(val_loader)
         writer.add_scalar('val_loss',sum(val_loss),(epoch+1)*len(train_loader))#TODO: possibly loss.item

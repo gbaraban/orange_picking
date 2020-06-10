@@ -35,6 +35,7 @@ class OrangeSimDataSet(Dataset):
         self.num_samples = 0
         self.num_samples_dir = {}
         self.num_samples_dir_size = {}
+        self.h = {}
 
         if reduce_N:
             time_window = num_pts*dt
@@ -50,9 +51,9 @@ class OrangeSimDataSet(Dataset):
                 data = pickle.load(data_f)#, encoding='latin1')
                 N = data['N']
                 tf = data['tf']
-                self.h = float(N)/tf
+                self.h[trial_dir] = float(N)/tf
                 if reduce_N:
-                    reduced_N = int(N - time_window*self.h)
+                    reduced_N = int(N - time_window*self.h[trial_dir])
                     self.num_samples += reduced_N
                     self.num_list.append(reduced_N)
                 else:
@@ -105,7 +106,7 @@ class OrangeSimDataSet(Dataset):
         R0 = np.array(self.traj_list[trial_idx][idx][1])
         points = []
         for pt in range(self.num_pts):
-            temp_idx = int(idx + self.h*self.dt*(pt+1))
+            temp_idx = int(idx + self.h[trial]*self.dt*(pt+1))
             p = self.traj_list[trial_idx][temp_idx][0]
             p = np.array(p)
             p = np.matmul(R0.T,p-p0)

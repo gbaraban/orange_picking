@@ -77,7 +77,7 @@ def make_layer8(in_size,out_size,stride_length=1):
             #Block8(out_size,out_size))
 
 class OrangeNet8(torch.nn.Module):
-    def __init__(self, capacity = 1, num_img = 1, num_pts = 3, bins = 30, n_outputs = 3, mins = None, maxs = None):
+    def __init__(self, capacity = 1, num_img = 1, num_pts = 3, bins = 30, mins = None, maxs = None, n_outputs = 3):
         super(OrangeNet8, self).__init__()
         #Parameters
         self.w = 640 #300
@@ -90,6 +90,7 @@ class OrangeNet8(torch.nn.Module):
         self.bins = bins
         self.min = mins
         self.max = maxs
+        self.outputs = n_outputs
         #Blocks
         #TODO: Add input layer
         self.conv1 = nn.Conv2d(in_channels=3,out_channels=int(32*self.f),kernel_size=5,stride=2,padding = 10)
@@ -126,7 +127,7 @@ class OrangeNet8(torch.nn.Module):
         return x
 
 class OrangeNet18(torch.nn.Module):
-    def __init__(self, capacity = 1, num_img = 1, num_pts = 3, bins = 30, n_outputs = 3, mins = None, maxs = None):
+    def __init__(self, capacity = 1, num_img = 1, num_pts = 3, bins = 30, mins = None, maxs = None, n_outputs = 3):
         super(OrangeNet18, self).__init__()
         #Parameters
         self.w = 640 #300
@@ -137,8 +138,8 @@ class OrangeNet18(torch.nn.Module):
         #self.learning_fac_init=0.000001
         #self.reg = False
         self.bins = bins
-        self.mins = mins
-        self.maxs = maxs
+        self.min = mins
+        self.max = maxs
         #Blocks
         self.conv1 = nn.Conv2d(3,int(64*self.f),kernel_size=7, stride=2, padding=3)
         self.bn1 = nn.BatchNorm2d(int(64*self.f))
