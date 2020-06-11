@@ -17,7 +17,7 @@ import signal
 import sys
 from torch.utils.data import Dataset, DataLoader
 from customTransforms import *
-from orangenetarch import *
+#from orangenetarch import *
 import pickle
 #from customRealDatasets import *
 #print("summ")
@@ -103,23 +103,55 @@ def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass):
   #      image = temp_image
   #  else:
   #      image = np.concatenate((image,temp_image),axis=2)
-  #if not real:
   if real:
     points = traj_data[trial_idx][idx]
   else:
     p0 = np.array(traj_data[trial_idx][idx][0])
     R0 = np.array(traj_data[trial_idx][idx][1])
     points = []
-    for pt in range(dataclass.num_pts):
-        temp_idx = int(idx + dataclass.h[trial]*dataclass.dt*(pt+1))
-        p = traj_data[trial_idx][temp_idx][0]
-        Ri = traj_data[trial_idx][temp_idx][1]
-        p = np.array(p)
-        p = list(np.matmul(R0.T,p-p0))
-        Ri = np.matmul(R0.T,Ri)
-        Ri_zyx = list(R.from_dcm(Ri).as_euler('zyx'))
-        p.extend(Ri_zyx)
-        points.append(p)
+    if dataclass.custom_dataset is None:
+        for pt in range(dataclass.num_pts):
+            temp_idx = int(idx + dataclass.h[trial]*dataclass.dt*(pt+1))
+            p = traj_data[trial_idx][temp_idx][0]
+            Ri = traj_data[trial_idx][temp_idx][1]
+            p = np.array(p)
+            p = list(np.matmul(R0.T,p-p0))
+            Ri = np.matmul(R0.T,Ri)
+            Ri_zyx = list(R.from_dcm(Ri).as_euler('zyx'))
+            p.extend(Ri_zyx)
+            points.append(p)
+    elif dataclass.custom_dataset == "Run18":
+        indices = np.floor(np.add(np.array([1, 2, 3]) * dataclass.h[trial], idx)).astype(int)
+        for x, ii in enumerate(indices):
+            if ii >= num_list[trial_idx]:
+                delta = idx if (x == 0) else indices[x-1]
+                dt = np.floor(((num_list[trial_idx] -1) - delta)/(3-x)).astype(int)
+                z = 3 - x
+                while (dt < 1) and z != 0:
+                    dt = np.floor(((num_list[trial_idx] - 1) - delta)/z).astype(int)
+                    z -= 1
+                for j in range(0,z):
+                    indices[j+x] = delta + ((j+1)*dt)
+
+                delta = 3 - (z+x)
+
+                for j in range(0, delta):
+                    indices[x+z+j] = num_list[trial_idx] - 1
+
+                break
+
+        for x, ii in enumerate(indices):
+            if (ii < idx):
+                    print(idx, ii)
+            p = np.array(traj_data[trial_idx][ii][0])
+            Ri = np.array(traj_data[trial_idx][ii][1])
+            p = list(np.matmul(R0.T,p-p0))
+            Ri = np.matmul(R0.T,Ri)
+            Ri_zyx = list(R.from_dcm(Ri).as_euler('zyx'))
+            p.extend(Ri_zyx)
+            points.append(p)
+
+
 
   local_pts = []
   ctr = 0
@@ -268,9 +300,12 @@ def main():
     parser.add_argument('--val', type=float, default=0.10, help='validation percentage')
     parser.add_argument('--resnet18', type=int, default=0, help='real world imgs')
     parser.add_argument('--yaw_only', type=int, default=0, help='yaw only')
-
-
+    parser.add_argument('--custom', type=str, default="", help='custom parser')
+    parser.add_argument('--test_arch', type=int, default=100, help='testing architectures')
     args = parser.parse_args()
+
+    if args.custom == "":
+        args.custom = None
 
     if args.yaw_only == 0:
         args.yaw_only = False
@@ -288,6 +323,14 @@ def main():
     else:
         from customRealDatasetsOrientation import OrangeSimDataSet, SubSet
         args.real = True
+
+    if args.test_arch == 100:
+        from orangenetarch import OrangeNet8, OrangeNet18
+    else:
+        import importlib
+        i = importlib.import_module('architecture.orangenetarch' + str(args.test_arch))
+        OrangeNet8 = i.OrangeNet8
+        OrangeNet18 = i.OrangeNet18
 
     args.min = [(0,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0,-1,-0.15,-np.pi,-np.pi/2,-np.pi),(0,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0,-2,-0.3,-np.pi,-np.pi/2,-np.pi),(0,-3,-0.5,-np.pi,-np.pi/2,-np.pi)]
     args.max = [(1,0.5,0.1,np.pi,np.pi/2,np.pi),(2,1,0.15,np.pi,np.pi/2,np.pi),(4,1.5,0.2,np.pi,np.pi/2,np.pi),(6,2,0.3,np.pi,np.pi/2,np.pi),(7,0.3,0.5,np.pi,np.pi/2,np.pi)]
@@ -310,7 +353,7 @@ def main():
   # mean_image = np.zeros((model.w, model.h, 3))
     img_trans = None 
     #Create dataset class
-    dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans)
+    dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, custom_dataset=args.custom)
 
     #Break up into validation and training
     #val_perc = 0.07
@@ -336,7 +379,7 @@ def main():
         train_indices = []
         val_data = {}
         val_data["order"] = np.array(random.choices(list(dataclass.num_samples_dir_size.keys()), k=val_order))
-        print(val_data["order"])
+        #print(val_data["order"])
 
         for x in val_data["order"]:
             val_indices.extend(list(range(dataclass.num_samples_dir[x]['start'], dataclass.num_samples_dir[x]['end'])))
@@ -376,7 +419,6 @@ def main():
         model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs)
     else:
         model = OrangeNet18(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs)
-
 
     if args.load:
         if os.path.isfile(args.load):

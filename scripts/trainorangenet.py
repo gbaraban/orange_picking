@@ -104,13 +104,42 @@ def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass):
     p0 = np.array(traj_data[trial_idx][idx][0])
     R0 = np.array(traj_data[trial_idx][idx][1])
     points = []
-    for pt in range(dataclass.num_pts):
-        temp_idx = int(idx + dataclass.h[trial]*dataclass.dt*(pt+1))
-        p = traj_data[trial_idx][temp_idx][0]
-        p = np.array(p)
-        p = np.matmul(R0.T,p-p0)
-        points.append(p)
+    if dataclass.custom_dataset is None:
+        for pt in range(dataclass.num_pts):
+            temp_idx = int(idx + dataclass.h[trial]*dataclass.dt*(pt+1))
+            p = traj_data[trial_idx][temp_idx][0]
+            p = np.array(p)
+            p = np.matmul(R0.T,p-p0)
+            points.append(p)
+    elif dataclass.custom_dataset == "Run18":
+        indices = np.floor(np.add(np.array([1, 2, 3]) * dataclass.h[trial], idx)).astype(int)
+        for x, ii in enumerate(indices):
+            if ii >= num_list[trial_idx]:
+                delta = idx if (x == 0) else indices[x-1]
+                dt = np.floor(((num_list[trial_idx] -1) - delta)/(3-x)).astype(int)
+                z = 3 - x
+                while (dt < 1) and z != 0:
+                    dt = np.floor(((num_list[trial_idx] - 1) - delta)/z).astype(int)
+                    z -= 1
+                for j in range(0,z):
+                    indices[j+x] = delta + ((j+1)*dt)
 
+                delta = 3 - (z+x)
+
+                for j in range(0, delta):
+                    indices[x+z+j] = num_list[trial_idx] - 1
+
+                break
+        #print(idx, indices)
+        for x, ii in enumerate(indices):
+            if (ii < idx):
+                    print(idx, ii)
+            p = np.array(traj_data[trial_idx][ii][0])
+            points.append(p)
+
+        points = np.matmul(np.array(R0).T, (np.array(points) - np.array(p0)).T).T
+
+  #exit()
   local_pts = []
   ctr = 0
   #print(points)
@@ -204,7 +233,12 @@ def main():
     parser.add_argument('--real', type=int, default=0, help='real world imgs')
     parser.add_argument('--val', type=float, default=0.10, help='validation percentage')
     parser.add_argument('--resnet18', type=int, default=0, help='real world imgs')
+    parser.add_argument('--custom', type=str, default="", help='custom parser')
+    parser.add_argument('--test_arch', type=int, default=100, help='testing architectures')
     args = parser.parse_args()
+
+    if args.custom == "":
+        args.custom = None
 
     if args.traj == 0:
         args.traj = False
@@ -215,6 +249,15 @@ def main():
         from customDatasets import OrangeSimDataSet, SubSet
     else:
         from customRealDatasets import OrangeSimDataSet, SubSet
+
+    if args.test_arch == 100:
+        from orangenetarch import OrangeNet8, OrangeNet18
+    else:
+        import importlib
+        i = importlib.import_module('architecture.orangenetarch' + str(args.test_arch))
+        OrangeNet8 = i.OrangeNet8
+        OrangeNet18 = i.OrangeNet18
+
 
     args.min = [(0,-0.5,-0.1),(0,-1,-0.15),(0,-1.5,-0.2),(0,-2,-0.3),(0,-3,-0.5)]
     args.max = [(1,0.5,0.1),(2,1,0.15),(4,1.5,0.2),(6,2,0.3),(7,0.3,0.5)]
@@ -237,7 +280,7 @@ def main():
   # mean_image = np.zeros((model.w, model.h, 3))
     img_trans = None 
     #Create dataset class
-    dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans)
+    dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans,custom_dataset=args.custom)
 
     #Break up into validation and training
     #val_perc = 0.07
@@ -348,6 +391,7 @@ def main():
         data_loc = copy.deepcopy(args.data)
         val_outputs_x, val_outputs_y, val_outputs_z = loadData(val_idx,dataclass.num_list,data_loc,model,dataclass.traj_list,args.real,dataclass)
         print(len(val_idx))
+        #exit()
         plotting_data['idx'] = range(len(val_idx))
         plotting_data['truth'] = [val_outputs_x[plotting_data['idx']],
                                   val_outputs_y[plotting_data['idx']],
