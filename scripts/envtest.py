@@ -5,7 +5,7 @@ import PIL.Image as img
 from scipy.spatial.transform import Rotation as R
 import os
  
-env = UnityEnvironment(file_name=None,seed=0)#"unity/env_v3",seed=0)
+env = UnityEnvironment(file_name='unity/env_v5',seed=0)#"unity/env_v3",seed=0)
 #Iterate simulations
 run_num = 0
 globalfolder = 'data/Sim' + str(run_num) + '/'
@@ -20,7 +20,7 @@ while trial_num < 10:
     #Filenames
     #foldername = "trial" + str(trial_num) + "/"
     #os.makedirs(globalfolder + foldername)
-    (x,camName) = shuffleEnv(env)#setUpEnv(env,x0_i,treePos_i,orangePos_i)
+    (x,camName, orange, tree) = shuffleEnv(env)#setUpEnv(env,x0_i,treePos_i,orangePos_i)
     camAct = makeCamAct(x)
     im_arr = unity_image(env,camAct,camName)
     save_image_array(im_arr,globalfolder,"sim_image"+str(trial_num))

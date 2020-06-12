@@ -122,6 +122,7 @@ def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass):
             points.append(p)
     elif dataclass.custom_dataset == "Run18":
         indices = np.floor(np.add(np.array([1, 2, 3]) * dataclass.h[trial], idx)).astype(int)
+        """
         for x, ii in enumerate(indices):
             if ii >= num_list[trial_idx]:
                 delta = idx if (x == 0) else indices[x-1]
@@ -139,6 +140,13 @@ def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass):
                     indices[x+z+j] = num_list[trial_idx] - 1
 
                 break
+        """
+        for i in range(len(indices)):
+            if (indices[i] >= num_list[trial_idx]):
+                if i == 0:
+                    indices[i] = idx
+                else:
+                    indices[i] = indices[i-1]
 
         for x, ii in enumerate(indices):
             if (ii < idx):

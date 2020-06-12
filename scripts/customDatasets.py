@@ -163,7 +163,7 @@ class OrangeSimDataSet(Dataset):
 
         elif self.custom_dataset == "Run18":
             indices = np.floor(np.add(np.array([1, 2, 3]) * self.h[trial], idx)).astype(int)
-
+            """
             for x, ii in enumerate(indices):
                 if ii >= self.num_list[trial_idx]:
                     delta = idx if (x == 0) else indices[x-1]
@@ -181,6 +181,13 @@ class OrangeSimDataSet(Dataset):
                         indices[x+z+j] = self.num_list[trial_idx] - 1
 
                     break
+            """
+            for i in range(len(indices)):
+                if (indices[i] >= self.num_list[trial_idx]):
+                    if i == 0:
+                        indices[i] = idx
+                    else:
+                        indices[i] = indices[i-1]
 
             for x, ii in enumerate(indices):
                 if (ii < idx):

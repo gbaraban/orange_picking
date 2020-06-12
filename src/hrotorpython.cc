@@ -26,10 +26,11 @@ typedef Ddp<Body3dState, 12, 4> HrotorDdp;
 typedef ConstraintCost<Body3dState, 12, 4, Dynamic, 3> DirectionConstraintCost;
 
 //Params params;
-void solver_process(int N, double tf, int epochs, Vector3d x0, Matrix3d R0, Vector3d xfp, double yawf,
-     Vector3d cyl_o, double cyl_r, double cyl_h,
-     Vector12d q, Vector12d qf, Vector4d r, double yawgain, double rpgain,double dir_gain,
-      double stiffness, double stiff_mult, vector<Body3dState> &xout)
+void solver_process(int N, double tf, int epochs, Vector3d x0, Matrix3d R0, 
+		    Vector3d xfp, double yawf, Vector3d cyl_o, double cyl_r, double cyl_h,
+                    Vector12d q, Vector12d qf, Vector4d r, 
+		    double yawgain, double rpgain,double dir_gain,
+                    double stiffness, double stiff_mult, vector<Body3dState> &xout)
 {
 
   //Parameters
@@ -126,11 +127,7 @@ void solver_process(int N, double tf, int epochs, Vector3d x0, Matrix3d R0, Vect
     //yawcost.b = temp_b;
     for (int ii = 0; ii < epochs; ++ii) {
       ddp.Iterate();
-      /*for (int jj = 0; jj < N; ++jj) {
-        Vector3d temp(0,0,atan2(xout[jj].v[1],xout[jj].v[0]));//yaw from velocity
-        SO3::Instance().q2g(xds[jj].R,temp);
-      }*/
-      //cout << "Stiffness: " << cylcost.b << " Iteration Num: " << ii << " DDP V: " << ddp.V << endl;
+     //cout << "Stiffness: " << cylcost.b << " Iteration Num: " << ii << " DDP V: " << ddp.V << endl;
      // long te = timer_us(timer);
      // if (te > time_limit) break;
     }
@@ -138,6 +135,77 @@ void solver_process(int N, double tf, int epochs, Vector3d x0, Matrix3d R0, Vect
       temp_b = 1;
     }
   }
+}
+
+static PyObject *
+gcophrotor_trajgen_R(PyObject *self, PyObject *args)
+{
+  int N;
+  double tf;
+  int epochs;
+  double x0x, x0y, x0z;
+  double R01, R02, R03;
+  double R04, R05, R06;
+  double R07, R08, R09;
+  double xfx, xfy, xfz, yawf;
+  double cx, cy, cz;
+  double cyl_r;
+  double cyl_h;
+  Vector12d q;
+  Vector12d qf;
+  Vector4d r;
+  double yawgain;
+  double rpgain;
+  double dir_gain;
+  double stiffness;
+  double stiff_mult;
+  if (!PyArg_ParseTuple(args, "idi(ddd)(ddddddddd)(ddd)d(ddd)dd(dddddddddddd)(dddddddddddd)(dddd)ddddd",
+        &N, &tf, &epochs, &x0x, &x0y, &x0z,
+        &R01, &R02, &R03,
+        &R04, &R05, &R06,
+        &R07, &R08, &R09,
+        &xfx, &xfy, &xfz, &yawf,
+        &cx, &cy, &cz, &cyl_r, &cyl_h,
+        &(q[0]), &(q[1]), &(q[2]), &(q[3]),
+        &(q[4]), &(q[5]), &(q[6]), &(q[7]),
+        &(q[8]), &(q[9]), &(q[10]), &(q[11]),
+        &(qf[0]), &(qf[1]), &(qf[2]), &(qf[3]),
+        &(qf[4]), &(qf[5]), &(qf[6]), &(qf[7]),
+        &(qf[8]), &(qf[9]), &(qf[10]), &(qf[11]),
+        &(r[0]), &(r[1]), &(r[2]), &(r[3]),&yawgain,&rpgain,&dir_gain,
+        &stiffness, &stiff_mult)) {
+    cout << "Parse Failed" << endl;
+    return NULL;
+  }
+  vector<Body3dState> xs(N+1);
+  Vector3d x0(x0x,x0y,x0z);
+  Vector3d xfp(xfx,xfy,xfz);
+  Vector3d cyl_o(cx,cy,cz);
+  Matrix3d R0;
+  R0 << R01, R02, R03,
+        R04, R05, R06,
+        R07, R08, R09;
+  solver_process(N, tf, epochs, x0, R0, xfp, yawf,
+                 cyl_o, cyl_r, cyl_h, q,qf,r,yawgain,rpgain,dir_gain,
+                 stiffness, stiff_mult, xs);
+  //Construct return object
+  PyObject* listObj = PyList_New(xs.size());
+  if (!listObj) throw logic_error("Failed to make list Object");
+  for (int ii = 0; ii < xs.size(); ++ii) {
+    Vector3d pos = xs[ii].p;
+    Matrix3d rot = xs[ii].R;
+    PyObject *tuple = Py_BuildValue("(ddd)((ddd),(ddd),(ddd))",
+                                     pos(0),pos(1),pos(2),
+                                     rot(0,0),rot(0,1),rot(0,2),
+                                     rot(1,0),rot(1,1),rot(1,2),
+                                     rot(2,0),rot(2,1),rot(2,2));
+    if (!tuple) {
+      Py_DECREF(listObj);
+      throw logic_error("Failed to make tuple");
+    }
+    PyList_SET_ITEM(listObj, ii, tuple);
+  }
+  return listObj;
 }
 
 //Params params;
@@ -393,9 +461,46 @@ gcophrotor_trajgen(PyObject *self, PyObject *args)
   return listObj;
 }
 
+static PyObject *
+gcophrotor_dynamic_step(PyObject *self, PyObject *args)
+{
+  double t;
+  double R01, R02, R03;
+  double R04, R05, R06;
+  double R07, R08, R09;
+  Body3dState x;
+  Vector4d u;
+  if (!PyArg_ParseTuple(args, "d(ddd)(ddddddddd)(ddd)(ddd)(dddd)", 
+        &t, &(x.p[0]), &(x.p[1]),&(x.p[2]),
+        &R01, &R02, &R03, 
+        &R04, &R05, &R06, 
+        &R07, &R08, &R09, 
+	&(x.v[0]), &(x.v[1]), &(x.v[2]),
+	&(x.w[0]), &(x.w[1]), &(x.w[2]),
+	&(u[0]), &(u[1]), &(u[2]), &(u[3]))) {
+    cout << "Parse Failed" << endl;
+    return NULL;
+  }
+  x.R << R01, R02, R03,
+        R04, R05, R06,
+        R07, R08, R09;
+  Hrotor sys;
+  Body3dState xb;
+  sys.Step(xb,t, x, u,t);
+  PyObject *tuple = Py_BuildValue("(ddd)(ddddddddd)(ddd)(ddd)",
+		  xb.p(0),xb.p(1),xb.p(2),
+                  xb.R(0,0),xb.R(0,1),xb.R(0,2),
+                  xb.R(1,0),xb.R(1,1),xb.R(1,2),
+                  xb.R(2,0),xb.R(2,1),xb.R(2,2),
+		  xb.v(0),xb.v(1),xb.v(2),
+		  xb.w(0),xb.w(1),xb.w(2));
+  return tuple;
+}
 static PyMethodDef pyMethods[] = {
   {"trajgen", gcophrotor_trajgen, METH_VARARGS, "Generate a trajectory."},
-  {"trajgen_goal", gcophrotor_trajgen_goal, METH_VARARGS, "Generate a trajectory (with R fully define)."},
+  {"trajgen_R", gcophrotor_trajgen_R, METH_VARARGS, "Generate a trajectory with R fully defined."},
+  {"trajgen_goal", gcophrotor_trajgen_goal, METH_VARARGS, "Generate a trajectory from waypoints (with R fully defined)."},
+  {"dynamic_step", gcophrotor_dynamic_step, METH_VARARGS, "Perform a single dynamic step."},
   {NULL, NULL, 0, NULL}
 };
 

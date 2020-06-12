@@ -147,7 +147,7 @@ while (exp < trials) or args.loop:
   
   #Plot Trajectories
   ts = np.linspace(0,tf,N+1)
-  make_plots(ts,ref_traj,orangePos_i,treePos_i,orangeR, treeHeight, globalfolder + foldername)
+  make_full_plots(ts,ref_traj,orangePos_i,treePos_i,orangeR, treeHeight, globalfolder + foldername)
 
   #save ref_traj
   with open(globalfolder + foldername + 'trajdata.pickle','wb') as f:

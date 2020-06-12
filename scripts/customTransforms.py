@@ -41,3 +41,14 @@ class GaussLabels(object):
         label_list.resize((num_points,3,self.bins))
         return label_list
 
+class RandomHorizontalTrajFlip(object):
+	def __init__(self, p):
+		self.p = p
+		self.reflect = np.zeros((4,4))
+		self.reflect[0,0] = -1
+		self.reflect[1,1] = 1
+		self.reflect[2,2] = 1
+		self.reflect[3,3] = 1
+
+	def __call__(image, points):
+		pass

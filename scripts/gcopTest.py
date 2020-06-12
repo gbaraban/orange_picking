@@ -2,7 +2,7 @@ import numpy as np
 import sys
 import os
 import gcophrotor
-from parsetrajfile import *
+from plotting.parsetrajfile import *
 
 N = 500
 tf = 15
@@ -41,11 +41,11 @@ R0_np = np.array(ref_traj[0][1])
 for ii in indices:
   point = np.array(ref_traj[ii][0])
   #print('PreTransform ' + str(point))
-  point = point - p0_np
+  #point = point - p0_np
   #print('Subtracted ' + str(point))
-  point = np.matmul(R0_np.T,point)
+  #point = np.matmul(R0_np.T,point)
   #print('Output: ' + str(point))
   point_list.append(point)
 
 ts = np.linspace(0,tf,N+1)
-make_plots(ts,ref_traj,orange_pos,tree_pos,tree_R,tree_H,None, point_list)
+make_full_plots(ts,ref_traj,orange_pos,tree_pos,tree_R,tree_H,None, point_list)
