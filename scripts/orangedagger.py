@@ -3,6 +3,7 @@ from mlagents_envs.environment import UnityEnvironment
 import PIL.Image as img
 from scipy.spatial.transform import Rotation as R
 from orangenetarch import *
+from trainorangenet_orientation import *
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, ConcatDataset
@@ -12,6 +13,7 @@ from orangesimulation import *
 import pickle
 import os
 import gcophrotor
+from torch.utils.tensorboard import SummaryWriter
 
 class DAggerSet(Dataset):
     def __init__(self,batch_list):
@@ -73,16 +75,80 @@ def list_to_ds(batch,save_path = None,name = None):
             pickle.dump(batch,f,pickle.HIGHEST_PROTOCOL)
     return DAggerSet(batch)
 
-def retrain_model(model,loader,epochs=2):
+def retrain_model(model,loader,device,ctr="Latest",writer=None,save_path=None,epochs=2,learning_rate=5e-3):
     #Run epochs of training on model
     #Include tensorboard output
+    #Create Optimizer
+    learn_rate_decay = np.power(1e-3,1/float(args.epochs))#0.9991#10 / args.epochs
+    optimizer = optim.Adam(model.parameters(), lr = args.learning_rate)
+    scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=learn_rate_decay)
+    #Learn Rate for Dagger is an open question
+    for epoch in range(epochs):
+        #acc_total = [[0., 0.], [0., 0.], [0., 0.]]
+        #elements = 0.
+        for ctr, batch in enumerate(loader):
+            point_batch = batch['points']
+            optimizer.zero_grad()
+            model.train()
+            with torch.set_grad_enabled(True):
+                batch_imgs = batch['image']
+                batch_imgs = batch_imgs.to(device)
+                logits = model(batch_imgs)
+                del batch_imgs
+                del batch
+                logits = logits.view(-1,model.outputs,model.num_points,model.bins)
+                loss_x = loss_y = loss_z = loss_yaw = loss_r = loss_p = 0
+                b_size = logits.shape[0]
+                point_batch = point_batch.to(device)
+                for temp in range(model.num_points):
+                    loss_x += F.cross_entropy(logits[:,0,temp,:],(point_batch)[:,temp,0])
+                    loss_y += F.cross_entropy(logits[:,1,temp,:],(point_batch)[:,temp,1])
+                    loss_z += F.cross_entropy(logits[:,2,temp,:],(point_batch)[:,temp,2])
+                    loss_yaw += F.cross_entropy(logits[:,3,temp,:],(point_batch)[:,temp,3])
+                    if model.outputs > 4:
+                        loss_p += F.cross_entropy(logits[:,4,temp,:],(point_batch)[:,temp,4])
+                        loss_r += F.cross_entropy(logits[:,5,temp,:],(point_batch)[:,temp,5])
 
-def run_DAgger(sys_f,env,model,data_list=[],batch=512,j=4,
+                point_batch = point_batch.to('cpu')
+                logits = logits.to('cpu')
+                acc_list = acc_metric(args,logits,point_batch,args.yaw_only)
+                del point_batch
+                del logits
+                batch_loss = loss_x + loss_y + loss_z + loss_yaw + loss_p + loss_r
+                batch_loss.backward()
+                optimizer.step()
+                writer.add_scalar('train_loss',batch_loss,ctr+epoch*len(loader))              
+                writer.add_scalar('train_loss_x',loss_x,ctr+epoch*len(loader))
+                writer.add_scalar('train_loss_y',loss_y,ctr+epoch*len(loader))
+                writer.add_scalar('train_loss_z',loss_z,ctr+epoch*len(loader))
+                writer.add_scalar('train_loss_yaw',loss_yaw,ctr+epoch*len(loader))
+                if model.outputs > 4:
+                    writer.add_scalar('train_loss_p',loss_p,ctr+epoch*len(loader))
+                    writer.add_scalar('train_loss_r',loss_r,ctr+epoch*len(loader))
+                for ii, acc in enumerate(acc_list):
+                    writer.add_scalar('train_acc_'+str(ii),acc[0],ctr+epoch*len(loader))
+                #for i in range(len(acc_total)):
+                #    for j in range(2):
+                #        acc_total[i][j] = ((elements * acc_total[i][j]) + (b_size * acc_list[i][j]))/(elements + b_size)
+                #elements += b_size
+                #print(b_size)
+        scheduler.step()#TODO:change when stepping happens
+    print("Saving Model")
+    name = save_path+'/model' + str(ctr) + '.pth.tar'
+    torch.save(model.state_dict(),name)
+
+def run_DAgger(sys_f,env,model,data_list=[],batch=512,j=4,device=None,
         plot_step_flag=False,max_steps=100,dt=0.1,save_path=None,mean_image=None):
     eps = 0.5
     ctr = 0
     data_batch=[]
+    model_path = createStampedFolder(os.path.join("./model/logs",'variable_log'))
+    ts_path = addTimestamp(os.path.join("./model/logs","tensorboard_"))
+    writer = SummaryWriter(ts_path)
     while eps > 1e-2:
+        #Filenames
+        foldername = "trial" + str(trial_num) + "/"
+        os.makedirs(save_path + foldername)
         num_fails = 0
         print("Running Environment ",ctr)
         (x,camName,orange,tree) = shuffleEnv(env)
@@ -97,7 +163,7 @@ def run_DAgger(sys_f,env,model,data_list=[],batch=512,j=4,
             if save_path is not None:
                 save_image_array(image_arr,save_path,"sim_image"+str(step))
             #Calculate new goal
-            goals = run_model(model,image_arr,mean_image)
+            goals = run_model(model,image_arr,mean_image,dev)
             expert_path = run_gcop(x,tree,orange,step*dt)
             expert_goals = wp_from_traj(expert_path,step*dt)
             cost = DAggerCompare(x,goal,expert_goals,tree[0:3])
@@ -116,7 +182,7 @@ def run_DAgger(sys_f,env,model,data_list=[],batch=512,j=4,
             new_dataset = list_to_ds(data_batch)
             data_list.append(new_dataset)
             dataloader = DataLoader(ConcatDataset(data_list),batch_size=batch,shuffle=True,num_works=j)
-            retrain_model(model,dataloader)
+            retrain_model(model,dataloader,dev,writer=writer,save_path=model_path,ctr=ctr)
         ctr += 1
 
 def main():
@@ -139,8 +205,12 @@ def main():
   parser.add_argument('--env', type=str, default="unity/env_v4", help='unity filename')
   parser.add_argument('--plot_step', type=bool, default=False, help='PLot each step')
   parser.add_argument('--mean_image', type=str, default='data/mean_imgv2_data_Run18.npy', help='Mean Image')
+  #Training Options
+  parser.add_argument('-j', type=int, default=4, help='number of loader workers')
+  parser.add_argument('--batch', type=int, default=1024, help='batch size')
   args = parser.parse_args()
-  args.max = [(1,0.5,0.1),(2,1,0.15),(4,1.5,0.2),(6,2,0.3),(7,0.3,0.5)]
+  args.min = [(0,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0,-1,-0.15,-np.pi,-np.pi/2,-np.pi),(0,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0,-2,-0.3,-np.pi,-np.pi/2,-np.pi),(0,-3,-0.5,-np.pi,-np.pi/2,-np.pi)]
+  args.max = [(1,0.5,0.1,np.pi,np.pi/2,np.pi),(2,1,0.15,np.pi,np.pi/2,np.pi),(4,1.5,0.2,np.pi,np.pi/2,np.pi),(6,2,0.3,np.pi,np.pi/2,np.pi),(7,0.3,0.5,np.pi,np.pi/2,np.pi)]
   np.random.seed(args.seed)
   #Load model
   model = OrangeNet8(capacity=args.capacity,num_img=args.num_images,num_pts=args.num_pts,bins=args.bins,n_outputs=args.outputs)
@@ -162,26 +232,35 @@ def main():
       print('mean image file found')
   #Create environment
   env = UnityEnvironment(file_name=args.env,seed=0)
-  #env.reset()
-  #Iterate simulations
+  #Pick CUDA Device
+  use_cuda = torch.cuda.is_available()
+  print('Cuda Flag: ',use_cuda)
+  if use_cuda:
+      if args.gpu:
+          device = torch.device('cuda:'+str(args.gpu))
+          model = model.to(device)
+      else:
+          device = torch.device('cuda')
+          model = model.to(device)
+          if (torch.cuda.device_count() > 1):
+              model = nn.DataParallel(model)
+  else:
+      device = torch.device('cpu')
+  #Make Run Folder
   run_num = 0
   globalfolder = 'data/Sim' + str(run_num) + '/'
   while os.path.exists(globalfolder):
     run_num += 1
     globalfolder = 'data/Run' + str(run_num) + '/'
-  trial_num = -1
-  while trial_num < (args.iters-1) or args.iters is -1:
-    trial_num += 1
-    print('Trial Number ',trial_num)
-    #Filenames
-    foldername = "trial" + str(trial_num) + "/"
-    os.makedirs(globalfolder + foldername)
-    #TODO: RUN DAGGER HERE
-    datasets = []
-    datasets.append(#Run18 HERE
-    err code = run_DAgger(sys_f,env,model,datasets)#TODO: add optional args
-    if err_code is not 0:
-        print("Dagger failed with code: ",err_code)
+  #Load in Initial Dataset
+  datasets = []
+  datasets.append(#TODO: Run18 HERE
+  #Perform DAgger process
+  ret_value = run_DAgger(sys_f_linear,env,model,datasets,batch=args.batch,
+                         j=args.j,max_steps=args.iters,dt=1/args.hz,device = device,
+                         save_path=globalfolder,mean_image=args.mean_image)
+  if err_code is not 0:
+    print("Dagger failed with code: ",err_code)
   env.close()
 
 if __name__ == '__main__':

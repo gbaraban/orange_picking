@@ -104,13 +104,15 @@ def save_image_array(image_in,path,name):
   image = img.fromarray(im_np)
   image.save(path + name + '.png')
 
-def run_model(model,image_arr,mean_image=None):
+def run_model(model,image_arr,mean_image=None,device=None):
     #Calculate new goal
     if mean_image is None:
         mean_subtracted = (image_arr).astype('float32')
     else:
         mean_subtracted = (image_arr-mean_image).astype('float32')
-    image_tensor = torch.tensor(mean_subtracted)#TODO:Add cuda stuff here
+    image_tensor = torch.tensor(mean_subtracted)
+    if device is not None:
+        image_tensor = image_tensor.to(device)
     image_tensor = image_tensor.permute(2,0,1).unsqueeze(0)
     logits = model(image_tensor)
     logits = logits.view(1,model.outputs,model.num_points,model.bins).detach().numpy()
@@ -181,7 +183,7 @@ def sys_f_linear(x,goal,dt,goal_time=1,plot_flag=False):
         (yaw,pitch,roll) = (rot1*rot2).as_euler('zyx')
     new_pos = x[0:3] + time_frac*dx
     new_x = np.hstack((new_pos,yaw,pitch,roll))
-    if plot_flag or np.linalg.norm(dx) < 1e-3:
+    if plot_flag:# or np.linalg.norm(dx) < 1e-3:
         print(goal)
         make_step_plot(goal_pts,[x,new_x])
     return new_x
