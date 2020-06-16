@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+from scipy.spatial.transform import Rotation as R
 
 #TODO: Add custom image transformations here
 
@@ -42,13 +43,37 @@ class GaussLabels(object):
         return label_list
 
 class RandomHorizontalTrajFlip(object):
-	def __init__(self, p):
+	def __init__(self, p=0.5, n_inputs = 6):
 		self.p = p
 		self.reflect = np.zeros((4,4))
 		self.reflect[0,0] = -1
 		self.reflect[1,1] = 1
 		self.reflect[2,2] = 1
 		self.reflect[3,3] = 1
+		self.n_inputs = n_inputs
 
 	def __call__(image, points):
-		pass
+		if np.random.random() > self.p:
+			image = np.fliplr(image)
+			for i, pt in enumerate(points):
+				if self.n_inputs == 6:
+					E = np.zeros((4,4))
+					E[3,3] = 1
+					E[0:3,3] = np.array(pt[0:3])
+					E[0:3,0:3] = R.from_euler('zyx', pt[3:]).as_dcm()
+					E = np.matmul(self.reflect, E)
+
+					points[i] = list(E[0:3,3])
+					points[i].extend(R.from_dcm(E[0:3,0:3]).as_euler('zyx'))
+
+				else:
+					E = np.zeros((4))
+					E[0:3] = np.array(pt[0:3])
+					E[3] = 1
+					E = np.matmul(self.reflect, E)
+
+					points[i] = list(E[0:3])
+
+			points = np.array(points)
+
+		return image, points

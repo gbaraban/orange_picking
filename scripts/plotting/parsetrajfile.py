@@ -30,7 +30,7 @@ def parse_state(state,targ = None):
     targ = np.array(targ)
     if (len(state) is 2):
         pos = np.array(state[0])
-        rot = R.from_dcm(np.array(state[1]))
+        rot = R.from_matrix(np.array(state[1]))
         ypr = rot.as_euler(seq = 'zyx', degrees = True)
     elif (len(state) is 6):
         pos = np.array(state[0:3])
