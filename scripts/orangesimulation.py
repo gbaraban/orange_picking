@@ -32,7 +32,7 @@ def makeCamAct(x):
     #print("cameraAction: ",cameraAction)
     return np.array([cameraAction])
 
-def shuffleEnv(env):
+def shuffleEnv(env,plot_only=False):
     #Baseline Positions
     x0 = np.array((-10,0,1))
     xmult = np.array((2,2,0.5))
@@ -58,17 +58,25 @@ def shuffleEnv(env):
     orangePos_i = treePos_i[0:3] + orangeoffset
     x0_i = np.hstack((x0_i,yaw0_i,0,0))
     envAct = np.array((np.random.randint(6),np.random.randint(6),0))
-    camName = setUpEnv(env,x0_i,treePos_i,orangePos_i,envAct, orangeColor = np.random.randint(9))
+    if not plot_only:
+        camName = setUpEnv(env,x0_i,treePos_i,orangePos_i,envAct, orangeColor = np.random.randint(9))
+    else:
+        camName = ""
+
     return (x0_i, camName, orangePos_i,treePos_i)
 
 def setUpEnv(env, x0, treePos, orangePos, envAct=(0,1,0), treeScale = 0.125, orangeScale = 0.07,
-             orangeColor = 0):
+             orangeColor = 0, future_version=False):
     env.reset()
     camAct = makeCamAct(x0)
     treeAct = np.array([np.hstack((gcopVecToUnity(treePos[0:3]),treePos[3],1))])
     orangeAct = np.array([np.hstack((gcopVecToUnity(orangePos),orangeColor,1))])
     envAct = np.array([np.hstack((envAct,1))])
-    names = env.get_behavior_names()
+    if not future_version: #future_version is master branch of mlagents as of 05/12/2020 
+        names = env.get_behavior_names()
+    else:
+        names = env.behavior_specs
+
     camName = ""
     for n in names:
         #print(n)
@@ -134,7 +142,7 @@ def run_model(model,image_arr,mean_image=None,device=None):
     goal = np.array(goal)
     return goal
 
-def run_gcop(x,tree,orange,t=0,tf=15,N=100):#TODO:Add in args to adjust more params
+def run_gcop(x,tree,orange,t=0,tf=15,N=100,save_path=None):#TODO:Add in args to adjust more params
     epochs = 300
     stiffness = 500
     stiff_mult = 2.0
@@ -158,6 +166,14 @@ def run_gcop(x,tree,orange,t=0,tf=15,N=100):#TODO:Add in args to adjust more par
     else:
         print("Unsupported x format")
         return
+
+    if save_path is not None:
+        import pickle
+        with open(save_path + 'metadata.pickle','wb') as f:
+            metadata = {'N':N,'tf':tf,'epochs':epochs,'stiffness':stiffness,'stiff_mult':stiff_mult, 'x0':x0_i, 'yaw0':yaw0_i,'xf':orangePos_i,'yawf':yawf,
+                    'cyl_o':treePos_i,'cyl_r':orangeR, 'h':treeHeight, 'q':q, 'qf':qf, 'r':r, 'yaw_gain':yaw_g, 'rp_gain':rp_g, 'dir_gain':direction_gain}
+        pickle.dump(metadata,f,pickle.HIGHEST_PROTOCOL)
+
     ref_traj = gcophrotor.trajgen_R(N,tf,epochs,cameraPos,tuple(R0.as_matrix().flatten()),
             tuple(orange), yawf, tuple(tree[0:3]),0.6,1.6,tuple(q),tuple(qf),tuple(r),yaw_g,0,0,
             stiffness,stiff_mult)

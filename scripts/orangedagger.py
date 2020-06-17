@@ -81,7 +81,7 @@ def load_run18(args):
     custom = "Run18"
     traj = True
     data = "./data/Run18/"
-    val_perc = 0.85
+    val_perc = 0.85 #TODO: adjust this for number of training trajectories, we are using train traj, so we want to adjust (1-val_perc)
 
     pt_trans = transforms.Compose([pointToBins(args.min, args.max, args.bins)])
     img_trans = transforms.Compose([RandomHorizontalTrajFlip()])
@@ -307,7 +307,7 @@ def main():
     globalfolder = 'data/Run' + str(run_num) + '/'
   #Load in Initial Dataset
   datasets = []
-  datasets.append(#TODO: Run18 HERE
+  #TODO: Run18 HERE: did it inside runDagger, for random trajectories being used for each retrainining
   #Perform DAgger process
   ret_value = run_DAgger(args,sys_f_linear,env,model,datasets,batch=args.batch,
                          j=args.j,max_steps=args.iters,dt=1/args.hz,device = device,
