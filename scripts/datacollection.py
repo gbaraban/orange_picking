@@ -19,13 +19,14 @@ if __name__ == "__main__":
 	args = parser.parse_args()
 
 	env_name = args.env + 'unity/env_v6'
-	train_mode = True
+	#train_mode = True
 	env = UnityEnvironment(file_name=env_name, seed=0)
-	env.reset(train_mode=train_mode)
+	env.reset()
 
 	run_num = 0
 	base_folder = './data/data_collection/'
-	os.makedirs(base_folder)
+	if not os.path.exists(base_folder):
+		os.makedirs(base_folder)
 	data_folder = base_folder + 'Run' + str(run_num) + "/"
 	while os.path.exists(data_folder):
 		run_num += 1
@@ -41,12 +42,13 @@ if __name__ == "__main__":
 		picturename = "image"
 		suffix = ".png"
 
-		(x, camName, orange,tree) = shuffleEnv(env) #add plotonly
+		(x, camName, orange,tree) = shuffleEnv(env,future_version=True) #add plotonly
 		N = 100
-		ref_traj = run_gcop(x, tree, orange, N=100, save_path=data_folder + fname)
+		tf = 15
+		ref_traj = run_gcop(x, tree, orange, tf=tf ,N=100, save_path=data_folder + fname)
 
 		ts = np.linspace(0,tf,N+1)
-		make_full_plots(ts,ref_traj,orangePos_i,treePos_i,saveFolder=data_folder + fname)
+		make_full_plots(ts,ref_traj,orange,tree,saveFolder=data_folder + fname)
 
 		with open(data_folder + fname + 'trajdata.pickle','wb') as f:
 			pickle.dump(ref_traj,f,pickle.HIGHEST_PROTOCOL)
@@ -61,7 +63,7 @@ if __name__ == "__main__":
 			#print(pos)
 			camAct = makeCamAct(state)
 			image = unity_image(env, camAct, camName)
-			image.save(data_folder + fname + picturename + str(ctr) + suffix)
+			np.save(data_folder + fname + picturename + str(ctr) + suffix, image)
 			ctr += 1
 
 		exp += 1

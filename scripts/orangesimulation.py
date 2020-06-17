@@ -32,7 +32,7 @@ def makeCamAct(x):
     #print("cameraAction: ",cameraAction)
     return np.array([cameraAction])
 
-def shuffleEnv(env,plot_only=False):
+def shuffleEnv(env,plot_only=False,future_version=False):
     #Baseline Positions
     x0 = np.array((-10,0,1))
     xmult = np.array((2,2,0.5))
@@ -59,7 +59,7 @@ def shuffleEnv(env,plot_only=False):
     x0_i = np.hstack((x0_i,yaw0_i,0,0))
     envAct = np.array((np.random.randint(6),np.random.randint(6),0))
     if not plot_only:
-        camName = setUpEnv(env,x0_i,treePos_i,orangePos_i,envAct, orangeColor = np.random.randint(9))
+        camName = setUpEnv(env,x0_i,treePos_i,orangePos_i,envAct, orangeColor = np.random.randint(9),future_version=future_version)
     else:
         camName = ""
 
@@ -170,9 +170,9 @@ def run_gcop(x,tree,orange,t=0,tf=15,N=100,save_path=None):#TODO:Add in args to 
     if save_path is not None:
         import pickle
         with open(save_path + 'metadata.pickle','wb') as f:
-            metadata = {'N':N,'tf':tf,'epochs':epochs,'stiffness':stiffness,'stiff_mult':stiff_mult, 'x0':x0_i, 'yaw0':yaw0_i,'xf':orangePos_i,'yawf':yawf,
-                    'cyl_o':treePos_i,'cyl_r':orangeR, 'h':treeHeight, 'q':q, 'qf':qf, 'r':r, 'yaw_gain':yaw_g, 'rp_gain':rp_g, 'dir_gain':direction_gain}
-        pickle.dump(metadata,f,pickle.HIGHEST_PROTOCOL)
+            metadata = {'N':N,'tf':tf,'epochs':epochs,'stiffness':stiffness,'stiff_mult':stiff_mult, 'x':x, 'xf':orange, 'yawf':yawf,
+                    'cyl_o':tree , 'q':q, 'qf':qf, 'r':r, 'yaw_gain':yaw_g}
+            pickle.dump(metadata,f,pickle.HIGHEST_PROTOCOL)
 
     ref_traj = gcophrotor.trajgen_R(N,tf,epochs,cameraPos,tuple(R0.as_matrix().flatten()),
             tuple(orange), yawf, tuple(tree[0:3]),0.6,1.6,tuple(q),tuple(qf),tuple(r),yaw_g,0,0,
