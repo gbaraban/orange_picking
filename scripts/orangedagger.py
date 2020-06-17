@@ -14,6 +14,8 @@ import pickle
 import os
 import gcophrotor
 from torch.utils.tensorboard import SummaryWriter
+from customTransforms import *
+
 
 class DAggerSet(Dataset):
     def __init__(self,batch_list):
@@ -73,6 +75,50 @@ def list_to_ds(batch,save_path = None,name = None):
         with open(save_path + name,'wb') as f:
             pickle.dump(batch,f,pickle.HIGHEST_PROTOCOL)
     return DAggerSet(batch)
+
+def load_run18(args):
+    from customDatasetsOrientation import OrangeSimDataSet, SubSet
+    custom = "Run18"
+    traj = True
+    data = "./data/Run18/"
+    val_perc = 0.85
+
+    pt_trans = transforms.Compose([pointToBins(args.min, args.max, args.bins)])
+    img_trans = transforms.Compose([RandomHorizontalTrajFlip()])
+
+    dataclass = OrangeSimDataSet(data, args.num_images, args.num_pts, pt_trans, img_trans, custom_dataset=custom)
+
+    val_order = np.ceil(len(dataclass.num_samples_dir_size)*val_perc).astype(int)
+    #val_indices = []
+    train_indices = []
+    val_data = {}
+    val_data["order"] = np.array(random.choices(list(dataclass.num_samples_dir_size.keys()), k=val_order))
+    #print(val_data["order"])
+
+    #for x in val_data["order"]:
+    #    val_indices.extend(list(range(dataclass.num_samples_dir[x]['start'], dataclass.num_samples_dir[x]['end'])))
+    #    val_data[x] = dataclass.num_samples_dir[x]
+
+    for i, x in enumerate(list(dataclass.num_samples_dir_size.keys())):
+        if x not in val_data["order"]:
+            train_indices.extend(list(range(dataclass.num_samples_dir[x]['start'], dataclass.num_samples_dir[x]['end'])))
+
+    #val_idx = len(val_indices)
+    train_idx =  len(train_indices) #dataclass.num_samples - val_idx
+
+    random.shuffle(train_indices)
+
+    #val_idx = np.array(val_indices)
+    train_idx = np.array(train_indices)
+
+    train_data = SubSet(dataclass,train_idx)
+    #val_data = SubSet(dataclass,val_idx)
+
+    #Create DataLoaders
+    #train_loader = DataLoader(train_data,batch_size=args.batch_size,shuffle=True,num_workers=args.j, worker_init_fn=dl_init)
+
+    return train_data
+
 
 def retrain_model(model,loader,device,ctr="Latest",writer=None,save_path=None,epochs=2,learning_rate=5e-3):
     #Run epochs of training on model
@@ -136,7 +182,7 @@ def retrain_model(model,loader,device,ctr="Latest",writer=None,save_path=None,ep
     name = save_path+'/model' + str(ctr) + '.pth.tar'
     torch.save(model.state_dict(),name)
 
-def run_DAgger(sys_f,env,model,data_list=[],batch=512,j=4,device=None,
+def run_DAgger(args,sys_f,env,model,data_list=[],batch=512,j=4,device=None,
         plot_step_flag=False,max_steps=100,dt=0.1,save_path=None,mean_image=None):
     eps = 0.5
     ctr = 0
@@ -185,7 +231,10 @@ def run_DAgger(sys_f,env,model,data_list=[],batch=512,j=4,device=None,
             #Retrain model
             new_dataset = list_to_ds(data_batch)
             data_list.append(new_dataset)
+            run18_data = load_run18(args) #Done here so that everytime different random trajs from run18 get picked
+            data_list.append(run18_data) #read online it might work, but not 100% sure
             dataloader = DataLoader(ConcatDataset(data_list),batch_size=batch,shuffle=True,num_works=j)
+            data_list = data_list[:-1]
             retrain_model(model,dataloader,dev,writer=writer,save_path=model_path,ctr=ctr)
         ctr += 1
 
@@ -260,7 +309,7 @@ def main():
   datasets = []
   datasets.append(#TODO: Run18 HERE
   #Perform DAgger process
-  ret_value = run_DAgger(sys_f_linear,env,model,datasets,batch=args.batch,
+  ret_value = run_DAgger(args,sys_f_linear,env,model,datasets,batch=args.batch,
                          j=args.j,max_steps=args.iters,dt=1/args.hz,device = device,
                          save_path=globalfolder,mean_image=args.mean_image)
   if err_code is not 0:
