@@ -211,6 +211,9 @@ class OrangeSimDataSet(Dataset):
             points = self.point_transform(points)
 
         if self.image_transform:
-            temp_image = self.image_transform(image, points)
+            data = {}
+            data["img"] = image
+            data["pts"] = points
+            image, points = self.image_transform(data)
 
         return {'image':image, 'points':points}

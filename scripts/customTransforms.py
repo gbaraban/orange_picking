@@ -52,9 +52,11 @@ class RandomHorizontalTrajFlip(object):
 		self.reflect[3,3] = 1
 		self.n_inputs = n_inputs
 
-	def __call__(image, points):
+	def __call__(self, data):
+		image = data["img"]
+		points = data["pts"]
 		if np.random.random() > self.p:
-			image = np.fliplr(image)
+			image = np.fliplr(image).copy()
 			for i, pt in enumerate(points):
 				if self.n_inputs == 6:
 					E = np.zeros((4,4))
@@ -63,8 +65,8 @@ class RandomHorizontalTrajFlip(object):
 					E[0:3,0:3] = R.from_euler('zyx', pt[3:]).as_dcm()
 					E = np.matmul(self.reflect, E)
 
-					points[i] = list(E[0:3,3])
-					points[i].extend(R.from_dcm(E[0:3,0:3]).as_euler('zyx'))
+					points[i,:3] = list(E[0:3,3])
+					points[i,3:] = R.from_dcm(E[0:3,0:3]).as_euler('zyx')
 
 				else:
 					E = np.zeros((4))
@@ -72,7 +74,7 @@ class RandomHorizontalTrajFlip(object):
 					E[3] = 1
 					E = np.matmul(self.reflect, E)
 
-					points[i] = list(E[0:3])
+					points[i,:3] = list(E[0:3])
 
 			points = np.array(points)
 
