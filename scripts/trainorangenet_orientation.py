@@ -310,6 +310,7 @@ def main():
     parser.add_argument('--yaw_only', type=int, default=0, help='yaw only')
     parser.add_argument('--custom', type=str, default="", help='custom parser')
     parser.add_argument('--test_arch', type=int, default=100, help='testing architectures')
+    parser.add_argument('--train', type=int, default=1, help='train or test')
     args = parser.parse_args()
 
     if args.custom == "":
@@ -345,11 +346,17 @@ def main():
     #args.traj = False
     #Data Transforms
     pt_trans = transforms.Compose([pointToBins(args.min,args.max,args.bins)])#,GaussLabels(1,1e-10,args.bins)])
+
+    if args.train == 1:
+        img_trans = transforms.Compose([RandomHorizontalTrajFlip()])
+    else:
+        img_trans = None
+
     #Load Mean image
     print("Test")
     data_loc = copy.deepcopy(args.data)
     data_loc_name = data_loc.strip("..").strip(".").strip("/").replace("/", "_")
-    mean_img_loc = data_loc + "/../mean_imgv2_" + data_loc_name + '.npy' 
+    mean_img_loc = data_loc + "/../mean_imgv2_" + data_loc_name + '.npy'
     if not (os.path.exists(mean_img_loc)):
         print('mean image file not found', mean_img_loc)
         return 0
@@ -358,8 +365,8 @@ def main():
     else:
         print('mean image file found')
         mean_image = np.load(mean_img_loc)
-  # mean_image = np.zeros((model.w, model.h, 3))
-    img_trans = None 
+    #mean_image = np.zeros((model.w, model.h, 3))
+    #img_trans = None 
     #Create dataset class
     dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, custom_dataset=args.custom)
 

@@ -45,10 +45,9 @@ def DAggerCompare(x,goals,ref_goals,cyl_o,cyl_h=1.6,cyl_r=0.6):
     return metric
 
 def wp_from_traj(expert_path,t,tf=15,goal_times=[1,2,3]):
-    time_span = tf-t
     N = len(expert_path)
-    h = float(time_span)/N
-    goal_idx = [int(temp/h) for temp in goal_times]
+    h = float(tf)/N
+    goal_idx = [int((t+temp)/h) for temp in goal_times]
     waypoints = []
     for idx in goal_idx:
         if idx >= N:
@@ -151,28 +150,33 @@ def run_DAgger(sys_f,env,model,data_list=[],batch=512,j=4,device=None,
         os.makedirs(save_path + foldername)
         num_fails = 0
         print("Running Environment ",ctr)
-        (x,camName,orange,tree) = shuffleEnv(env)
+        (x0,camName,orange,tree) = shuffleEnv(env)
         if camName is "":
             print("camName not found")
             return 2
-        for step in range(max_steps):
+        expert_path = run_gcop(x0,tree,orange,t=0,tf=max_steps*dt,N=max_steps)
+        print('Just checking that ',len(expert_path),' is ',max_steps+1)
+        for step in range(max_steps+1):
+            gcop_x = expert_path[step]
             #Get Image
-            camAct = makeCamAct(x)
+            camAct = makeCamAct(gcop_x)
             image_arr = unity_image(env,camAct,camName)
             #Optionally save image
             if save_path is not None:
-                save_image_array(image_arr,save_path,"sim_image"+str(step))
+                save_image_array(image_arr,save_path+foldername,"sim_image"+str(step))
             #Calculate new goal
             goals = run_model(model,image_arr,mean_image,dev)
-            expert_path = run_gcop(x,tree,orange,step*dt)
             expert_goals = wp_from_traj(expert_path,step*dt)
             cost = DAggerCompare(x,goal,expert_goals,tree[0:3])
             if cost > eps:
+                #Compare Failed->Save image and continue on gcop traj
                 data_batch.append((image_arr,transform_local(expert_goals,x))
                 num_fails += 1
-                x = sys_f(x,expert_goals,dt)
             else:
-                x = sys_f(x,goals,dt)
+                #Compare Passed->Take step and recompute expert
+                x_new = sys_f(gcop_x,goals,dt)
+                new_path = run_gcop(x_new,tree,orange,t=step*dt,tf=max_steps*dt,N=max_steps-1-step)
+                expert_path[-len(new_path):]=new_path
         if num_fails < 20:
             eps = eps/2
             print("Only ",num_fails," interventions, reducing eps to ",eps)

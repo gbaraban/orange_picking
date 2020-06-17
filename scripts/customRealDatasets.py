@@ -94,8 +94,8 @@ class OrangeSimDataSet(Dataset):
             temp_idx = max(0,image_idx - ii)
             temp_image = np.load(self.np_dir+trial+'/image'+str(temp_idx)+'.npy')
             temp_image = np.transpose(temp_image,[2,0,1])
-            if self.image_transform:
-                temp_image = self.image_transform(temp_image)
+            #if self.image_transform:
+            #    temp_image = self.image_transform(temp_image)
             if image is None:
                 image = temp_image
             else:
@@ -112,6 +112,11 @@ class OrangeSimDataSet(Dataset):
         #    p = np.array(p)
         #    p = np.matmul(R0.T,p-p0)
         #    points.append(p)
+
         if self.point_transform:
            points = self.point_transform(points)
+
+        if self.image_transform:
+            temp_image = self.image_transform(image, points)
+
         return {'image':image, 'points':points}

@@ -16,9 +16,15 @@ def gcopVecToUnity(v):
 
 def makeCamAct(x):
     #Set up camera action
-    #print("x",x)
-    cameraPos = x[0:3]  
-    r = R.from_euler('zyx',x[3:6])
+    if (len(x) is 2):
+        cameraPos = x[0]
+        r = R.from_dcm(x[1])
+    elif (len(x) is 6):
+        cameraPos = x[0:3]
+        r = R.from_euler('zyx',x[3:6])
+    else:
+        print("Unsupported x format")
+        return
     euler = r.as_euler(seq = 'zxy',degrees = True) #using weird unity sequence
     unityEuler = (euler[1],-euler[0],euler[2]) 
     #print("euler: ", unityEuler)
@@ -128,9 +134,7 @@ def run_model(model,image_arr,mean_image=None,device=None):
     goal = np.array(goal)
     return goal
 
-def run_gcop(x,tree,orange,t=0):#TODO:Add in args to adjust more params
-    N = 100
-    tf = 15
+def run_gcop(x,tree,orange,t=0,tf=15,N=100):#TODO:Add in args to adjust more params
     epochs = 300
     stiffness = 500
     stiff_mult = 2.0
@@ -144,9 +148,17 @@ def run_gcop(x,tree,orange,t=0):#TODO:Add in args to adjust more params
          5,5,5)#velocity
     r = (.1,.1,.1,1)
     yaw_g = 10
-    R0 = R.from_euler('zyx',x[3:6])
     yawf = np.arctan2(tree[1]-orange[1],tree[0]-orange[0])
-    ref_traj = gcophrotor.trajgen_R(N,tf,epochs,tuple(x[0:3]),tuple(R0.as_matrix().flatten()),
+    if (len(x) is 2):
+        cameraPos = tuple(x[0])
+        R0 = R.from_dcm(x[1])
+    elif (len(x) is 6):
+        cameraPos = tuple(x[0:3])
+        R0 = R.from_euler('zyx',x[3:6])
+    else:
+        print("Unsupported x format")
+        return
+    ref_traj = gcophrotor.trajgen_R(N,tf,epochs,cameraPos,tuple(R0.as_matrix().flatten()),
             tuple(orange), yawf, tuple(tree[0:3]),0.6,1.6,tuple(q),tuple(qf),tuple(r),yaw_g,0,0,
             stiffness,stiff_mult)
     return ref_traj
