@@ -27,7 +27,8 @@ def logRot(m):
   return np.array([temp[2,1],temp[0,2],temp[1,0]])
 
 def parse_state(state,targ = None):
-    targ = np.array(targ)
+    if targ is not None:
+        targ = np.array(targ)
     if (len(state) is 2):
         pos = np.array(state[0])
         rot = R.from_matrix(np.array(state[1]))
@@ -76,7 +77,7 @@ def make_step_plot(goals,states,saveFolder=None,name=None):
         fig.clf()
         plt.close('all')
 
-def make_full_plots(ts,states, targ, cyl_o, cyl_r=0.6, cyl_h=1.6, saveFolder=None, truth=None):
+def make_full_plots(ts,states, targ=None, cyl_o=None, cyl_r=0.6, cyl_h=1.6, saveFolder=None, truth=None):
   x_list = []
   y_list = []
   z_list = []
@@ -105,14 +106,16 @@ def make_full_plots(ts,states, targ, cyl_o, cyl_r=0.6, cyl_h=1.6, saveFolder=Non
   fig = plt.figure()
   ax = plt.axes(projection='3d')
   #Plot cylinder
-  theta = np.linspace(0, 2*np.pi, 50)
-  zs = np.linspace(cyl_o[2], cyl_o[2]+cyl_h, 50)
-  thetac, zc = np.meshgrid(theta,zs)
-  xc = cyl_r * np.cos(thetac) + cyl_o[0]
-  yc = cyl_r * np.sin(thetac) + cyl_o[1]
-  ax.plot_surface(xc,yc,zc)
+  if cyl_o is not None:
+      theta = np.linspace(0, 2*np.pi, 50)
+      zs = np.linspace(cyl_o[2], cyl_o[2]+cyl_h, 50)
+      thetac, zc = np.meshgrid(theta,zs)
+      xc = cyl_r * np.cos(thetac) + cyl_o[0]
+      yc = cyl_r * np.sin(thetac) + cyl_o[1]
+      ax.plot_surface(xc,yc,zc)
   #Plot x0 and xf
-  ax.plot3D((x_list[0],targ[0]),(y_list[0],targ[1]),(z_list[0],targ[2]),'black')
+  if targ is not None:
+      ax.plot3D((x_list[0],targ[0]),(y_list[0],targ[1]),(z_list[0],targ[2]),'black')
   #Plot trajectory
   ax.plot3D(x_list,y_list,z_list)
   for state in states:
@@ -150,13 +153,16 @@ def make_full_plots(ts,states, targ, cyl_o, cyl_r=0.6, cyl_h=1.6, saveFolder=Non
   #Plot x,y,z
   fig1, (ax1,ax2,ax3) = plt.subplots(3,1)
   ax1.plot(ts,x_list)
-  ax1.plot(ts[len(ts)-1],targ[0],'g+')
+  if targ is not None:
+      ax1.plot(ts[len(ts)-1],targ[0],'g+')
   ax1.set_title('X Position')
   ax2.plot(ts,y_list)
-  ax2.plot(ts[len(ts)-1],targ[1],'g+')
+  if targ is not None:
+      ax2.plot(ts[len(ts)-1],targ[1],'g+')
   ax2.set_title('Y Position')
   ax3.plot(ts,z_list)
-  ax3.plot(ts[len(ts)-1],targ[2],'g+')
+  if targ is not None:
+      ax3.plot(ts[len(ts)-1],targ[2],'g+')
   ax3.set_title('Z Position')
   #Plot r,p,y,yd
   fig2, (ax4,ax5,ax6) = plt.subplots(3,1)
@@ -167,8 +173,9 @@ def make_full_plots(ts,states, targ, cyl_o, cyl_r=0.6, cyl_h=1.6, saveFolder=Non
   ax6.plot(ts,yaw_list)
   ax6.set_title('Yaw')
   ax6.plot(ts,yaw_d_list)
-  yawf = (180/np.pi)*np.arctan2(cyl_o[1]-targ[1], cyl_o[0]-targ[0])
-  ax6.plot(ts[len(ts)-1],yawf,'g+')
+  if targ is not None and cyl_o is not None:
+      yawf = (180/np.pi)*np.arctan2(cyl_o[1]-targ[1], cyl_o[0]-targ[0])
+      ax6.plot(ts[len(ts)-1],yawf,'g+')
   #Plot cost
   fig3, (ax7) = plt.subplots(1,1)
   ax7.plot(ts,yawcost_list)

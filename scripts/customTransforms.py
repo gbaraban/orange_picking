@@ -54,9 +54,14 @@ class RandomHorizontalTrajFlip(object):
 
 	def __call__(self, data):
 		image = data["img"]
-		points = data["pts"]
+		points = np.array(data["pts"])
+		rot_list = None
+		if "rots" in data.keys():
+			rot_list = np.array(data["rots"])
+
 		if np.random.random() > self.p:
 			image = np.fliplr(image).copy()
+			"""
 			for i, pt in enumerate(points):
 				if self.n_inputs == 6:
 					E = np.zeros((4,4))
@@ -75,7 +80,32 @@ class RandomHorizontalTrajFlip(object):
 					E = np.matmul(self.reflect, E)
 
 					points[i,:3] = list(E[0:3])
+			"""
+			for i in range(len(points)):
+				if rot_list is not None:
+					E = np.zeros((4,4))
+					E[3,3] = 1
+					E[0:3,3] = np.array(points[i,:])
+					E[0:3,0:3] = rot_list[i,:,:]
+					E = np.matmul(self.reflect, E)
+
+					points[i,:] = list(E[0:3,3])
+					rot_list[i,:,:] = E[0:3,0:3]
+
+				else:
+					E = np.zeros((4))
+					E[0:3] = np.array(points[i,:])
+					E[3] = 1
+					E = np.matmul(self.reflect, E)
+
+					points[i,:] = list(E[0:3])
+
 
 			points = np.array(points)
+			if rot_list is not None:
+				rot_list = np.array(rot_list)
 
-		return image, points
+		if rot_list is None:
+			return image, points
+		else:
+			return image, points, rot_list

@@ -194,11 +194,30 @@ class OrangeSimDataSet(Dataset):
                     else:
                         indices[i] = indices[i-1]
 
+            point_list = [p0]
+            rot_list = [R0]
+
             for x, ii in enumerate(indices):
                 if (ii < idx):
                         print(idx, ii)
                 p = np.array(self.traj_list[trial_idx][ii][0])
                 Ri = np.array(self.traj_list[trial_idx][ii][1])
+                point_list.append(p)
+                rot_list.append(Ri)
+
+            if self.image_transform:
+                data = {}
+                data["img"] = image
+                data["pts"] = point_list
+                data["rots"] = rot_list
+                image, point_list, rot_list = self.image_transform(data)
+
+            p0 = np.array(point_list[0])
+            R0 = np.array(rot_list[0])
+
+            for ii in range(1,len(point_list)):
+                p = np.array(point_list[ii])
+                Ri = np.array(rot_list[ii])
                 p = list(np.matmul(R0.T,p-p0))
                 Ri = np.matmul(R0.T,Ri)
                 Ri_zyx = list(R.from_dcm(Ri).as_euler('zyx'))
@@ -210,10 +229,10 @@ class OrangeSimDataSet(Dataset):
         if self.point_transform:
             points = self.point_transform(points)
 
-        if self.image_transform:
-            data = {}
-            data["img"] = image
-            data["pts"] = points
-            image, points = self.image_transform(data)
+        #if self.image_transform:
+        #    data = {}
+        #    data["img"] = image
+        #    data["pts"] = points
+        #    image, points = self.image_transform(data)
 
         return {'image':image, 'points':points}
