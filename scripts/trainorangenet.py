@@ -321,7 +321,7 @@ def main():
         val_indices = []
         train_indices = []
         val_data = {}
-        val_data["order"] = np.array(random.choices(list(dataclass.num_samples_dir_size.keys()), k=val_order))
+        val_data["order"] = np.array(random.sample(list(dataclass.num_samples_dir_size.keys()), k=val_order))
 
         for x in val_data["order"]:
             val_indices.extend(list(range(dataclass.num_samples_dir[x]['start'], dataclass.num_samples_dir[x]['end'])))

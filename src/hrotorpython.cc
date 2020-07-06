@@ -26,11 +26,11 @@ typedef Ddp<Body3dState, 12, 4> HrotorDdp;
 typedef ConstraintCost<Body3dState, 12, 4, Dynamic, 3> DirectionConstraintCost;
 
 //Params params;
-void solver_process(int N, double tf, int epochs, Vector3d x0, Matrix3d R0, 
+void solver_process(int N, double tf, int epochs, Body3dState x0,
 		    Vector3d xfp, double yawf, Vector3d cyl_o, double cyl_r, double cyl_h,
                     Vector12d q, Vector12d qf, Vector4d r, 
 		    double yawgain, double rpgain,double dir_gain,
-                    double stiffness, double stiff_mult, vector<Body3dState> &xout)
+                    double stiffness, double stiff_mult, vector<Body3dState> &xout, vector<Vector4d> &us)
 {
 
   //Parameters
@@ -96,13 +96,13 @@ void solver_process(int N, double tf, int epochs, Vector3d x0, Matrix3d R0,
   // States
   xout.resize(N+1);
   xout[0].Clear();
-  xout[0].p = x0;
-  xout[0].R = R0;
+  xout[0] = x0;
   //SO3::Instance().q2g(xout[0].R, Vector3d(0,0,yaw0));    
 
   // initial controls (e.g. hover at one place)
-  vector<Vector4d> us(N);
+  //vector<Vector4d> us(N);
   //vector<Body3dState> xds(N+1);
+  us.resize(N);
   vector<Vector4d> uds(N);
   for (int i = 0; i < N; ++i) {
     us[i].head(3).setZero();
@@ -147,6 +147,8 @@ gcophrotor_trajgen_R(PyObject *self, PyObject *args)
   double R01, R02, R03;
   double R04, R05, R06;
   double R07, R08, R09;
+  double v0x, v0y, v0z;
+  double w0x, w0y, w0z;
   double xfx, xfy, xfz, yawf;
   double cx, cy, cz;
   double cyl_r;
@@ -159,11 +161,12 @@ gcophrotor_trajgen_R(PyObject *self, PyObject *args)
   double dir_gain;
   double stiffness;
   double stiff_mult;
-  if (!PyArg_ParseTuple(args, "idi(ddd)(ddddddddd)(ddd)d(ddd)dd(dddddddddddd)(dddddddddddd)(dddd)ddddd",
+  if (!PyArg_ParseTuple(args, "idi(ddd)(ddddddddd)(ddd)(ddd)(ddd)d(ddd)dd(dddddddddddd)(dddddddddddd)(dddd)ddddd",
         &N, &tf, &epochs, &x0x, &x0y, &x0z,
         &R01, &R02, &R03,
         &R04, &R05, &R06,
         &R07, &R08, &R09,
+	&v0x,&v0y,&v0z,&w0x,&w0y,&w0z,
         &xfx, &xfy, &xfz, &yawf,
         &cx, &cy, &cz, &cyl_r, &cyl_h,
         &(q[0]), &(q[1]), &(q[2]), &(q[3]),
@@ -178,39 +181,61 @@ gcophrotor_trajgen_R(PyObject *self, PyObject *args)
     return NULL;
   }
   vector<Body3dState> xs(N+1);
-  Vector3d x0(x0x,x0y,x0z);
+  Body3dState x0;
+  x0.p << x0x, x0y, x0z;
+  x0.R << R01, R02, R03, R04, R05, R06, R07, R08, R09;
+  x0.v << v0x, v0y, v0z;
+  x0.w << w0x, w0y, w0z;
   Vector3d xfp(xfx,xfy,xfz);
   Vector3d cyl_o(cx,cy,cz);
-  Matrix3d R0;
-  R0 << R01, R02, R03,
-        R04, R05, R06,
-        R07, R08, R09;
-  solver_process(N, tf, epochs, x0, R0, xfp, yawf,
+  vector<Vector4d> us(N);
+  solver_process(N, tf, epochs, x0, xfp, yawf,
                  cyl_o, cyl_r, cyl_h, q,qf,r,yawgain,rpgain,dir_gain,
-                 stiffness, stiff_mult, xs);
-  //Construct return object
-  PyObject* listObj = PyList_New(xs.size());
-  if (!listObj) throw logic_error("Failed to make list Object");
+                 stiffness, stiff_mult, xs, us);
+  //Construct return object for xs
+  PyObject* xsObj = PyList_New(xs.size());
+  if (!xsObj) throw logic_error("Failed to make list Object");
   for (int ii = 0; ii < xs.size(); ++ii) {
     Vector3d pos = xs[ii].p;
     Matrix3d rot = xs[ii].R;
-    PyObject *tuple = Py_BuildValue("(ddd)((ddd),(ddd),(ddd))",
+    Vector3d v = xs[ii].v;
+    Vector3d w = xs[ii].w;
+    PyObject *tuple = Py_BuildValue("(ddd)((ddd),(ddd),(ddd))(ddd)(ddd)",
                                      pos(0),pos(1),pos(2),
                                      rot(0,0),rot(0,1),rot(0,2),
                                      rot(1,0),rot(1,1),rot(1,2),
-                                     rot(2,0),rot(2,1),rot(2,2));
+                                     rot(2,0),rot(2,1),rot(2,2),
+				     v(0),v(1),v(2),
+				     w(0),w(1),w(2));
     if (!tuple) {
-      Py_DECREF(listObj);
+      Py_DECREF(xsObj);
       throw logic_error("Failed to make tuple");
     }
-    PyList_SET_ITEM(listObj, ii, tuple);
+    PyList_SET_ITEM(xsObj, ii, tuple);
   }
-  return listObj;
+  //Construct return object for us
+  PyObject* usObj = PyList_New(us.size());
+  if (!usObj) throw logic_error("Failed to make list Object");
+  for (int ii = 0; ii < us.size(); ++ii) {
+    Vector4d u = us[ii];
+    PyObject *tuple = Py_BuildValue("dddd",u(0),u(1),u(2),u(3));
+    if (!tuple) {
+      Py_DECREF(usObj);
+      throw logic_error("Failed to make tuple");
+    }
+    PyList_SET_ITEM(usObj, ii, tuple);
+  }
+  //Combine return object
+  PyObject* retObj = PyList_New(2);
+  if (!retObj) throw logic_error("Failed to make list Object");
+  PyList_SET_ITEM(retObj,0,xsObj);
+  PyList_SET_ITEM(retObj,1,usObj);
+  return retObj;
 }
 
 //Params params;
-void solver_process_goal(int N, double tf, int epochs, Vector3d x0, Matrix3d R0,
-     Vector4d goal1, Vector4d goal2, Vector4d goal3,
+void solver_process_goal(int N, double tf, int epochs, Body3dState x0,
+     Body3dState goal1, Body3dState goal2, Body3dState goal3,
      Vector12d q, Vector12d qf, Vector4d r, double yawgain, double rpgain,double dir_gain,
      vector<Body3dState> &xout, vector<Vector4d> &us)
 {
@@ -225,40 +250,37 @@ void solver_process_goal(int N, double tf, int epochs, Vector3d x0, Matrix3d R0,
   MultiCost<Body3dState, 12, 4> cost(sys, tf);
 
   //Quadratic Cost
-  vector<Vector4d> goal_vectors(3);
-  goal_vectors[0] = goal1;
-  goal_vectors[1] = goal2;
-  goal_vectors[2] = goal3;
-  vector<Body3dState> goals;
-  for(int ii = 0; ii < goal_vectors.size(); ++ii) {
-    Body3dState xf;
-    xf.Clear();
-    xf.p = {goal_vectors[ii][0],goal_vectors[ii][1],goal_vectors[ii][2]};
-    SO3::Instance().q2g(xf.R, Vector3d(0,0,goal_vectors[ii][3])); 
-    goals.push_back(xf);
-  }
+  vector<Body3dState> goals(3);
+  goals[0] = goal1;
+  goals[1] = goal2;
+  goals[2] = goal3;
   Matrix<double,12,12> Q;
   Matrix<double,12,12> Qf;
   Matrix<double,4,4> R;
   vector<double> time_list = {tf};//Use equal spacing
-  Body3dWaypointCost pathcost(sys, time_list, goals);
-  for (int i = 0; i < pathcost.cost_list.size(); ++i) {
+  Body3dCost<4> pathcost(sys, tf, goal3);
+  Body3dWaypointCost waypointcost(sys, time_list, goals);
+  //cout << "Waypoint Cost Time List Size: " << waypointcost.time_list.size() << endl;
+  //for (int i = 0; i < pathcost.cost_list.size(); ++i) {
     for (int j = 0; j < 12; ++j)
     {
-      pathcost.cost_list[i]->Q(j,j) = q[j];
-      pathcost.cost_list[i]->Qf(j,j) = qf[j];
+      //pathcost.cost_list[i].Q(j,j) = q[j];
+      //pathcost.cost_list[i].Qf(j,j) = qf[j];
+      pathcost.Q(j,j) = q[j];
+      waypointcost.Q(j,j) = qf[j];
     }
     for (int j = 0; j < 4; ++j)
     {
-      pathcost.cost_list[i]->R(j,j) = r[j];
+      //pathcost.cost_list[i].R(j,j) = r[j];
+      pathcost.R(j,j) = r[j];
     }
-  }
+  //}
   cost.costs.push_back(&pathcost);
-  
+  cost.costs.push_back(&waypointcost);
   //Yaw Cost
   //YawVelocityConstraint<Body3dState, 12, 4> yaw_con;
   //ConstraintCost<Body3dState, 12, 4> yawcost(sys,tf,yaw_con);
-  //YawCost<Body3dState, 12, 4> yawcost(sys,tf,xfp);//TODO: Replace this with yaw constraints at the waypoints
+  //YawCost<Body3dState, 12, 4> yawcost(sys,tf,xfp);
   //yawcost.gain = yawgain;
   //cost.costs.push_back(&yawcost);
 
@@ -271,26 +293,28 @@ void solver_process_goal(int N, double tf, int epochs, Vector3d x0, Matrix3d R0,
   // States
   xout.resize(N+1);
   xout[0].Clear();
-  xout[0].p = x0;
-  xout[0].R = R0;
+  xout[0] = x0;
   //SO3::Instance().q2g(xout[0].R, Vector3d(0,0,yaw0));    
 
   // initial controls (e.g. hover at one place)
   us.resize(N);
   //vector<Body3dState> xds(N+1);
   vector<Vector4d> uds(N);
+  double third_N =((double) N)/goals.size();
   for (int i = 0; i < N; ++i) {
     us[i].head(3).setZero();
     us[i][3] = 9.81*sys.m;
     uds[i].head(3).setZero();
     uds[i][3] = 9.81*sys.m;
-    //xds[i].p = xfp;
+    //int goal_num = (int)(((double)i)/third_N);
+    //xds[i] = goals[goal_num];
   }
-  //xds[N].p = xfp;
+  //xds[N] = goals[2];//.p = xfp;
   //xds[N].R = final_R;
-  for (int ii = 0; ii < pathcost.cost_list.size(); ++ii) {
-    pathcost.cost_list[ii]->SetReference(NULL,&uds);
-  }
+  //for (int ii = 0; ii < pathcost.cost_list.size(); ++ii) {
+  //  pathcost.cost_list[ii].SetReference(NULL,&uds);
+  //}
+  pathcost.SetReference(NULL,&uds);
 
   HrotorDdp ddp(sys, cost, ts, xout, us);
   ddp.mu = 1;
@@ -299,13 +323,10 @@ void solver_process_goal(int N, double tf, int epochs, Vector3d x0, Matrix3d R0,
  // struct timeval timer;
  // timer_start(timer);
     //yawcost.b = temp_b;
+  //cout << "Pre For DDP" << endl;
   for (int ii = 0; ii < epochs; ++ii) {
     ddp.Iterate();
-    /*for (int jj = 0; jj < N; ++jj) {
-      Vector3d temp(0,0,atan2(xout[jj].v[1],xout[jj].v[0]));//yaw from velocity
-      SO3::Instance().q2g(xds[jj].R,temp);
-    }*/
-    //cout << "Stiffness: " << cylcost.b << " Iteration Num: " << ii << " DDP V: " << ddp.V << endl;
+    cout << " Iteration Num: " << ii << " DDP V: " << ddp.V << endl;
    // long te = timer_us(timer);
    // if (te > time_limit) break;
   }
@@ -322,25 +343,33 @@ gcophrotor_trajgen_goal(PyObject *self, PyObject *args)
   double R01, R02, R03;
   double R04, R05, R06;
   double R07, R08, R09;
-  Vector4d goal1;
-  Vector4d goal2;
-  Vector4d goal3;
+  double v0x, v0y, v0z;
+  double w0x, w0y, w0z;
+  double g1x, g1y, g1z;
+  double R11, R12, R13;
+  double R14, R15, R16;
+  double R17, R18, R19;
+  double g2x, g2y, g2z;
+  double R21, R22, R23;
+  double R24, R25, R26;
+  double R27, R28, R29;
+  double g3x, g3y, g3z;
+  double R31, R32, R33;
+  double R34, R35, R36;
+  double R37, R38, R39;
   Vector12d q;
   Vector12d qf;
   Vector4d r;
   double yawgain;
   double rpgain;
   double dir_gain;
-  //double stiffness;
-  //double stiff_mult;
-  if (!PyArg_ParseTuple(args, "idi(ddd)(ddddddddd)(ddd)d(ddd)d(ddd)d(dddddddddddd)(dddddddddddd)(dddd)ddd", 
-        &N, &tf, &epochs, &x0x, &x0y, &x0z, 
-        &R01, &R02, &R03, 
-        &R04, &R05, &R06, 
-        &R07, &R08, &R09, 
-        &(goal1[0]), &(goal1[1]), &(goal1[2]), &(goal1[3]),
-        &(goal2[0]), &(goal2[1]), &(goal2[2]), &(goal2[3]),
-        &(goal3[0]), &(goal3[1]), &(goal3[2]), &(goal3[3]),
+  if (!PyArg_ParseTuple(args, "idi((ddd)(ddddddddd)(ddd)(ddd))((ddd)(ddddddddd))((ddd)(ddddddddd))((ddd)(ddddddddd))(dddddddddddd)(dddddddddddd)(dddd)ddd", 
+        &N, &tf, &epochs,
+	&x0x, &x0y, &x0z, &R01, &R02, &R03, &R04, &R05, &R06, &R07, &R08, &R09, 
+	&v0x,&v0y,&v0z,&w0x,&w0y,&w0z,
+	&g1x, &g1y, &g1z, &R11, &R12, &R13, &R14, &R15, &R16, &R17, &R18, &R19, 
+	&g2x, &g2y, &g2z, &R21, &R22, &R23, &R24, &R25, &R26, &R27, &R28, &R29, 
+	&g3x, &g3y, &g3z, &R31, &R32, &R33, &R34, &R35, &R36, &R37, &R38, &R39, 
         &(q[0]), &(q[1]), &(q[2]), &(q[3]),
         &(q[4]), &(q[5]), &(q[6]), &(q[7]),
         &(q[8]), &(q[9]), &(q[10]), &(q[11]),
@@ -353,12 +382,21 @@ gcophrotor_trajgen_goal(PyObject *self, PyObject *args)
   }
   vector<Body3dState> xs(N+1);
   vector<Vector4d> us(N);
-  Vector3d x0(x0x,x0y,x0z);
-  Matrix3d R0;
-  R0 << R01, R02, R03,
-        R04, R05, R06,
-        R07, R08, R09;
-  solver_process_goal(N, tf, epochs, x0, R0, goal1,goal2,goal3,
+  Body3dState x0;
+  x0.p << x0x, x0y, x0z;
+  x0.R << R01, R02, R03, R04, R05, R06, R07, R08, R09;
+  x0.v << v0x, v0y, v0z;
+  x0.w << w0x, w0y, w0z;
+  Body3dState goal1;
+  goal1.p << g1x, g1y, g1z;
+  goal1.R << R11, R12, R13, R14, R15, R16, R17, R18, R19;
+  Body3dState goal2;
+  goal2.p << g2x, g2y, g2z;
+  goal2.R << R21, R22, R23, R24, R25, R26, R27, R28, R29;
+  Body3dState goal3;
+  goal3.p << g3x, g3y, g3z;
+  goal3.R << R31, R32, R33, R34, R35, R36, R37, R38, R39;
+  solver_process_goal(N, tf, epochs, x0, goal1,goal2,goal3,
                  q,qf,r,yawgain,rpgain,dir_gain,
                  xs, us);
   //Construct return object for xs
@@ -367,18 +405,22 @@ gcophrotor_trajgen_goal(PyObject *self, PyObject *args)
   for (int ii = 0; ii < xs.size(); ++ii) {
     Vector3d pos = xs[ii].p;
     Matrix3d rot = xs[ii].R;
-    PyObject *tuple = Py_BuildValue("(ddd)((ddd),(ddd),(ddd))",
+    Vector3d v = xs[ii].v;
+    Vector3d w = xs[ii].w;
+    PyObject *tuple = Py_BuildValue("(ddd)((ddd),(ddd),(ddd))(ddd)(ddd)",
                                      pos(0),pos(1),pos(2),
                                      rot(0,0),rot(0,1),rot(0,2),
                                      rot(1,0),rot(1,1),rot(1,2),
-                                     rot(2,0),rot(2,1),rot(2,2));
+                                     rot(2,0),rot(2,1),rot(2,2),
+				     v(0),v(1),v(2),
+				     w(0),w(1),w(2));
     if (!tuple) {
       Py_DECREF(xsObj);
       throw logic_error("Failed to make tuple");
     }
     PyList_SET_ITEM(xsObj, ii, tuple);
   }
-  //Construct return object for xs
+  //Construct return object for us
   PyObject* usObj = PyList_New(us.size());
   if (!usObj) throw logic_error("Failed to make list Object");
   for (int ii = 0; ii < us.size(); ++ii) {
@@ -394,7 +436,7 @@ gcophrotor_trajgen_goal(PyObject *self, PyObject *args)
   PyObject* retObj = PyList_New(2);
   if (!retObj) throw logic_error("Failed to make list Object");
   PyList_SET_ITEM(retObj,0,xsObj);
-  PyList_SET_ITEM(retObj,1,xsObj);
+  PyList_SET_ITEM(retObj,1,usObj);
   return retObj;
 }
 
@@ -433,32 +475,54 @@ gcophrotor_trajgen(PyObject *self, PyObject *args)
     return NULL;
   }
   vector<Body3dState> xs(N+1);
-  Vector3d x0(x0x,x0y,x0z);
+  Body3dState x0;
+  x0.p << x0x,x0y,x0z;
+  x0.R << cos(yaw0), -sin(yaw0), 0, sin(yaw0), cos(yaw0), 0, 0, 0, 1;
   Vector3d xfp(xfx,xfy,xfz);
   Vector3d cyl_o(cx,cy,cz);
-  Matrix3d R0;
-  R0 << cos(yaw0), -sin(yaw0), 0, sin(yaw0), cos(yaw0), 0, 0, 0, 1;
-  solver_process(N, tf, epochs, x0, R0, xfp, yawf,
+  vector<Vector4d> us(N);
+  solver_process(N, tf, epochs, x0, xfp, yawf,
                  cyl_o, cyl_r, cyl_h, q,qf,r,yawgain,rpgain,dir_gain,
-                 stiffness, stiff_mult, xs);
-  //Construct return object
-  PyObject* listObj = PyList_New(xs.size());
-  if (!listObj) throw logic_error("Failed to make list Object");
+                 stiffness, stiff_mult, xs, us);
+  //Construct return object for xs
+  PyObject* xsObj = PyList_New(xs.size());
+  if (!xsObj) throw logic_error("Failed to make list Object");
   for (int ii = 0; ii < xs.size(); ++ii) {
     Vector3d pos = xs[ii].p;
     Matrix3d rot = xs[ii].R;
-    PyObject *tuple = Py_BuildValue("(ddd)((ddd),(ddd),(ddd))",
+    Vector3d v = xs[ii].v;
+    Vector3d w = xs[ii].w;
+    PyObject *tuple = Py_BuildValue("(ddd)((ddd),(ddd),(ddd))(ddd)(ddd)",
                                      pos(0),pos(1),pos(2),
                                      rot(0,0),rot(0,1),rot(0,2),
                                      rot(1,0),rot(1,1),rot(1,2),
-                                     rot(2,0),rot(2,1),rot(2,2));
+                                     rot(2,0),rot(2,1),rot(2,2),
+				     v(0),v(1),v(2),
+				     w(0),w(1),w(2));
     if (!tuple) {
-      Py_DECREF(listObj);
+      Py_DECREF(xsObj);
       throw logic_error("Failed to make tuple");
     }
-    PyList_SET_ITEM(listObj, ii, tuple);
+    PyList_SET_ITEM(xsObj, ii, tuple);
   }
-  return listObj;
+  //Construct return object for us
+  PyObject* usObj = PyList_New(us.size());
+  if (!usObj) throw logic_error("Failed to make list Object");
+  for (int ii = 0; ii < us.size(); ++ii) {
+    Vector4d u = us[ii];
+    PyObject *tuple = Py_BuildValue("dddd",u(0),u(1),u(2),u(3));
+    if (!tuple) {
+      Py_DECREF(usObj);
+      throw logic_error("Failed to make tuple");
+    }
+    PyList_SET_ITEM(usObj, ii, tuple);
+  }
+  //Combine return object
+  PyObject* retObj = PyList_New(2);
+  if (!retObj) throw logic_error("Failed to make list Object");
+  PyList_SET_ITEM(retObj,0,xsObj);
+  PyList_SET_ITEM(retObj,1,usObj);
+  return retObj;
 }
 
 static PyObject *

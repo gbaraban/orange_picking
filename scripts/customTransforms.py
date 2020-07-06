@@ -59,7 +59,9 @@ class RandomHorizontalTrajFlip(object):
 		if "rots" in data.keys():
 			rot_list = np.array(data["rots"])
 
+		flipped = False
 		if np.random.random() > self.p:
+			flipped = True
 			image = np.fliplr(image).copy()
 			"""
 			for i, pt in enumerate(points):
@@ -106,6 +108,6 @@ class RandomHorizontalTrajFlip(object):
 				rot_list = np.array(rot_list)
 
 		if rot_list is None:
-			return image, points
+			return image, points, flipped
 		else:
-			return image, points, rot_list
+			return image, points, rot_list, flipped

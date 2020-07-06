@@ -37,6 +37,8 @@ def parse_state(state,targ = None):
         pos = np.array(state[0:3])
         ypr = np.array(state[3:6])
         rot = R.from_euler('zyx',ypr)
+    else:
+        print("Unknown state used.  len(state) is ", len(state))
     if targ is not None:
         df = targ - pos
         df[2] =0
@@ -53,9 +55,21 @@ def make_step_plot(goals,states,saveFolder=None,name=None):
     fig = plt.figure()
     ax = plt.axes(projection='3d')
     #Plot goals 
-    goal_x = [pt[0] for pt in goals]
-    goal_y = [pt[1] for pt in goals]
-    goal_z = [pt[2] for pt in goals]
+    goal_x = []
+    goal_y = []
+    goal_z = []
+    for pt in goals:
+        if len(pt) is 6:
+            goal_x.append(pt[0])
+            goal_y.append(pt[1])
+            goal_z.append(pt[2])
+        elif len(pt) is 2:
+            goal_x.append(pt[0][0])
+            goal_y.append(pt[0][1])
+            goal_z.append(pt[0][2])
+        else:
+            print("Unexpected goal length: ",len(pt))
+            return
     ax.plot3D(goal_x,goal_y,goal_z,'g+')
     #Plot states
     for state in states:
@@ -144,6 +158,8 @@ def make_full_plots(ts,states, targ=None, cyl_o=None, cyl_r=0.6, cyl_h=1.6, save
           #ax.plot3D([point_transformed[0]],[point_transformed[1]],[point_transformed[2]],'g+')
           if len(point) is 2:
               pos = point[0]
+          elif len(point) is 4:
+              pos = point[0]
           elif len(point) is 6:
               pos = point[0:3]
           elif len(point) is 3:
@@ -177,9 +193,10 @@ def make_full_plots(ts,states, targ=None, cyl_o=None, cyl_r=0.6, cyl_h=1.6, save
       yawf = (180/np.pi)*np.arctan2(cyl_o[1]-targ[1], cyl_o[0]-targ[0])
       ax6.plot(ts[len(ts)-1],yawf,'g+')
   #Plot cost
-  fig3, (ax7) = plt.subplots(1,1)
-  ax7.plot(ts,yawcost_list)
-  ax7.set_title('Yaw Cost')
+  if targ is not None:
+      fig3, (ax7) = plt.subplots(1,1)
+      ax7.plot(ts,yawcost_list)
+      ax7.set_title('Yaw Cost')
   #Plot logR
   fig4, (ax8,ax9,ax10) = plt.subplots(3,1)
   ax8.plot(ts,logR0_list)

@@ -15,12 +15,14 @@ if __name__ == "__main__":
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--env', help='env file')
 	parser.add_argument('--loop', type=bool, help='make infinite data')
+	parser.add_argument('--worker_id', type=int, default=0, help='worker ID, diff if you want multiple Unity envs')
+	parser.add_argument('--seed', type=int, default=0, help='seed vals')
 	#parser.add_argument('--plotonly', type=bool, help='skip image generation') TODO: maybe add plot only mode
 	args = parser.parse_args()
 
-	env_name = args.env + 'unity/env_v6'
+	env_name = args.env + 'unity/env_v5' #v4 / v5 for lambda
 	#train_mode = True
-	env = UnityEnvironment(file_name=env_name, seed=0)
+	env = UnityEnvironment(file_name=env_name, worker_id=args.worker_id, seed=args.seed)
 	env.reset()
 
 	run_num = 0
@@ -33,7 +35,7 @@ if __name__ == "__main__":
 		data_folder = base_folder + "Run" + str(run_num) + "/"
 
 	exp = 0
-	trials = 2
+	trials = 20
 	while (exp <= trials) or args.loop:
 		fname = "trial" + str(exp) + "/"
 		os.makedirs(data_folder + fname)
@@ -43,9 +45,10 @@ if __name__ == "__main__":
 		suffix = ".png"
 
 		(x, camName, orange,tree) = shuffleEnv(env,future_version=True) #add plotonly
-		N = 100
+
+		N = 500
 		tf = 15
-		ref_traj = run_gcop(x, tree, orange, tf=tf ,N=100, save_path=data_folder + fname)
+		ref_traj = run_gcop(x, tree, orange, tf=tf ,N=N, save_path=data_folder + fname)
 
 		ts = np.linspace(0,tf,N+1)
 		make_full_plots(ts,ref_traj,orange,tree,saveFolder=data_folder + fname)
@@ -63,7 +66,8 @@ if __name__ == "__main__":
 			#print(pos)
 			camAct = makeCamAct(state)
 			image = unity_image(env, camAct, camName)
-			np.save(data_folder + fname + picturename + str(ctr) + suffix, image)
+			image = img.fromarray(np.uint8(image*255))
+			image.save(data_folder + fname + picturename + str(ctr) + suffix)
 			ctr += 1
 
 		exp += 1

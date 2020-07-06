@@ -81,7 +81,7 @@ class OrangeSimDataSet(Dataset):
                 ctr += 1
 
         elif self.custom_dataset == "Run18":
-            run_data = pickle.load(open(root_dir + "/../img_selector.pickle", "rb"))
+            #run_data = pickle.load(open(root_dir + "/../img_selector.pickle", "rb"))
             if reduce_N:
                 time_window = 0 #num_pts*dt
             else:
@@ -93,10 +93,10 @@ class OrangeSimDataSet(Dataset):
                     trial_subdir = os.listdir(root_dir + "/" + trial_dir)
                     with open(self.run_dir+'/'+trial_dir+'/trajdata.pickle','rb') as f:
                         data = pickle.load(f)#,encoding='latin1')
-                        self.traj_list.append(data[0:run_data[trial_dir]])
+                        self.traj_list.append(data) #[0:run_data[trial_dir]]
                     with open(self.run_dir+"/"+trial_dir+"/metadata.pickle",'rb') as data_f:
                         data = pickle.load(data_f)#, encoding='latin1')
-                        N = run_data[trial_dir]#data['N']
+                        N = data['N'] #run_data[trial_dir]
                         tf = data['tf']
                         self.h[trial_dir] = float(N)/tf
                         if reduce_N:
@@ -205,12 +205,13 @@ class OrangeSimDataSet(Dataset):
                 point_list.append(p)
                 rot_list.append(Ri)
 
+            flipped = False
             if self.image_transform:
                 data = {}
                 data["img"] = image
                 data["pts"] = point_list
                 data["rots"] = rot_list
-                image, point_list, rot_list = self.image_transform(data)
+                image, point_list, rot_list, flipped = self.image_transform(data)
 
             p0 = np.array(point_list[0])
             R0 = np.array(rot_list[0])
@@ -235,4 +236,5 @@ class OrangeSimDataSet(Dataset):
         #    data["pts"] = points
         #    image, points = self.image_transform(data)
 
-        return {'image':image, 'points':points}
+        return {'image':image, 'points':points, "flipped": flipped}
+

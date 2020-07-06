@@ -2,7 +2,7 @@ import os
 import subprocess
 
 num_procs = 16
-data_loc = "real_world_traj_bag"
+data_loc = "Run19"
 dirs = os.listdir(data_loc)
 
 #print(dirs)

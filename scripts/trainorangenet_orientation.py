@@ -306,7 +306,7 @@ def main():
     parser.add_argument('--traj', type=int, default=0, help='train trajectories')
     parser.add_argument('--real', type=int, default=0, help='real world imgs')
     parser.add_argument('--val', type=float, default=0.10, help='validation percentage')
-    parser.add_argument('--resnet18', type=int, default=0, help='real world imgs')
+    parser.add_argument('--resnet18', type=int, default=0, help='ResNet18')
     parser.add_argument('--yaw_only', type=int, default=0, help='yaw only')
     parser.add_argument('--custom', type=str, default="", help='custom parser')
     parser.add_argument('--test_arch', type=int, default=100, help='testing architectures')
@@ -348,7 +348,7 @@ def main():
     pt_trans = transforms.Compose([pointToBins(args.min,args.max,args.bins)])#,GaussLabels(1,1e-10,args.bins)])
 
     if args.train == 1:
-        img_trans = transforms.Compose([RandomHorizontalTrajFlip()])
+        img_trans = transforms.Compose([RandomHorizontalTrajFlip(p=0.5)])
     else:
         img_trans = None
 
@@ -393,7 +393,7 @@ def main():
         val_indices = []
         train_indices = []
         val_data = {}
-        val_data["order"] = np.array(random.choices(list(dataclass.num_samples_dir_size.keys()), k=val_order))
+        val_data["order"] = np.array(random.sample(list(dataclass.num_samples_dir_size.keys()), k=val_order))
         #print(val_data["order"])
 
         for x in val_data["order"]:

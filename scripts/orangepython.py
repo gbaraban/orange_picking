@@ -144,6 +144,7 @@ while (exp < trials) or args.loop:
                                 tuple(treePos_i),orangeR,treeHeight,
                                 tuple(q),tuple(qf),tuple(r),yaw_g,rp_g,direction_gain,
                                 stiffness,stiff_mult)
+  ref_traj = ref_traj[0]
   
   #Plot Trajectories
   ts = np.linspace(0,tf,N+1)

@@ -5,23 +5,31 @@ import PIL.Image as img
 from scipy.spatial.transform import Rotation as R
 import os
  
-env = UnityEnvironment(file_name='unity/env_v5',seed=0)#"unity/env_v3",seed=0)
+#env = UnityEnvironment(file_name=None)#'unity/env_v5',seed=0)
 #Iterate simulations
 run_num = 0
 globalfolder = 'data/Sim' + str(run_num) + '/'
 while os.path.exists(globalfolder):
     run_num += 1
-    globalfolder = 'data/Run' + str(run_num) + '/'
+    globalfolder = 'data/Sim' + str(run_num) + '/'
 trial_num = -1
 os.makedirs(globalfolder)
-while trial_num < 10:
+os.makedirs(globalfolder+"/images/")
+os.makedirs(globalfolder+"/external/")
+while trial_num < 2:
     trial_num += 1
     print('Trial Number ',trial_num)
     #Filenames
     #foldername = "trial" + str(trial_num) + "/"
     #os.makedirs(globalfolder + foldername)
-    (x,camName, orange, tree) = shuffleEnv(env)#setUpEnv(env,x0_i,treePos_i,orangePos_i)
+    env_name = 'unity/env_v6'
+    (env,x,camName,envName, orange, tree) = shuffleEnv(env_name,trial_num=trial_num)#setUpEnv(env,x0_i,treePos_i,orangePos_i)
+    #x = np.array([0,0,0,0,0,0])
     camAct = makeCamAct(x)
-    im_arr = unity_image(env,camAct,camName)
-    save_image_array(im_arr,globalfolder,"sim_image"+str(trial_num))
-env.close()
+    (im_arr,ext_arr) = unity_image(env,camAct,camName,envName)
+    #ext_arr = unity_image(env,camAct,None,envName)
+    print("saving to folder: ", globalfolder)
+    save_image_array(im_arr,None,None)#globalfolder+"/images/","sim_image"+str(trial_num))
+    save_image_array(ext_arr,None,None)#globalfolder+"/external/","ext_image"+str(trial_num))
+    print("Close Env")
+    env.close()

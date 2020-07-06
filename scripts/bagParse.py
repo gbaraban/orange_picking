@@ -67,6 +67,7 @@ def gcop_solve(odom,tree_pos,orange_pos):
                                   tuple(tree_pos),tree_R,treeHeight,
                                   tuple(q),tuple(qf),tuple(r),yaw_g,rp_g,direction_gain,
                                   stiffness,stiff_mult)
+  ref_traj = ref_traj[0]
   #Plot Environment
   #fig = plt.figure()
   #ax = plt.axes(projection='3d')

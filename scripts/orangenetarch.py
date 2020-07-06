@@ -140,6 +140,7 @@ class OrangeNet18(torch.nn.Module):
         self.bins = bins
         self.min = mins
         self.max = maxs
+        self.outputs = n_outputs
         #Blocks
         self.conv1 = nn.Conv2d(3,int(64*self.f),kernel_size=7, stride=2, padding=3)
         self.bn1 = nn.BatchNorm2d(int(64*self.f))
