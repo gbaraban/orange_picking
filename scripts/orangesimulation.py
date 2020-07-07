@@ -79,6 +79,53 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
 
     return (env,x0_i, camName, envName, orangePos_i,treePos_i)
 
+
+def quat_between(qa, qb, t, quat=False):
+        if not quat:
+                qa = R.from_euler("zyx",qa).as_quat()
+                qb = R.from_euler("zyx",qb).as_quat()
+
+        qm = np.array([0., 0., 0., 0.])
+        cosHalfTheta = qa[3] * qb[3] + qa[0] * qb[0] + qa[1] * qb[1] + qa[2] * qb[2]
+        if (np.abs(cosHalfTheta) >= 1.0):
+                qm[3] = qa[3]
+                qm[0] = qa[0]
+                qm[1] = qa[1]
+                qm[2] = qa[2]
+                #print("A")
+                if not quat:
+                        qm = R.from_quat(qm).as_euler("zyx")
+
+                return qm
+
+        halfTheta = np.arccos(cosHalfTheta)
+        sinHalfTheta = np.sqrt(1.0 - cosHalfTheta*cosHalfTheta)
+
+
+        if np.fabs(sinHalfTheta) < 0.001:
+                qm[3] = (qa[3] * 0.5 + qb[3] * 0.5)
+                qm[0] = (qa[0] * 0.5 + qb[0] * 0.5)
+                qm[1] = (qa[1] * 0.5 + qb[1] * 0.5)
+                qm[2] = (qa[2] * 0.5 + qb[2] * 0.5)
+                #print("B")
+                if not quat:
+                        qm = R.from_quat(qm).as_euler("zyx")
+
+                return qm
+
+        ratioA = np.sin((1 - t) * halfTheta) / sinHalfTheta
+        ratioB = np.sin(t * halfTheta) / sinHalfTheta
+        qm[3] = (qa[3] * ratioA + qb[3] * ratioB);
+        qm[0] = (qa[0] * ratioA + qb[0] * ratioB);
+        qm[1] = (qa[1] * ratioA + qb[1] * ratioB);
+        qm[2] = (qa[2] * ratioA + qb[2] * ratioB);
+        #print("C")
+        if not quat:
+                qm = R.from_quat(qm).as_euler("zyx")
+
+        return qm
+
+
 def setUpEnv(env, x0, treePos, orangePos, envAct=(0,1,0), treeScale = 0.125, orangeScale = 0.07,
              orangeColor = 0, future_version=False):
     print("Reset Env")
@@ -427,6 +474,7 @@ def sys_f_gcop(x,goal,dt,goal_time=3,hz=50,plot_flag=False):
         print("Unrecognized goal length: ",len(goal[0]))
     gcop_out = gcophrotor.trajgen_goal(N,goal_time,epochs,x0,goal_list[0],goal_list[1],goal_list[2],q,qf,r,0,0,0)
     ref_traj = gcop_out[0]
+    ref_u_traj = gcop_out[1]
     print(dt)
     final_idx = int(dt*hz)
     print(final_idx)
@@ -435,14 +483,14 @@ def sys_f_gcop(x,goal,dt,goal_time=3,hz=50,plot_flag=False):
     if plot_flag:# or np.linalg.norm(dx) < 1e-3:
         print(goal)
         make_step_plot(goal_list,ref_traj[0:final_idx])
-    return ref_traj[0:final_idx]
+    return ref_traj[0:final_idx], ref_u_traj[0:final_idx]
 
 def sys_f_linear(x,goal,dt,goal_time=1,plot_flag=False):
     time_frac = dt/goal_time
     #goal_pt = goal[0]
     print(time_frac)
-    print(x)
-    print(goal)
+    print("curr state", x)
+    print("goal", goal)
     #exit()
     goal_pts = []
     if ((len(goal[0]) is 2) or (len(goal[0]) is 4)): #gcop syntax
@@ -468,7 +516,7 @@ def sys_f_linear(x,goal,dt,goal_time=1,plot_flag=False):
         roll = np.arcsin(dx[0]*np.sin(yaw) - dx[1]*np.cos(yaw))
         pitch = np.arctan2(np.cos(roll)*(dx[0]*np.cos(yaw) - dx[1]*np.sin(yaw)),np.cos(roll)*(dx[2]+9.8))
     elif (goal[0].size is 6):
-        rot1 = R.from_euler('zyx',goal[0][3:6]*time_frac)
+        rot1 = R.from_euler('zyx',quat_between(R.from_matrix(np.eye(3)).as_euler('zyx'),goal[0][3:6],time_frac))
         rot2 = R.from_euler('zyx',x[3:6])
         (yaw,pitch,roll) = (rot1*rot2).as_euler('zyx')
     new_pos = x[0:3] + time_frac*dx
@@ -483,8 +531,10 @@ def sys_f_linear(x,goal,dt,goal_time=1,plot_flag=False):
 def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = None,
             plot_step_flag = False,mean_image = None,trial_num=0):
     x_list = []
+    u_list = []
     (env,x,camName,envName,orange,tree) = shuffleEnv(env_name,trial_num=trial_num,args=args)#,x0,orange,tree)
     #print(x.shape)
+    x_list.append(x)
     if camName is "":
         print("camName not set")
         print("Close Env")
@@ -494,7 +544,7 @@ def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = N
     #print(x.shape)
     image_spacing = 1#number of timesteps between images in multi-image networks
     for step in range(max_steps):
-        x_list.append(x)
+        #x_list.append(x)
         print("State: ",x)
         if "sys_f_linear" in str(sys_f):
             dist = eps + 1
@@ -535,8 +585,14 @@ def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = N
 
         x = sys_f(x,goal,dt,plot_flag=plot_step_flag)
         if not "sys_f_linear" in str(sys_f):
+            u = x[1]
+            x = x[0]
+            x_list.append(x)
             x = x[len(x)-1]
             print("gcop")
+       else:
+            x_list.append(x)
+
     #Ran out of time
     if save_path is not None:
         ts = np.linspace(0,dt*(len(x_list)-1),len(x_list))
