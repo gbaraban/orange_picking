@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<launch>
+  <param name="path_topic" type="string" value="path" />
+  <param name="goal_topic" type="string" value="goal" />
+  <param name="matrice_name" type="string" value="matrice" />
+  <param name="world_name" type="string" value="world" />
+  <param name="goal_name" type="string" value="goal" />
+  <node pkg="orange_picking" type="trajectory_node_cpp" name="trajectory"/>
+  <!-- <node pkg="rviz" type="rviz" name="rviz" args="-d rviz/path_test.rviz"/> -->
+  <node pkg="tf" type="static_transform_publisher" name="matrice_broadcaster" args="1 1 1 0 0 0 1 world matrice 100"/>
+</launch>
