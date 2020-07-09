@@ -19,6 +19,7 @@
 #include "nav_msgs/Path.h"
 #include "geometry_msgs/PoseArray.h"
 #include "geometry_msgs/Pose.h"
+#include "geometry_msgs/PoseStamped.h"
 #include "geometry_msgs/TransformStamped.h"
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/transform_broadcaster.h"
@@ -107,14 +108,16 @@ void solver_process_goal(int N, double tf, int epochs, Body3dState x0,
 
 void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
 {
+  cout << "Callback triggered" << endl;
   double tf = 3;
   int N = (int) 50*tf;
   int epochs = 10;
   Body3dState x0;
   //Read from TF
   geometry_msgs::TransformStamped temp;
-  temp = tfBuffer.lookupTransform(matrice_name,world_name,ros::Time(0));
+  temp = tfBuffer.lookupTransform(world_name,matrice_name,ros::Time(0));
   x0.p << temp.transform.translation.x, temp.transform.translation.y, temp.transform.translation.z;
+  cout << "x0: pos: " << x0.p[0] << " " << x0.p[1] << " " << x0.p[2] << endl;
   Quat quat(temp.transform.rotation.w,temp.transform.rotation.x,temp.transform.rotation.y,temp.transform.rotation.z);
   double m[16];
   quat.ToSE3(m);
@@ -122,10 +125,15 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   static tf2_ros::TransformBroadcaster br;
   Body3dState goal[3];
   for (int ii = 0; ii < 3; ++ii){
-    goal[ii].p << msg->poses[ii].position.x, msg->poses[ii].position.y, msg->poses[ii].position.z;
+    cout << "2" << endl;
+    Vector3d local_p;
+    local_p << msg->poses[ii].position.x, msg->poses[ii].position.y, msg->poses[ii].position.z;
     quat = Quat(msg->poses[ii].orientation.w,msg->poses[ii].orientation.x,msg->poses[ii].orientation.y,msg->poses[ii].orientation.z);
     quat.ToSE3(m);
-    goal[ii].R << m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10];
+    Matrix3d local_R;
+    local_R << m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10];
+    goal[ii].p = x0.R*local_p + x0.p;
+    goal[ii].R = x0.R*local_R;
     temp.header.stamp = ros::Time::now();
     temp.header.frame_id = matrice_name;
     temp.child_frame_id = goal_name + std::to_string(ii);
@@ -136,6 +144,7 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
     temp.transform.rotation.y = msg->poses[ii].orientation.y;
     temp.transform.rotation.z = msg->poses[ii].orientation.z;
     temp.transform.rotation.w = msg->poses[ii].orientation.w;
+    cout << "Publishing Goal " << ii << endl;
     br.sendTransform(temp);
   }
   Vector12d q;
@@ -150,15 +159,18 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   vector<Body3dState> xs(N+1);
   vector<Vector4d> us(N);
   solver_process_goal(N, tf, epochs, x0, goal[0], goal[1], goal[2],q, qf, r, yawgain, rpgain, dir_gain, xs, us);
-  geometry_msgs::PoseArray pa;
+  cout << "Solved: pos: " << xs[0].p[0] << " " << xs[0].p[1] << " " << xs[0].p[2] << endl;
+  nav_msgs::Path pa;
   pa.poses.clear();
   pa.header.stamp = ros::Time::now();
-  pa.header.frame_id = "path";
+  pa.header.frame_id = world_name;
   for (int ii = 0; ii < N+1; ++ii) {
-    geometry_msgs::Pose p;
-    p.position.x = xs[ii].p[0];
-    p.position.y = xs[ii].p[1];
-    p.position.z = xs[ii].p[2];
+    geometry_msgs::PoseStamped p;
+    p.header.stamp = ros::Time::now();
+    p.header.frame_id = "path"+std::to_string(ii);
+    p.pose.position.x = xs[ii].p[0];
+    p.pose.position.y = xs[ii].p[1];
+    p.pose.position.z = xs[ii].p[2];
     for (int jj = 0; jj < 3; ++jj) {
       for (int kk = 0; kk < 3; ++kk) {
         int temp_idx = 4*jj + kk;
@@ -169,13 +181,15 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
     }
     m[15] = 0;
     quat.FromSE3(m);
-    p.orientation.x = quat.qx;
-    p.orientation.y = quat.qy;
-    p.orientation.z = quat.qz;
-    p.orientation.w = quat.qw;
+    p.pose.orientation.x = quat.qx;
+    p.pose.orientation.y = quat.qy;
+    p.pose.orientation.z = quat.qz;
+    p.pose.orientation.w = quat.qw;
     pa.poses.push_back(p);
   }
+  cout << "Publishing pa" << endl;
   pub.publish(pa);
+  cout << "Callback Ended" << endl;
 }
 
 TrajectoryNode(): lis(tfBuffer)
@@ -218,7 +232,7 @@ int main(int argc, char **argv)
   cout << "Init" << endl;
   ros::init(argc,argv, "Trajectory_Node");
   cout << "Constructor" << endl;
-  TrajectoryNode tn();
+  TrajectoryNode tn;
   cout << "Spin" << endl;
   ros::spin();
   return 0;
