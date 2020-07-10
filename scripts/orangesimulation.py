@@ -49,7 +49,7 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
     treemult = np.array((0.5,0.5,0,180))
     treeHeight = 1.6
     orangePos = np.array((0,0,0.5))
-    orangeR = 1.0 #0.6
+    orangeR = 0.7 #0.6
     orangeRmult = 0.1 #0.3
     orangeHmult = 0.5
     #randomize environment
@@ -72,7 +72,7 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
     else:
         camName = ""
 
-    R_i = orangeR + orangeR_rand + 0.6
+    R_i = orangeR + orangeR_rand + 0.5
     orangeoffset = np.array((R_i*np.cos(theta), R_i*np.sin(theta),
                              orangePos[2] + orangeH_rand))
     orangePos_i = treePos_i[0:3] + orangeoffset
@@ -253,19 +253,19 @@ def run_model(model,image_arr,mean_image=None,device=None):
 def trajCost(x_traj,u_traj,tree,orange,tf=15):
     N = len(x_traj)-1
     dt = float(tf)/N
-    q = (3,3,2.5,#rotation log
-         0,0,0,#position
-         20,20,20,#rotation rate
+    q = (15,15,10,#rotation log
+         0,0,2.5,#position
+         150,150,150,#rotation rate
          10,10,10)#velocity
-    qf = (25,25,25,#rotation log
+    qf = (40,40,40,#rotation log
          50,50,50,#position
          5,5,5,#rotation rate
          5,5,5)#velocity
     r = (.1,.1,.1,1)
     cyl_r = 1.0 + 0.8 #0.6
-    cyl_h = 1.6 + 0.2
+    cyl_h = 1.6 + 0.3
     stiffness=500
-    yaw_g = 10
+    yaw_g = 250
     yawf = np.arctan2(tree[1]-orange[1],tree[0]-orange[0])
     orange = np.array(orange)
     rotf = R.from_euler('zyx',(yawf,0,0))
@@ -388,21 +388,21 @@ def trajCost(x_traj,u_traj,tree,orange,tf=15):
     return cost
 
 def run_gcop(x,tree,orange,t=0,tf=15,N=100,save_path=None):#TODO:Add in args to adjust more params
-    epochs = 300
+    epochs = 400
     stiffness = 500
     stiff_mult = 2.0
-    q = (3,3,2.5,#rotation log
-         0,0,0,#position
-         20,20,20,#rotation rate
+    q = (15,15,10,#rotation log
+         0,0,2.5,#position
+         150,150,150,#rotation rate
          10,10,10)#velocity
-    qf = (25,25,25,#rotation log
+    qf = (40,40,40,#rotation log
          50,50,50,#position
          5,5,5,#rotation rate
          5,5,5)#velocity
     r = (.1,.1,.1,1)
     cyl_r = 1.0 + 0.8 #0.6
-    cyl_h = 1.6 + 0.2
-    yaw_g = 10
+    cyl_h = 1.6 + 0.3
+    yaw_g = 250
     yawf = np.arctan2(tree[1]-orange[1],tree[0]-orange[0])
     if (len(x) is 2):
         cameraPos = tuple(x[0])
@@ -502,6 +502,8 @@ def sys_f_linear(x,goal,dt,goal_time=1,plot_flag=False):
             goal_pts.append(r.apply(g[0:3]) + x[0:3])
     dx = goal_pts[0] - x[0:3]
     goal_pt = goal_pts[0]
+    print("goal pt", goal_pt)
+    print(goal[0].size)
     if len(goal_pt) is 2:
         rot1 = R.from_dcm(goal_pt[1])
         rot1 = R.from_euler('zyx',rot1.as_euler('zyx')*time_frac)
@@ -586,11 +588,13 @@ def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = N
         x = sys_f(x,goal,dt,plot_flag=plot_step_flag)
         if not "sys_f_linear" in str(sys_f):
             u = x[1]
+            print(u)
+            exit()
             x = x[0]
             x_list.append(x)
             x = x[len(x)-1]
             print("gcop")
-       else:
+        else:
             x_list.append(x)
 
     #Ran out of time
@@ -600,6 +604,15 @@ def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = N
         #make_full_plots(ts,x_list,orange,tree,saveFolder=save_path,truth=ref_traj) #TODO
     print("Close Env")
     env.close()
+    score = None
+    if len(u_list) != 0:
+        score = trajCost(x_list,u_list,tree,orange)
+
+    if score is not None:
+        file = open("./score/"+ save_path.replace("/", "_"), "w")
+        file.write(str(score))
+        file.close()
+
     os.system("python3 scripts/generate_gifs.py " + save_path + " --loc /home/gabe/ws/ros_ws/src/orange_picking/ &")
     return 1
 
@@ -624,7 +637,7 @@ def main():
   parser.add_argument('--iters', type=int, default=5, help='number of simulations')
   parser.add_argument('--steps', type=int, default=500, help='Steps per simulation')
   parser.add_argument('--hz', type=float, default=10, help='Recalculation rate')
-  parser.add_argument('--physics', type=float, default=50, help="Freq at which physics sim is performed")
+  #parser.add_argument('--physics', type=float, default=50, help="Freq at which physics sim is performed")
   parser.add_argument('--env', type=str, default="unity/env_v6", help='unity filename')
   parser.add_argument('--plot_step', type=bool, default=False, help='PLot each step')
   parser.add_argument('--mean_image', type=str, default='data/mean_imgv2_data_Run19.npy', help='Mean Image')
@@ -661,10 +674,10 @@ def main():
   #env.reset()
   #Iterate simulations
   run_num = args.name
-  globalfolder = 'data/simulation/Sim' + str(run_num) + '_' + str(args.steps) + '_' + str(args.hz) + '_' + str(args.physics) + '/'
+  globalfolder = 'data/simulation/Sim' + str(run_num) + '_' + str(args.steps) + '_' + str(args.hz) + '/'  #'_' + str(args.physics) + '/'
   while os.path.exists(globalfolder):
     run_num += 1
-    globalfolder = 'data/simulation/Sim' + str(run_num) + '_' + str(args.steps) + '_' + str(args.hz) + '_' + str(args.physics) + '/'
+    globalfolder = 'data/simulation/Sim' + str(run_num) + '_' + str(args.steps) + '_' + str(args.hz) + '/'  #'_' + str(args.physics) + '/'
   trial_num = -1
   while trial_num < (args.iters-1) or args.iters is -1:
     trial_num += 1
@@ -673,7 +686,7 @@ def main():
     foldername = "trial" + str(trial_num) + "/"
     os.makedirs(globalfolder + foldername)
     err_code = run_sim(args,sys_f_linear,args.env,model,plot_step_flag = args.plot_step,
-                       max_steps=args.steps,dt=3*(1.0)/args.hz,
+                       max_steps=args.steps,dt=(1.0)/args.hz,
                        save_path = globalfolder+foldername,mean_image=mean_image,trial_num=trial_num)
     if err_code is not 0:
       print('Simulation did not converge.  code is: ', err_code)
