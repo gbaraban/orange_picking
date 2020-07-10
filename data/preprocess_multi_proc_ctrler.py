@@ -2,7 +2,7 @@ import os
 import subprocess
 
 num_procs = 16
-data_loc = "Run19"
+data_loc = "Run20"
 dirs = os.listdir(data_loc)
 
 #print(dirs)
