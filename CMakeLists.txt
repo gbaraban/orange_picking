@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
+set(CMAKE_CXX_STANDARD 11)
 project(orange_picking)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
@@ -7,13 +8,35 @@ project(orange_picking)
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
+set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 find_package(catkin REQUIRED COMPONENTS
   rospy
   std_msgs
   nav_msgs
   geometry_msgs
-  message_generation
+  gcop_comm
+  #GCOP
+  tf2
+  tf
+  #message_generation
 )
+find_package(GCOP REQUIRED systems)
+include_directories(${GCOP_INCLUDE_DIRS})
+find_package(Eigen3 REQUIRED)
+include_directories(${EIGEN3_INCLUDE_DIR})
+
+find_package(TinyXML REQUIRED)
+include_directories(${TINYXML_INCLUDE_DIR})
+set(GCOP_LIBRARIES ${GCOP_LIBRARIES} ${TINYXML_LIBRARIES})
+
+find_package(casadi)
+if (casadi_FOUND)
+  message("CASADI FOUND")
+  include_directories(${CASADI_INCLUDE_DIRS})
+  link_directories(${CASADI_LIBRARY_DIRS})
+  set(GCOP_LIBRARIES ${GCOP_LIBRARIES} ${CASADI_LIBRARIES})
+endif()
+
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -49,10 +72,10 @@ find_package(catkin REQUIRED COMPONENTS
 ##   * add every package in MSG_DEP_SET to generate_messages(DEPENDENCIES ...)
 
 ## Generate messages in the 'msg' folder
-add_message_files(
-  FILES
-  #GoalPoints.msg
-)
+# add_message_files(
+#   FILES
+#   #GoalPoints.msg
+# )
 
 ## Generate services in the 'srv' folder
 # add_service_files(
@@ -69,12 +92,12 @@ add_message_files(
 # )
 
 ## Generate added messages and services with any dependencies listed here
-generate_messages(
-  DEPENDENCIES
-  std_msgs
-  nav_msgs
-  geometry_msgs
-)
+# generate_messages(
+#   DEPENDENCIES
+#   std_msgs
+#   nav_msgs
+#   geometry_msgs
+# )
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -121,6 +144,8 @@ catkin_package(
 include_directories(
 # include
   ${catkin_INCLUDE_DIRS}
+  ${GCOP_INCLUDE_DIRS}
+  #${TF2_INCLUDE_DIRS}
 )
 
 ## Declare a C++ library
@@ -136,7 +161,10 @@ include_directories(
 ## Declare a C++ executable
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
-# add_executable(${PROJECT_NAME}_node src/orange_picking_node.cpp)
+message("HELLO WORLD")
+message(${GCOP_LIBRARIES})
+add_executable(trajectory_node_cpp src/trajectory_node_cpp.cpp)
+target_link_libraries(trajectory_node_cpp ${GCOP_LIBRARIES} ${catkin_LIBRARIES})
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
