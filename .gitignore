@@ -2,6 +2,7 @@
 *.so
 */build/
 *__pycache__*
+*.pyc
 
 #Collected/Preprocessed Data
 data/Run*
@@ -9,4 +10,4 @@ data/Run*
 
 #Cached files
 *.swp
-*.save
+*.save.*
