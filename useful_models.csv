@@ -1,0 +1,5 @@
+name,description,resnet,model_loc,model
+1,data_aug + resnet8,8,/home/gabe/ws/ros_ws/src/orange_picking/model/logs/variable_log/2020-07-03_10-17-09/,modelLast.pth.tar
+2,data_aug + resnet18,18,/home/gabe/ws/ros_ws/src/orange_picking/model/logs/variable_log/2020-07-03_10-16-44/,modelLast.pth.tar
+3,no data_aug + resnet8,8,/home/gabe/ws/ros_ws/src/orange_picking/model/logs/variable_log/2020-06-30_12-47-59/,modelLast.pth.tar
+4,no data_aug + resnet18,18,/home/gabe/ws/ros_ws/src/orange_picking/model/logs/variable_log/2020-06-30_12-47-57/,modelLast.pth.tar
