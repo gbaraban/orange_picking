@@ -22,8 +22,8 @@ if __name__ == "__main__":
 
 	env_name = args.env + 'unity/env_v5' #v4 / v5 for lambda
 	#train_mode = True
-	env = UnityEnvironment(file_name=env_name, worker_id=args.worker_id, seed=args.seed)
-	env.reset()
+	#env = UnityEnvironment(file_name=env_name, worker_id=args.worker_id, seed=args.seed)
+	#env.reset()
 
 	run_num = 0
 	base_folder = './data/data_collection/'
@@ -34,8 +34,10 @@ if __name__ == "__main__":
 		run_num += 1
 		data_folder = base_folder + "Run" + str(run_num) + "/"
 
+	print(data_folder)
 	exp = 0
 	trials = 20
+	np.random.seed(args.seed)
 	while (exp <= trials) or args.loop:
 		fname = "trial" + str(exp) + "/"
 		os.makedirs(data_folder + fname)
@@ -44,7 +46,10 @@ if __name__ == "__main__":
 		picturename = "image"
 		suffix = ".png"
 
-		(x, camName, orange,tree) = shuffleEnv(env,future_version=True) #add plotonly
+		env = UnityEnvironment(file_name=env_name, worker_id=args.worker_id+exp, seed=args.seed+exp)
+		env.reset()
+
+		(x, camName, orange,tree) = shuffleEnv(env,future_version=False) #add plotonly
 
 		N = 500
 		tf = 15
@@ -71,3 +76,4 @@ if __name__ == "__main__":
 			ctr += 1
 
 		exp += 1
+		env.close()

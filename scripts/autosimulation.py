@@ -56,10 +56,10 @@ def generate_gif(fname, loc="/home/gabe/ws/ros_ws/src/orange_picking/data/simula
 
 def get_variety():
 	var = {}
-	var["iters"] = [5]
+	var["iters"] = [10]
 	var["outputs"] = [6]
 	var["steps"] = [100, 250, 500]
-	var["hz"] = [1,2,3,5,10,25]
+	var["hz"] = [1,2,3,5,10,15,25]
 	#var["physics"] = [10,50,100]
 	labels = []
 	s = []
@@ -76,7 +76,7 @@ def get_variety():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--loc', type=str, default="/home/gabe/ws/orange_picking/useful_models.csv", help='random seed')
+    parser.add_argument('--loc', type=str, default="/home/gabe/ws/ros_ws/src/orange_picking/useful_models.csv", help='random seed')
     parser.add_argument('--j', type=int, default=4, help='approx number of unity threads running')
     args = parser.parse_args()
 
