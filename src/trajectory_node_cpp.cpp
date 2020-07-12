@@ -45,6 +45,26 @@ void solver_process_goal(int N, double tf, int epochs, Body3dState x0,
      Vector12d q, Vector12d qf, Vector4d r, double yawgain, double rpgain,double dir_gain,
      vector<Body3dState> &xout, vector<Vector4d> &us)
 {
+  cout << "N: " << N << " tf: " << tf << " epochs: "  << epochs << endl;
+  cout << "x0: pos: " << x0.p[0] << " " << x0.p[1] << " " << x0.p[2] << endl;
+  cout << "x0: Rot: " << endl << x0.R(0,0) << " " << x0.R(0,1) << " " << x0.R(0,2) << endl;
+  cout << x0.R(1,0) << " " << x0.R(1,1) << " " << x0.R(1,2) << endl;
+  cout << x0.R(2,0) << " " << x0.R(2,1) << " " << x0.R(2,2) << endl;
+  cout << "goal1: pos: " << goal1.p[0] << " " << goal1.p[1] << " " << goal1.p[2] << endl;
+  cout << "goal1: Rot: " << endl << goal1.R(0,0) << " " << goal1.R(0,1) << " " << goal1.R(0,2) << endl;
+  cout << goal1.R(1,0) << " " << goal1.R(1,1) << " " << goal1.R(1,2) << endl;
+  cout << goal1.R(2,0) << " " << goal1.R(2,1) << " " << goal1.R(2,2) << endl;
+  cout << "goal2: pos: " << goal2.p[0] << " " << goal2.p[1] << " " << goal2.p[2] << endl;
+  cout << "goal2: Rot: " << endl << goal2.R(0,0) << " " << goal2.R(0,1) << " " << goal2.R(0,2) << endl;
+  cout << goal2.R(1,0) << " " << goal2.R(1,1) << " " << goal2.R(1,2) << endl;
+  cout << goal2.R(2,0) << " " << goal2.R(2,1) << " " << goal2.R(2,2) << endl;
+  cout << "goal3: pos: " << goal3.p[0] << " " << goal3.p[1] << " " << goal3.p[2] << endl;
+  cout << "goal3: Rot: " << endl << goal3.R(0,0) << " " << goal3.R(0,1) << " " << goal3.R(0,2) << endl;
+  cout << goal3.R(1,0) << " " << goal3.R(1,1) << " " << goal3.R(1,2) << endl;
+  cout << goal3.R(2,0) << " " << goal3.R(2,1) << " " << goal3.R(2,2) << endl;
+  cout << "Q: " << q[0] << " " << q[1] << " " << q[2] << endl << q[3] << " " << q[4] << " " << q[5] << endl << q[6] << " " << q[7] << " " << q[8] << endl << q[9] << " " << q[10] << " " << q[11] << endl; 
+  cout << "Qf: " << qf[0] << " " << qf[1] << " " << qf[2] << endl << qf[3] << " " << qf[4] << " " << qf[5] << endl << qf[6] << " " << qf[7] << " " << qf[8] << endl << qf[9] << " " << qf[10] << " " << qf[11] << endl; 
+  cout << "R: " << r[0] << " " << r[1] << " " << r[2] << " " << r[3] << endl;
   //Parameters
   double h = tf/N;
   //System
@@ -115,14 +135,19 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   Body3dState x0;
   //Read from TF
   geometry_msgs::TransformStamped temp;
-  temp = tfBuffer.lookupTransform(world_name,matrice_name,ros::Time(0));
+  cout << "Looking Up" << world_name << "-> " << matrice_name << endl;
+  try {
+    temp = tfBuffer.lookupTransform(world_name,matrice_name,ros::Time(0),ros::Duration(5.0));
+  } catch (tf2::TransformException &ex) {
+    ROS_WARN("Could not find the transform");
+    return;
+  }
+  cout << "Looked Up" << endl;
   x0.p << temp.transform.translation.x, temp.transform.translation.y, temp.transform.translation.z;
-  cout << "x0: pos: " << x0.p[0] << " " << x0.p[1] << " " << x0.p[2] << endl;
   Quat quat(temp.transform.rotation.w,temp.transform.rotation.x,temp.transform.rotation.y,temp.transform.rotation.z);
   double m[16];
   quat.ToSE3(m);
   x0.R << m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10]; 
-  static tf2_ros::TransformBroadcaster br;
   Body3dState goal[3];
   for (int ii = 0; ii < 3; ++ii){
     cout << "2" << endl;
@@ -196,10 +221,10 @@ TrajectoryNode(): lis(tfBuffer)
 {
   std::string path_topic, goal_topic;
   if (!(n.getParam("path_topic",path_topic))){
-    path_topic = "/path";
+    path_topic = "path";
   }
   if (!(n.getParam("goal_topic",goal_topic))){
-    goal_topic = "/goal";
+    goal_topic = "goal";
   }
   if (!(n.getParam("matrice_name",matrice_name))){
     matrice_name = "matrice";
@@ -208,7 +233,7 @@ TrajectoryNode(): lis(tfBuffer)
     world_name = "world";
   }
   if (!(n.getParam("goal_name",goal_name))){
-    world_name = "Goal: ";
+    goal_name = "goal";
   }
   cout << "Publishing to " << path_topic << endl;
   cout << "Subscribing to " << goal_topic << endl;
@@ -219,6 +244,7 @@ TrajectoryNode(): lis(tfBuffer)
 
 tf2_ros::Buffer tfBuffer;
 tf2_ros::TransformListener lis;
+tf2_ros::TransformBroadcaster br;
 ros::NodeHandle n;
 ros::Publisher pub;
 ros::Subscriber sub;
