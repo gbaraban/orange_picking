@@ -302,6 +302,10 @@ def trajCost(x_traj,u_traj,tree,orange,tf=15):
         return value
     def logR(rot):
         rot_m = rot.as_matrix()
+        #print(rot_m.shape)
+        if rot_m.shape != (3,3):
+            print("reshaping")
+            rot_m = rot_m.reshape((3,3))
         arg = (rot_m[0,0] + rot_m[1,1] + rot_m[2,2] - 1)/2
         if (arg >= 1):
             phi = 0
@@ -314,12 +318,12 @@ def trajCost(x_traj,u_traj,tree,orange,tf=15):
             return (0,0,0)
         temp_m = (phi/(2*sphi))*(rot_m - rot_m.transpose())
         return np.array((temp_m[2,1],temp_m[0,2],temp_m[1,0]))
-    def L(p,rot,v,w,u):
+    def L(p,p_last,rot,v,w,u):
         #rot = R.from_dcm(rot)
-        dR = logR(rot*rotf.inv())
+        dR = np.array(logR(rot*rotf.inv()))
         p = np.array(p)
         dp = p - orange
-        w = logR(rot*rot_last.inv())/dt
+        w = np.array(logR(rot*rot_last.inv()))/dt
         v = (p - np.array(p_last))/dt
         dx = np.hstack((dR,dp,w,v))
         #print("dx: ",dx)
@@ -334,7 +338,7 @@ def trajCost(x_traj,u_traj,tree,orange,tf=15):
         return value
     def Lf(p,rot,v,w):
         #rot = R.from_dcm(rot)
-        dR = logR(rot*rotf.inv())
+        dR = np.array(logR(rot*rotf.inv()))
         p = np.array(p)
         dp = p - orange
         dx = np.hstack((dR,dp,w,v))
@@ -350,37 +354,58 @@ def trajCost(x_traj,u_traj,tree,orange,tf=15):
         rot_last = R.from_dcm(x_traj[0][1])
         for i in range(N):
             rot = R.from_dcm(x_traj[i][1])
-            w = logR(rot*rot_last.inv())/dt
-            v = (p - np.array(p_last))/dt
+            x = x_traj[i][0]
+            w = np.array(logR(rot*rot_last.inv()))/dt
+            v = (x - np.array(x_last))/dt
             cost += L(x_traj[i][0],rot,v,w,u_traj[i])
             #print("Running Cost: ", cost)
-            x_last = x_traj[i][0]
+            x_last = x
             rot_last = rot
         rot = R.from_dcm(x_traj[N][1])
-        w = logR(rot*rot_last.inv())/dt
-        v = (p - np.array(p_last))/dt
+        x = x[N][0]
+        w = np.array(logR(rot*rot_last.inv()))/dt
+        v = (x - np.array(x_last))/dt
         cost += Lf(x_traj[N][0],rot,v,w)
         #print("Running Cost: ", cost)
     elif (len(x_traj[0]) is 4):
+        x_last = x_traj[0][0]
+        rot_last = R.from_dcm(x_traj[0][1])
         for i in range(N):
             rot = R.from_dcm(x_traj[i][1])
-            cost += L(x_traj[i][0],rot,x_traj[i][2],x_traj[i][3])
+            cost += L(x_traj[i][0],x_last,rot,x_traj[i][2],x_traj[i][3],u_traj[i])
+            x_last = x_traj[i][0]
+            rot_last = rot
         rot = R.from_dcm(x_traj[N][1])
         cost += Lf(x_traj[N][0],rot,x_traj[N][2],x_traj[N][3])
     elif (len(x_traj[0]) is 6):
+        print("zero:", x_traj[0])
         x_last = x_traj[0][0:3]
-        rot_last = R.from_euler(x_traj[0][3:6])#.as_matrix()
+        rot_last = R.from_euler('zyx', x_traj[0][3:6])#.as_matrix()
         for i in range(N):
-            rot = R.from_euler(x_traj[i][3:6])#.as_matrix()
-            w = logR(rot*rot_last.inv())/dt
-            v = (p - np.array(p_last))/dt
-            cost += L(x_traj[i][0:3],rot,v,w,u_traj[i])
+            rot = R.from_euler('zyx', x_traj[i][3:6])#.as_matrix()
+            print("I: ", i, x_traj[i])
+            if len(x_traj[0]) is 6:
+                x = x_traj[i][0:3]
+            else:
+                x = np.array(x_traj[i][0])
+            #print(logR(rot*rot_last.inv())) 
+            w = np.array(logR(rot*rot_last.inv()))/dt
+            print("x ",x)
+            print(len(x) is 6)
+            print("last: ",x_last)
+            v = np.array((np.array(x) - np.array(x_last)))/dt
+            cost += L(x,x_last,rot,v,w,u_traj[i])
             #print("Running Cost: ", cost)
-            x_last = x_traj[i][0:3]
+            x_last = x
             rot_last = rot
-        rot = R.from_euler(x_traj[N][3:6])#.as_matrix()
-        w = logR(rot*rot_last.inv())/dt
-        v = (p - np.array(p_last))/dt
+        rot = R.from_euler('zyx',x_traj[N][3:6])#.as_matrix()
+        if len(x_traj[0]) is 6:
+            x = x_traj[N][0:3]
+        else:
+            x = np.array(x_traj[N][0])
+        #print(logR(rot*rot_last.inv()))
+        w = np.array(logR(rot*rot_last.inv()))/dt
+        v = (np.array(x) - np.array(x_last))/dt
         cost += Lf(x_traj[N][0:3],rot,v,w)
         #print("Running Cost: ", cost)
     else:
@@ -479,6 +504,7 @@ def sys_f_gcop(x,goal,dt,goal_time=3,hz=50,plot_flag=False):
     final_idx = int(dt*hz)
     print(final_idx)
     print(len(ref_traj))
+    print(len(ref_u_traj))
     print(np.array(ref_traj[final_idx][0])-np.array(ref_traj[0][0]))
     if plot_flag:# or np.linalg.norm(dx) < 1e-3:
         print(goal)
@@ -535,8 +561,17 @@ def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = N
     x_list = []
     u_list = []
     (env,x,camName,envName,orange,tree) = shuffleEnv(env_name,trial_num=trial_num,args=args)#,x0,orange,tree)
-    #print(x.shape)
+    print(x)
+    print(x.shape)
+    if "sys_f_gcop" in str(sys_f):
+        x_ = tuple(x[0:3])
+        rot_m = R.from_euler('zyx', x[3:6]).as_matrix()
+        rot = tuple((tuple(rot_m[0,]),)) + tuple((tuple(rot_m[1,]),)) + tuple((tuple(rot_m[2,]),))
+        x = tuple((x_,rot))
+        x = x[0:] + tuple(((0,0,0),(0,0,0)))
     x_list.append(x)
+    print(x)
+    #exit()
     if camName is "":
         print("camName not set")
         print("Close Env")
@@ -588,14 +623,18 @@ def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = N
         x = sys_f(x,goal,dt,plot_flag=plot_step_flag)
         if not "sys_f_linear" in str(sys_f):
             u = x[1]
-            print(u)
-            exit()
+            if len(u_list) == 0:
+                u_list.append(u[0])
+            u_list.extend(u)
+            #print("u: ", step, len(u))
             x = x[0]
-            x_list.append(x)
+            #print("x: ", step, len(x))
+            x_list.extend(x)
             x = x[len(x)-1]
-            print("gcop")
+            #print("x: ", step, len(x), x)
+            print("gcop ", len(x_list), len(u_list))
         else:
-            x_list.append(x)
+            x_list.extend(x)
 
     #Ran out of time
     if save_path is not None:
@@ -609,7 +648,9 @@ def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = N
         score = trajCost(x_list,u_list,tree,orange)
 
     if score is not None:
-        file = open("./score/"+ save_path.replace("/", "_"), "w")
+        if not os.path.exists("./score/"):
+            os.mkdir("./score/")
+        file = open("./score/"+ save_path.replace("/", "_").strip("_") , "x")
         file.write(str(score))
         file.close()
 
@@ -635,8 +676,8 @@ def main():
   parser.add_argument('--resnet18', type=int, default=0, help='ResNet18')
   #Simulation Options
   parser.add_argument('--iters', type=int, default=5, help='number of simulations')
-  parser.add_argument('--steps', type=int, default=500, help='Steps per simulation')
-  parser.add_argument('--hz', type=float, default=10, help='Recalculation rate')
+  parser.add_argument('--steps', type=int, default=100, help='Steps per simulation')
+  parser.add_argument('--hz', type=float, default=1, help='Recalculation rate')
   #parser.add_argument('--physics', type=float, default=50, help="Freq at which physics sim is performed")
   parser.add_argument('--env', type=str, default="unity/env_v6", help='unity filename')
   parser.add_argument('--plot_step', type=bool, default=False, help='PLot each step')
@@ -685,7 +726,7 @@ def main():
     #Filenames
     foldername = "trial" + str(trial_num) + "/"
     os.makedirs(globalfolder + foldername)
-    err_code = run_sim(args,sys_f_linear,args.env,model,plot_step_flag = args.plot_step,
+    err_code = run_sim(args,sys_f_gcop,args.env,model,plot_step_flag = args.plot_step,
                        max_steps=args.steps,dt=(1.0)/args.hz,
                        save_path = globalfolder+foldername,mean_image=mean_image,trial_num=trial_num)
     if err_code is not 0:
