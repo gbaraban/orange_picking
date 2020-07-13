@@ -278,7 +278,7 @@ def trajCost(x_traj,u_traj,tree,orange,tf=15):
             return 0
         df = df/np.linalg.norm(df)
         rot_arr = rot.as_matrix()
-        value =  dt*yaw_g*(1 - np.dot(df,rot_arr[:,0]))
+        value =  yaw_g*(1 - np.dot(df,rot_arr[:,0]))
         #print("yawCost: ", value)
         return value
     def cylCost(p):
@@ -290,14 +290,14 @@ def trajCost(x_traj,u_traj,tree,orange,tf=15):
         if (cyl_r < d):
             #print("cylCost: 0")
             return 0
-        value = dt*(stiffness/2)*(cyl_r - d)*(cyl_r-d)
+        value = (stiffness/2)*(cyl_r - d)*(cyl_r-d)
         #print("cylCost: ", value)
         return value
     def groundCost(p):
         if (p[2] > 0):
             #print("groundCost: 0")
             return 0
-        value = dt*(stiffness/2)*p[2]*p[2]
+        value = (stiffness/2)*p[2]*p[2]
         #print("groundCost: ", value)
         return value
     def logR(rot):
@@ -329,7 +329,7 @@ def trajCost(x_traj,u_traj,tree,orange,tf=15):
         #print("du: ",du)
         u_cost = dt*np.dot(r,du*du)
         #print("u cost: ", u_cost)
-        value =  x_cost + u_cost + yawCost(p,rot) + cylCost(p) + groundCost(p)
+        value =  x_cost + u_cost + dt*yawCost(p,rot) + dt*cylCost(p) + dt*groundCost(p)
         #print("L cost: ", value)
         return value
     def Lf(p,rot,v,w):
@@ -339,7 +339,7 @@ def trajCost(x_traj,u_traj,tree,orange,tf=15):
         dp = p - orange
         dx = np.hstack((dR,dp,w,v))
         #print("dx: ",dx)
-        x_cost = dt*np.dot(qf,dx*dx)
+        x_cost = np.dot(qf,dx*dx)
         #print("x cost: ", x_cost)
         value = x_cost + yawCost(p,rot) + cylCost(p) + groundCost(p)
         #print("Lf: ", value)
