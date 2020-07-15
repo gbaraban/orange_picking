@@ -77,11 +77,14 @@ def make_layer8(in_size,out_size,stride_length=1):
             #Block8(out_size,out_size))
 
 class OrangeNet8(torch.nn.Module):
-    def __init__(self, capacity = 1, num_img = 1, num_pts = 3, bins = 30, mins = None, maxs = None, n_outputs = 3):
+    def __init__(self, capacity = 1, num_img = 1, num_pts = 3, bins = 30, mins = None, maxs = None, n_outputs = 3, real_test = False, retrain_off = "linear"):
         super(OrangeNet8, self).__init__()
         #Parameters
         self.w = 640 #300
-        self.h = 380 #200
+        if real_test:
+            self.h = 480
+        else:
+            self.h = 380 #200
         self.num_points = num_pts
         self.num_images = num_img
         self.f = capacity#5.0#2.0#1.5#125#1#0.25
@@ -99,12 +102,28 @@ class OrangeNet8(torch.nn.Module):
         self.block2 = make_layer8(int(32*self.f),int(64*self.f), stride_length=2)
         self.block3 = make_layer8(int(64*self.f),int(128*self.f), stride_length=2)
         #in_size = 768*self.f#122880#temp
-        in_size = 34944*self.f#122880#temp
+        if real_test:
+            linear_layer_size = 43008
+        else:
+            linear_layer_size = 34944
+        in_size = linear_layer_size*self.f#122880#temp
         self.fc1 = nn.Linear(int(in_size),int(4096*self.f))
         self.fc2 = nn.Linear(int(4096*self.f),int(2048*self.f))
         self.fc3 = nn.Linear(int(2048*self.f),int(1024*self.f))
         #self.output = nn.Linear(int(1024*self.f),3*self.num_points*self.bins)
         self.output = nn.Linear(int(2048*self.f),n_outputs*self.num_points*self.bins)
+
+        if retrain_off == "linear":
+            print("Linear layers frozen")
+            self.fc1.weight.requires_grad = False
+            self.fc1.bias.requires_grad = False
+            self.fc2.weight.requires_grad = False
+            self.fc2.bias.requires_grad = False
+            self.fc3.weight.requires_grad = False
+            self.fc3.bias.requires_grad = False
+            self.output.weight.requires_grad = False
+            self.output.bias.requires_grad = False
+
 
     def forward(self,x):
         #x =  self.resnet(x)
@@ -127,11 +146,14 @@ class OrangeNet8(torch.nn.Module):
         return x
 
 class OrangeNet18(torch.nn.Module):
-    def __init__(self, capacity = 1, num_img = 1, num_pts = 3, bins = 30, mins = None, maxs = None, n_outputs = 3):
+    def __init__(self, capacity = 1, num_img = 1, num_pts = 3, bins = 30, mins = None, maxs = None, n_outputs = 3, real_test = False):
         super(OrangeNet18, self).__init__()
         #Parameters
         self.w = 640 #300
-        self.h = 380 #200 
+        if real_test:
+            self.h = 480
+        else:
+            self.h = 380 #200 
         self.num_points = num_pts
         self.num_images = num_img
         self.f = capacity#5.0#2.0#1.5#125#1#0.25

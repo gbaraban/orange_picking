@@ -311,6 +311,9 @@ def main():
     parser.add_argument('--custom', type=str, default="", help='custom parser')
     parser.add_argument('--test_arch', type=int, default=100, help='testing architectures')
     parser.add_argument('--train', type=int, default=1, help='train or test')
+    parser.add_argument('--data_aug_flip',type=int,default=1, help='Horizontal flipping on/off')
+    parser.add_argument('--real_test',type=int,default=0,help='self.h = 380/480')
+    parser.add_argument('--freeze',type=str,default="",help='layer to freeze while training, linear or conv')
     args = parser.parse_args()
 
     if args.custom == "":
@@ -341,13 +344,18 @@ def main():
         OrangeNet8 = i.OrangeNet8
         OrangeNet18 = i.OrangeNet18
 
+    if args.real_test == 0:
+        args.real_test = False
+    else:
+        args.real_test = True
+
     args.min = [(0,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0,-1,-0.15,-np.pi,-np.pi/2,-np.pi),(0,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0,-2,-0.3,-np.pi,-np.pi/2,-np.pi),(0,-3,-0.5,-np.pi,-np.pi/2,-np.pi)]
     args.max = [(1,0.5,0.1,np.pi,np.pi/2,np.pi),(2,1,0.15,np.pi,np.pi/2,np.pi),(4,1.5,0.2,np.pi,np.pi/2,np.pi),(6,2,0.3,np.pi,np.pi/2,np.pi),(7,0.3,0.5,np.pi,np.pi/2,np.pi)]
     #args.traj = False
     #Data Transforms
     pt_trans = transforms.Compose([pointToBins(args.min,args.max,args.bins)])#,GaussLabels(1,1e-10,args.bins)])
 
-    if args.train == 1:
+    if args.train == 1 and args.data_aug_flip == 1:
         img_trans = transforms.Compose([RandomHorizontalTrajFlip(p=0.5)])
     else:
         img_trans = None
@@ -431,9 +439,9 @@ def main():
         n_outputs = 6
 
     if not args.resnet18:
-        model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs)
+        model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,retrain_off=args.freeze)
     else:
-        model = OrangeNet18(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs)
+        model = OrangeNet18(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test)
 
     if args.load:
         if os.path.isfile(args.load):
