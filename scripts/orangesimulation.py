@@ -32,7 +32,7 @@ def makeCamAct(x):
     #print("cameraAction: ",cameraAction)
     return np.array([cameraAction])
 
-def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=None):
+def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=None,cR = None):
     #Create environment
     print("Create env")
     if args is None:
@@ -56,7 +56,7 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
     xoffset = 2*xmult*(np.random.rand(3) - 0.5)
     x0_i = x0 + xoffset
     yaw0_i = yaw0 + 2*ymult*(np.random.rand(1) - 0.5)
-    treeoffset = 2*treemult*(np.random.rand(4) - 0.5)
+    treeoffset = treemult*(np.random.rand(4) - 0.5)
     treePos_i = treePosYaw + treeoffset
     theta = 2*np.pi*np.random.random_sample()
     orangeR_rand = orangeRmult*np.random.random_sample()
@@ -68,7 +68,7 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
     x0_i = np.hstack((x0_i,yaw0_i,0,0))
     envAct = np.array((np.random.randint(6),np.random.randint(6),0))
     if not plot_only:
-        (camName, envName) = setUpEnv(env,x0_i,treePos_i,orangePos_i,envAct, orangeColor = np.random.randint(9),future_version=future_version)
+        (camName, envName) = setUpEnv(env,x0_i,treePos_i,orangePos_i,envAct, orangeColor = np.random.randint(9),future_version=future_version,collisionR = cR)
     else:
         camName = ""
 
@@ -127,12 +127,11 @@ def quat_between(qa, qb, t, quat=False):
 
 
 def setUpEnv(env, x0, treePos, orangePos, envAct=(0,1,0), treeScale = 0.125, orangeScale = 0.07,
-             orangeColor = 0, future_version=False):
+             orangeColor = 0, future_version=False, collisionR = None):
     print("Reset Env")
     env.reset()
     camAct = makeCamAct(x0)
     treeAct = np.array([np.hstack((gcopVecToUnity(treePos[0:3]),treePos[3],1))])
-    orangeAct = np.array([np.hstack((gcopVecToUnity(orangePos),orangeColor,1))])
     envAct = np.array([np.hstack((envAct,1))])
     if not future_version: #future_version is master branch of mlagents as of 05/12/2020 
         print("Get names Env")
@@ -143,47 +142,55 @@ def setUpEnv(env, x0, treePos, orangePos, envAct=(0,1,0), treeScale = 0.125, ora
 
     camName = ""
     envName = ""
+    treeName = ""
+    orangeName = ""
     for n in names:
         print(n)
         if "Tree" in n:
-            #continue
-            print(treeAct)
-            print("Set tree Act Env")
-            env.set_actions(n,treeAct)
-            env.step()
-            #print("tree set")
+            treeName = n
             continue
         if "Orange" in n:
-            print(orangeAct)
-            print("Set orange Act Env")
-            env.set_actions(n,orangeAct)
-            env.step()
-            #print(orangeAct)
+            orangeName = n
             continue
         if "Environment" in n:
-            print(envAct)
-            print("Set environment Act Env")
-            env.set_actions(n,envAct)
-            env.step()
-            #print("Environment: ",envAct)
             envName = n
             continue
         if "Cam" in n:
-            print(camAct)
-            print("Set cam Act Env")
-            env.set_actions(n,camAct)
-            env.step()
-            #print("Camera set")
             camName = n
             continue
-    #print("Step Env")
-    #env.step()
-    #print("env step")
-    #Fixing the first image bug
-    #print("Cam Act Env")
-    #env.set_actions(camName,camAct)
-    #print("Step Env")
-    #env.step()
+
+    env.set_actions(envName,envAct)
+    env.step()
+    env.set_actions(treeName,treeAct)
+    env.step()
+    if (collisionR is None):
+        orangeAct = np.array([np.hstack((gcopVecToUnity(orangePos),orangeColor,1))])
+        env.set_actions(orangeName,orangeAct)
+        env.step()
+    else:
+        dx = orangePos[0:3] - treePos[0:3]
+        theta = np.arctan2(dx[1],dx[0])
+        r_min = 0
+        r_max = 3
+        eps = 0.01
+        while (r_max-r_min) > eps:
+            r = (r_max + r_min)/2
+            tempPos = np.array([np.cos(theta)*r,np.sin(theta)*r,dx[2]])
+            orangeAct = np.array([np.hstack((gcopVecToUnity(tempPos),orangeColor,1))])
+            env.set_actions(orangeName,orangeAct)
+            env.step()
+            (ds,ts) = env.get_steps(orangeName)
+            if np.linalg.norm(ds.obs[0][0,0:3]-ds.obs[0][0,3:6]) < eps:
+                r_min = r
+            else:
+                r_max = r
+        r = (r_max + r_min)/2 - collisionR
+        tempPos = np.array([np.cos(theta)*r,np.sin(theta)*r,dx[2]])
+        orangeAct = np.array([np.hstack((gcopVecToUnity(tempPos),orangeColor,1))])
+        env.set_actions(orangeName,orangeAct)
+        env.step()
+    env.set_actions(camName,camAct)
+    env.step()
     return (camName,envName)
 
 def unity_image(env,act,cam_name,env_name=None):
@@ -465,10 +472,10 @@ def run_gcop(x,tree,orange,t=0,tf=15,N=100,save_path=None):#TODO:Add in args to 
 
 def sys_f_gcop(x,goal,dt,goal_time=3,hz=50,plot_flag=False):
     N = goal_time*hz
-    epochs = 10
+    epochs = 15
     q = (0,0,0,#rotation log#(0,0,0,0,0,0,0,0,0,0,0,0)
          0,0,0,#position
-         10,10,10,#rotation rate
+         15,15,15,#rotation rate
          10,10,10)#velocity
     qf = (10,10,10,#rotation log
          10,10,10,#position

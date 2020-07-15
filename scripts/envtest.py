@@ -16,20 +16,20 @@ trial_num = -1
 os.makedirs(globalfolder)
 os.makedirs(globalfolder+"/images/")
 os.makedirs(globalfolder+"/external/")
-while trial_num < 2:
+while trial_num < 3:
     trial_num += 1
     print('Trial Number ',trial_num)
     #Filenames
     #foldername = "trial" + str(trial_num) + "/"
     #os.makedirs(globalfolder + foldername)
-    env_name = 'unity/env_v6'
-    (env,x,camName,envName, orange, tree) = shuffleEnv(env_name,trial_num=trial_num)#setUpEnv(env,x0_i,treePos_i,orangePos_i)
+    env_name = 'unity/env_v7'
+    (env,x,camName,envName, orange, tree) = shuffleEnv(env_name,trial_num=trial_num,cR = -0.01*trial_num)#setUpEnv(env,x0_i,treePos_i,orangePos_i)
     #x = np.array([0,0,0,0,0,0])
     camAct = makeCamAct(x)
-    (im_arr,ext_arr) = unity_image(env,camAct,camName,envName)
-    #ext_arr = unity_image(env,camAct,None,envName)
+    #(im_arr,ext_arr) = unity_image(env,camAct,camName,envName)
+    ext_arr = unity_image(env,camAct,None,envName)
     print("saving to folder: ", globalfolder)
-    save_image_array(im_arr,None,None)#globalfolder+"/images/","sim_image"+str(trial_num))
+    #save_image_array(im_arr,None,None)#globalfolder+"/images/","sim_image"+str(trial_num))
     save_image_array(ext_arr,None,None)#globalfolder+"/external/","ext_image"+str(trial_num))
     print("Close Env")
     env.close()
