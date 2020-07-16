@@ -1,29 +1,30 @@
 import numpy as np
-from mlagents_envs.environment import UnityEnvironment
+#from mlagents_envs.environment import UnityEnvironment
 import PIL.Image as img
 from scipy.spatial.transform import Rotation as R
 from orangenetarch import *
-from trainorangenet_orientation import *
+#from trainorangenet_orientation import *
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, ConcatDataset
 import argparse
-from plotting.parsetrajfile import *
-from orangesimulation import *
+#from plotting.parsetrajfile import *
+#from orangesimulation import *
 import pickle
 import os
-import gcophrotor
-from torch.utils.tensorboard import SummaryWriter
+#import gcophrotor
+#from torch.utils.tensorboard import SummaryWriter
 from customTransforms import *
 import time
+import random
 
 
 def load_run18(args):
 	from customDatasetsOrientation import OrangeSimDataSet, SubSet
 	custom = "Run18"
 	traj = True
-	data = "./data/Run19/"
-	val_perc = 0.99 #TODO: adjust this for number of training trajectories, we are using train traj, so we want to adjust (1-val_perc)
+	data = "./data/Run20/"
+	val_perc = 0 #TODO: adjust this for number of training trajectories, we are using train traj, so we want to adjust (1-val_perc)
 
 	pt_trans = transforms.Compose([pointToBins(args.min, args.max, args.bins)])
 	img_trans = transforms.Compose([RandomHorizontalTrajFlip()])
@@ -136,7 +137,7 @@ def main():
 
 	if os.path.isfile(args.load):
 		print(args.load)
-		checkpoint = torch.load(args.load)
+		checkpoint = torch.load(args.load,map_location=torch.device('cuda'))
 		model.load_state_dict(checkpoint)
 		model.eval()
 		print("Loaded Model: ",args.load)
