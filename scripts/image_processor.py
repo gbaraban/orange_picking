@@ -5,7 +5,7 @@ import os
 from cv_bridge import CvBridge, CvBridgeError
 import cv2
 
-mean_image = "~/Desktop/asco/ws/orange_picking/data/mean_imgv2_data_real_world_traj_bag.npy"
+mean_image = "/home/siddharth/Desktop/asco/ws/src/orange_picking/data/mean_imgv2_data_real_world_traj_bag.npy"
 
 if not (os.path.exists(mean_image)):
 	print('mean image file not found', mean_image)
@@ -14,11 +14,14 @@ else:
 	print('mean image file found')
 	mean_image = np.load(mean_image)
 
-mean_image = mean_image.transpose(2,0,1)
+#mean_image = mean_image.transpose(0,1,2)
 
 bridge = CvBridge()
 
-pub = rospy.Publisher('/orange_picking/processed_image', Image, queue=30)
+pub = rospy.Publisher('/orange_picking/processed_image', Image)
+
+h = 380
+w = 640
 
 def processing_callback(data):
 	try:
@@ -26,13 +29,17 @@ def processing_callback(data):
 	except CvBridgeError as e:
 		print(e)
 
-	print(cv_image.shape)
+	#print(cv_image.shape)
+	cv_image = cv2.resize(cv_image,(w,h))
+	cv_image = cv_image/255.0
+	#print(cv_image.shape)
 
 	if mean_image is None:
 		mean_subtracted = (cv_image)
 	else:
 		mean_subtracted = (cv_image-mean_image)
-	
+	#print(mean_subtracted)
+	#print(mean_subtracted.shape)
 	#image_tensor = torch.tensor(mean_subtracted)
 
 	try:

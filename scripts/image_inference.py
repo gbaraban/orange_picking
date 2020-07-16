@@ -7,6 +7,7 @@ import time, os
 from geometry_msgs.msg import Pose, PoseArray
 from cv_bridge import CvBridge, CvBridgeError
 import cv2
+from scipy.spatial.transform import Rotation as R
 
 capacity = 1.0
 num_images = 1
@@ -19,8 +20,8 @@ if torch.cuda.is_available():
 else:
 	gpu = None
 
-load = "" #TODO Add location
-mean_image = ""
+load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_plain/model139.pth.tar"
+load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_retrained/model9.pth.tar"
 
 mins = [(0,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0,-1,-0.15,-np.pi,-np.pi/2,-np.pi),(0,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0,-2,-0.3,-np.pi,-np.pi/2,-np.pi),(0,-3,-0.5,-np.pi,-np.pi/2,-np.pi)]
 maxs = [(1,0.5,0.1,np.pi,np.pi/2,np.pi),(2,1,0.15,np.pi,np.pi/2,np.pi),(4,1.5,0.2,np.pi,np.pi/2,np.pi),(6,2,0.3,np.pi,np.pi/2,np.pi),(7,0.3,0.5,np.pi,np.pi/2,np.pi)]
@@ -56,8 +57,11 @@ else:
 
 bridge = CvBridge()
 
-pub = rospy.Publisher("/goal",PoseArray,queue_size=50)
+pub = rospy.Publisher("/goal",PoseArray)
 
+
+h = 380
+w = 640
 
 def inference_node_callback(data):
 	t_out1 = time.time()
@@ -65,7 +69,9 @@ def inference_node_callback(data):
 		image_arr = bridge.imgmsg_to_cv2(data,"passthrough")
 	except CvBridgeError as e:
 		print(e)
-	
+
+	image_arr = image_arr.transpose(2,0,1)
+	image_arr = image_arr.reshape((1,3,h,w))
 
 	#if mean_image is None:
 	#	mean_subtracted = (image_arr)
@@ -84,22 +90,37 @@ def inference_node_callback(data):
 	predict = np.argmax(logits,axis=3)
 	#print("Predict: ", predict)
 	goal = []
+	msg = PoseArray()
 	for pt in range(model.num_points):
 		point = []
 		for coord in range(model.outputs):
 			bin_size = (model.max[pt][coord] - model.min[pt][coord])/model.bins
 			point.append(model.min[pt][coord] + bin_size*predict[0,coord,pt])
-		goal.append(np.array(point))
+		point = np.array(point)
+		goal.append(point)
+		pt_pose = Pose()
+		pt_pose.position.x = point[0]
+		pt_pose.position.y = point[1]
+		pt_pose.position.z = point[2]
+		R_quat = R.from_euler('zyx', point[3:6]).as_quat()
+		pt_pose.orientation.x = R_quat[0]
+		pt_pose.orientation.y = R_quat[1]
+		pt_pose.orientation.z = R_quat[2]
+		pt_pose.orientation.w = R_quat[3]
+		msg.poses.append(pt_pose)
+
+	pub.publish(msg)
 	goal = np.array(goal)
 	t_out2 = time.time()
 	time_proc = t_out2 - t_out1
 	time_infer = t_in2 - t_in1
-
+	print(goal)
+	print(time_proc)
 	#Publish
 
 def inference_node():
 	rospy.init_node('image_inference')
-	rospy.Subscriber("/orange_picking/processed_image", Image, processing_callback)
+	rospy.Subscriber("/orange_picking/processed_image", Image, inference_node_callback)
 	rospy.spin()
 
 if __name__ == "__main__":
