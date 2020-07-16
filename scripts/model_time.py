@@ -95,7 +95,7 @@ def eval_time(args,model,device,mean_image=None):
 		for pt in range(model.num_points):
 			point = []
 			for coord in range(model.outputs):
-				bin_size = (model.max[pt][coord] - model.min[pt][coord])/model.bins
+				bin_size = (model.max[pt][coord] - model.min[pt][coord])/float(model.bins)
 				point.append(model.min[pt][coord] + bin_size*predict[0,coord,pt])
 			goal.append(np.array(point))
 		goal = np.array(goal)

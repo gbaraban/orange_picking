@@ -21,7 +21,7 @@ else:
 	gpu = None
 
 load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_plain/model139.pth.tar"
-load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_retrained/model9.pth.tar"
+#load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_retrained/model9.pth.tar"
 
 mins = [(0,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0,-1,-0.15,-np.pi,-np.pi/2,-np.pi),(0,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0,-2,-0.3,-np.pi,-np.pi/2,-np.pi),(0,-3,-0.5,-np.pi,-np.pi/2,-np.pi)]
 maxs = [(1,0.5,0.1,np.pi,np.pi/2,np.pi),(2,1,0.15,np.pi,np.pi/2,np.pi),(4,1.5,0.2,np.pi,np.pi/2,np.pi),(6,2,0.3,np.pi,np.pi/2,np.pi),(7,0.3,0.5,np.pi,np.pi/2,np.pi)]
@@ -57,11 +57,21 @@ else:
 
 bridge = CvBridge()
 
-pub = rospy.Publisher("/goal",PoseArray)
+pub = rospy.Publisher("/goal",PoseArray,queue_size=50)
 
 
 h = 380
 w = 640
+
+mean_image = "/home/siddharth/Desktop/asco/ws/src/orange_picking/data/mean_imgv2_data_real_world_traj_bag.npy"
+
+if not (os.path.exists(mean_image)):
+        print('mean image file not found', mean_image)
+        exit(0)
+else:
+        print('mean image file found')
+        mean_image = np.load(mean_image)
+
 
 def inference_node_callback(data):
 	t_out1 = time.time()
@@ -70,9 +80,13 @@ def inference_node_callback(data):
 	except CvBridgeError as e:
 		print(e)
 
-	image_arr = image_arr.transpose(2,0,1)
-	image_arr = image_arr.reshape((1,3,h,w))
+	#image_arr2 = ((image_arr + mean_image)*255.0).astype(int)
+	#cv2.imwrite('test.png', image_arr2)
 
+	image_arr = image_arr.transpose(2,0,1)
+	print(image_arr.shape)
+	image_arr = image_arr.reshape((1,3,h,w))
+	print(image_arr.shape)
 	#if mean_image is None:
 	#	mean_subtracted = (image_arr)
 	#else:
@@ -88,15 +102,16 @@ def inference_node_callback(data):
 	logits = logits.view(1,model.outputs,model.num_points,model.bins).detach().numpy()
 	t_in2 = time.time()
 	predict = np.argmax(logits,axis=3)
-	#print("Predict: ", predict)
+	print("Predict: ", predict)
 	goal = []
 	msg = PoseArray()
 	for pt in range(model.num_points):
 		point = []
 		for coord in range(model.outputs):
-			bin_size = (model.max[pt][coord] - model.min[pt][coord])/model.bins
+			bin_size = (model.max[pt][coord] - model.min[pt][coord])/float(model.bins)
 			point.append(model.min[pt][coord] + bin_size*predict[0,coord,pt])
 		point = np.array(point)
+		print(point)
 		goal.append(point)
 		pt_pose = Pose()
 		pt_pose.position.x = point[0]
@@ -108,7 +123,7 @@ def inference_node_callback(data):
 		pt_pose.orientation.z = R_quat[2]
 		pt_pose.orientation.w = R_quat[3]
 		msg.poses.append(pt_pose)
-
+	exit()
 	pub.publish(msg)
 	goal = np.array(goal)
 	t_out2 = time.time()

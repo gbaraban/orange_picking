@@ -18,22 +18,22 @@ else:
 
 bridge = CvBridge()
 
-pub = rospy.Publisher('/orange_picking/processed_image', Image)
+pub = rospy.Publisher('/orange_picking/processed_image', Image,queue_size=50)
 
 h = 380
 w = 640
 
 def processing_callback(data):
 	try:
-		cv_image = bridge.imgmsg_to_cv2(data, "passthrough")
+		cv_image = bridge.imgmsg_to_cv2(data, "bgr8")
 	except CvBridgeError as e:
 		print(e)
 
 	#print(cv_image.shape)
 	cv_image = cv2.resize(cv_image,(w,h))
+	#cv2.imwrite("test_pre.png", cv_image)
 	cv_image = cv_image/255.0
 	#print(cv_image.shape)
-
 	if mean_image is None:
 		mean_subtracted = (cv_image)
 	else:
@@ -43,6 +43,7 @@ def processing_callback(data):
 	#image_tensor = torch.tensor(mean_subtracted)
 
 	try:
+		print("pub")
 		pub.publish(bridge.cv2_to_imgmsg(mean_subtracted,"passthrough"))
 	except CvBridgeError as e:
 		print(e)
