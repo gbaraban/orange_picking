@@ -10,4 +10,5 @@ data/Run*
 
 #Cached files
 *.swp
+*.save.*
 *.save
