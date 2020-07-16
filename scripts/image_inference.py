@@ -123,7 +123,7 @@ def inference_node_callback(data):
 		pt_pose.orientation.z = R_quat[2]
 		pt_pose.orientation.w = R_quat[3]
 		msg.poses.append(pt_pose)
-	exit()
+	#exit()
 	pub.publish(msg)
 	goal = np.array(goal)
 	t_out2 = time.time()
