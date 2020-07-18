@@ -9,30 +9,13 @@ import argparse
 from plotting.parsetrajfile import *
 import os
 import gcophrotor
+from orangeimages import *
 
 def gcopVecToUnity(v):
     temp = np.array((v[0],v[2],v[1]))
     return temp
 
-def makeCamAct(x):
-    #Set up camera action
-    if (len(x) is 2) or (len(x) is 4):
-        cameraPos = x[0]
-        r = R.from_dcm(x[1])
-    elif (len(x) is 6):
-        cameraPos = x[0:3]
-        r = R.from_euler('zyx',x[3:6])
-    else:
-        print("Unsupported x format")
-        return
-    euler = r.as_euler(seq = 'zxy',degrees = True) #using weird unity sequence
-    unityEuler = (euler[1],-euler[0],euler[2]) 
-    #print("euler: ", unityEuler)
-    cameraAction = np.hstack((gcopVecToUnity(cameraPos),unityEuler,1))
-    #print("cameraAction: ",cameraAction)
-    return np.array([cameraAction])
-
-def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=None,cR = None):
+def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=None):
     #Create environment
     print("Create env")
     if args is None:
@@ -64,6 +47,7 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
     R_i = orangeR + orangeR_rand
     orangeoffset = np.array((R_i*np.cos(theta), R_i*np.sin(theta),
                              orangePos[2] + orangeH_rand))
+    cR = 0.1*np.random.random_sample()
     orangePos_i = treePos_i[0:3] + orangeoffset
     x0_i = np.hstack((x0_i,yaw0_i,0,0))
     envAct = np.array((np.random.randint(6),np.random.randint(6),0))
@@ -130,7 +114,6 @@ def setUpEnv(env, x0, treePos, orangePos, envAct=(0,1,0), treeScale = 0.125, ora
              orangeColor = 0, future_version=False, collisionR = None):
     print("Reset Env")
     env.reset()
-    camAct = makeCamAct(x0)
     treeAct = np.array([np.hstack((gcopVecToUnity(treePos[0:3]),treePos[3],1))])
     envAct = np.array([np.hstack((envAct,1))])
     if not future_version: #future_version is master branch of mlagents as of 05/12/2020 
@@ -168,68 +151,12 @@ def setUpEnv(env, x0, treePos, orangePos, envAct=(0,1,0), treeScale = 0.125, ora
         env.set_actions(orangeName,orangeAct)
         env.step()
     else:
-        dx = orangePos[0:3] - treePos[0:3]
-        theta = np.arctan2(dx[1],dx[0])
-        r_min = 0
-        r_max = 3
-        eps = 0.01
-        while (r_max-r_min) > eps:
-            r = (r_max + r_min)/2
-            tempPos = np.array([np.cos(theta)*r,np.sin(theta)*r,dx[2]])
-            orangeAct = np.array([np.hstack((gcopVecToUnity(tempPos),orangeColor,1))])
-            env.set_actions(orangeName,orangeAct)
-            env.step()
-            (ds,ts) = env.get_steps(orangeName)
-            if np.linalg.norm(ds.obs[0][0,0:3]-ds.obs[0][0,3:6]) < eps:
-                r_min = r
-            else:
-                r_max = r
-        r = (r_max + r_min)/2 - collisionR
-        tempPos = np.array([np.cos(theta)*r,np.sin(theta)*r,dx[2]])
-        orangeAct = np.array([np.hstack((gcopVecToUnity(tempPos),orangeColor,1))])
-        env.set_actions(orangeName,orangeAct)
-        env.step()
+        occ_frac = move_orange(env,orangeName,orangePos[0:3],orangeColor,treePos[0:3],collisionR,camName)
+        #TODO: store occ_frac somewhere
+    camAct = makeCamAct(x0)
     env.set_actions(camName,camAct)
     env.step()
-    return (camName,envName)
-
-def unity_image(env,act,cam_name,env_name=None):
-    #print(act)
-    #print("step called")
-    obs = None
-    if cam_name is not None:
-        print("Cam Act Env")
-        env.set_actions(cam_name,act)
-        print("Step Env")
-        env.step()
-        print("Get Steps (cam) env")
-        (ds,ts) = env.get_steps(cam_name)
-        obs = ds.obs[0][0,:,:,:]
-    #""" 
-    #TODO ds.obs is empty list
-    envobs = None
-    if env_name is not None:
-        print("EnvAct set env")
-        env.set_actions(env_name,np.zeros((1,4)))
-        print("Step env")
-        env.step()
-        print("Get Steps (env) env")
-        (ds,ts) = env.get_steps(env_name)
-        envobs = ds.obs[0][0,:,:,:]
-    #"""
-    if envobs is None:
-        return obs
-    if obs is None:
-        return envobs
-    return (obs,envobs)
-
-def save_image_array(image_in,path,name):
-  im_np = (image_in*255).astype('uint8')
-  image = img.fromarray(im_np)
-  if path is not None:
-      image.save(path + name + '.png')
-  else:
-      image.show()
+    return (camName, envName)
 
 def run_model(model,image_arr,mean_image=None,device=None):
     #Calculate new goal
@@ -250,7 +177,7 @@ def run_model(model,image_arr,mean_image=None,device=None):
     for pt in range(model.num_points):
         point = []
         for coord in range(model.outputs):
-            bin_size = (model.max[pt][coord] - model.min[pt][coord])/model.bins
+            bin_size = (model.max[pt][coord] - model.min[pt][coord])/float(model.bins)
             point.append(model.min[pt][coord] + bin_size*predict[0,coord,pt])
         goal.append(np.array(point))
     goal = np.array(goal)
@@ -686,7 +613,7 @@ def main():
   parser.add_argument('--steps', type=int, default=100, help='Steps per simulation')
   parser.add_argument('--hz', type=float, default=1, help='Recalculation rate')
   #parser.add_argument('--physics', type=float, default=50, help="Freq at which physics sim is performed")
-  parser.add_argument('--env', type=str, default="unity/env_v6", help='unity filename')
+  parser.add_argument('--env', type=str, default="unity/env_v7", help='unity filename')
   parser.add_argument('--plot_step', type=bool, default=False, help='PLot each step')
   parser.add_argument('--mean_image', type=str, default='data/mean_imgv2_data_Run19.npy', help='Mean Image')
   args = parser.parse_args()

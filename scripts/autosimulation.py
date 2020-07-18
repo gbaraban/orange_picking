@@ -59,7 +59,7 @@ def get_variety():
 	var["iters"] = [10]
 	var["outputs"] = [6]
 	var["steps"] = [100, 250, 500]
-	var["hz"] = [1,2,3,5,10,15,25]
+	var["hz"] = [1,3,5,10,12,15,20]
 	#var["physics"] = [10,50,100]
 	labels = []
 	s = []
@@ -88,7 +88,7 @@ def main():
     for k in data.keys():
         d = data[k]
         print(d)
-        proc = "python3 scripts/orangesimulation.py " + str(d["model_loc"]) + str(d["model"]) + " --name " + str(k) + " "
+        proc = "python3 scripts/orangesimulation.py --gpu 1 " + str(d["model_loc"]) + str(d["model"]) + " --name " + str(k) + " "
         if d["resnet"] == "18":
             proc +=  " --resnet18 1 "
 
@@ -106,6 +106,7 @@ def main():
                 os.system(t_proc)
             else:
                 os.system(t_proc + " &" )
+            #exit(0)
             i += 1
 
 
