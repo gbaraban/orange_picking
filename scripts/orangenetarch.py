@@ -77,7 +77,7 @@ def make_layer8(in_size,out_size,stride_length=1):
             #Block8(out_size,out_size))
 
 class OrangeNet8(torch.nn.Module):
-    def __init__(self, capacity = 1, num_img = 1, num_pts = 3, bins = 30, mins = None, maxs = None, n_outputs = 3, real_test = False, retrain_off = "linear"):
+    def __init__(self, capacity = 1, num_img = 1, num_pts = 3, bins = 30, mins = None, maxs = None, n_outputs = 3, real_test = False, retrain_off = ""):
         super(OrangeNet8, self).__init__()
         #Parameters
         self.w = 640 #300

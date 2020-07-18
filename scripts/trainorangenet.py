@@ -208,7 +208,7 @@ def acc_metric(args,logits,point_batch):
                 max_pred = np.argmax(prob)
                 #true_pred = np.argmax(point_batch[ii,pt,coord,:])
                 true_pred = np.array(point_batch[ii,pt,coord])
-                bin_size = (args.max[pt][coord] - args.min[pt][coord])/args.bins
+                bin_size = (args.max[pt][coord] - args.min[pt][coord])/float(args.bins)
                 d = (true_pred - max_pred)*bin_size
                 coord_list.append(d)
             d = np.vstack([coord_list[0],coord_list[1],coord_list[2]])
