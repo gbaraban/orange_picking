@@ -29,7 +29,7 @@ def logRot(m):
 def parse_state(state,targ = None):
     if targ is not None:
         targ = np.array(targ)
-    if (len(state) is 2):
+    if (len(state) is 2) or (len(state) is 4):
         pos = np.array(state[0])
         rot = R.from_matrix(np.array(state[1]))
         ypr = rot.as_euler(seq = 'zyx', degrees = True)
@@ -133,7 +133,7 @@ def make_full_plots(ts,states, targ=None, cyl_o=None, cyl_r=0.6, cyl_h=1.6, save
   #Plot trajectory
   ax.plot3D(x_list,y_list,z_list)
   for state in states:
-      if len(state) is 2:
+      if (len(state) is 2) or (len(state) is 4):
           p = state[0]
           rot_mat = np.array(state[1])
       elif len(state) is 6:

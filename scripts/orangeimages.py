@@ -56,6 +56,7 @@ def move_orange(env,orangeName,orangePos,orangeColor,treePos,collisionR,camName=
     r_min = 0
     r_max = 3
     eps = 0.01
+    orange_offset = 0.1
     while (r_max-r_min) > eps:
         r = (r_max + r_min)/2
         tempPos = treePos + np.array([np.cos(theta)*r,np.sin(theta)*r,dx[2]])
@@ -68,11 +69,12 @@ def move_orange(env,orangeName,orangePos,orangeColor,treePos,collisionR,camName=
         else:
             r_max = r
     if (camName is None):
-        r = (r_max + r_min)/2 - collisionR
+        r = (r_max + r_min)/2 - collisionR + orange_offset
         tempPos = treePos + np.array([np.cos(theta)*r,np.sin(theta)*r,dx[2]])
         orangeAct = np.array([np.hstack((gcopVecToUnity(tempPos),orangeColor,1))])
         env.set_actions(orangeName,orangeAct)
         env.step()
+        return orangeAct, None
     else:
         threshold = 0.1
         reference_r = 1
@@ -92,10 +94,13 @@ def move_orange(env,orangeName,orangePos,orangeColor,treePos,collisionR,camName=
         #save_image_array(image_trunc,None,None)
         unobscured_score = np.count_nonzero(image_trunc > threshold)
         r = r - collisionR
-        tempPos = treePos + np.array([np.cos(theta)*r,np.sin(theta)*r,dx[2]])
+        tempPos = treePos + np.array([np.cos(theta)*(r),np.sin(theta)*(r),dx[2]])
         orangeAct = np.array([np.hstack((gcopVecToUnity(tempPos),orangeColor,1))])
         env.set_actions(orangeName,orangeAct)
         env.step()
+        tempPos = treePos + np.array([np.cos(theta)*(r+orange_offset),np.sin(theta)*(r+orange_offset),dx[2]])
+        orangeAct = np.array([np.hstack((gcopVecToUnity(tempPos),orangeColor,1))])
+
         tempX = treePos + np.array([np.cos(theta)*(r+reference_r),np.sin(theta)*(r+reference_r),dx[2]])
         tempX = np.hstack((tempX,np.pi+theta,0,0))
         camAct = makeCamAct(tempX)
@@ -108,4 +113,4 @@ def move_orange(env,orangeName,orangePos,orangeColor,treePos,collisionR,camName=
         obscured_score = np.count_nonzero(image_trunc > threshold)
         occlusion_ratio = 1 - (obscured_score/unobscured_score)
         print("Occluded: ", occlusion_ratio*100, "%")
-        return occlusion_ratio
+        return orangeAct, occlusion_ratio

@@ -20,7 +20,7 @@ if __name__ == "__main__":
 	#parser.add_argument('--plotonly', type=bool, help='skip image generation') TODO: maybe add plot only mode
 	args = parser.parse_args()
 
-	env_name = args.env + 'unity/env_v5' #v4 / v5 for lambda
+	env_name = args.env + 'unity/env_v7' #v4 / v5 for lambda
 	#train_mode = True
 	#env = UnityEnvironment(file_name=env_name, worker_id=args.worker_id, seed=args.seed)
 	#env.reset()
@@ -46,23 +46,26 @@ if __name__ == "__main__":
 		picturename = "image"
 		suffix = ".png"
 
-		env = UnityEnvironment(file_name=env_name, worker_id=args.worker_id+exp, seed=args.seed+exp)
-		env.reset()
-
-		(x, camName, orange,tree) = shuffleEnv(env,future_version=False) #add plotonly
-
+		#env = UnityEnvironment(file_name=env_name, worker_id=args.worker_id+exp, seed=args.seed+exp)
+		#env.reset()
+		#env, x0_i, camName, envName, orangePos_i,treePos_i
+		(env, x, camName, envName, orange, tree) = shuffleEnv(env_name,future_version=True,trial_num=exp,args=args) #add plotonly
+		orange = orange[0,0:3]
+		#print(orange)
 		N = 500
 		tf = 15
 		ref_traj = run_gcop(x, tree, orange, tf=tf ,N=N, save_path=data_folder + fname)
+		x_ref_traj = ref_traj[0]
+		u_ref_traj = ref_traj[1]
 
 		ts = np.linspace(0,tf,N+1)
-		make_full_plots(ts,ref_traj,orange,tree,saveFolder=data_folder + fname)
+		make_full_plots(ts,x_ref_traj,orange,tree,saveFolder=data_folder + fname)
 
 		with open(data_folder + fname + 'trajdata.pickle','wb') as f:
 			pickle.dump(ref_traj,f,pickle.HIGHEST_PROTOCOL)
 
 		ctr = 0
-		for state in ref_traj:
+		for state in x_ref_traj:
 			#print('State ' + str(ctr))
 			#Unpack state
 			#pos = state[0]

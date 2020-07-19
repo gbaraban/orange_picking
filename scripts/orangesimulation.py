@@ -52,14 +52,14 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
     x0_i = np.hstack((x0_i,yaw0_i,0,0))
     envAct = np.array((np.random.randint(6),np.random.randint(6),0))
     if not plot_only:
-        (camName, envName) = setUpEnv(env,x0_i,treePos_i,orangePos_i,envAct, orangeColor = np.random.randint(9),future_version=future_version,collisionR = cR)
+        (camName, envName, orangePos_i) = setUpEnv(env,x0_i,treePos_i,orangePos_i,envAct, orangeColor = np.random.randint(9),future_version=future_version,collisionR = cR)
     else:
         camName = ""
 
-    R_i = orangeR + orangeR_rand + 0.5
-    orangeoffset = np.array((R_i*np.cos(theta), R_i*np.sin(theta),
-                             orangePos[2] + orangeH_rand))
-    orangePos_i = treePos_i[0:3] + orangeoffset
+    #R_i = orangeR + orangeR_rand + 0.5
+    #orangeoffset = np.array((R_i*np.cos(theta), R_i*np.sin(theta),
+    #                         orangePos[2] + orangeH_rand))
+    #orangePos_i = treePos_i[0:3] + orangeoffset
 
     return (env,x0_i, camName, envName, orangePos_i,treePos_i)
 
@@ -151,12 +151,12 @@ def setUpEnv(env, x0, treePos, orangePos, envAct=(0,1,0), treeScale = 0.125, ora
         env.set_actions(orangeName,orangeAct)
         env.step()
     else:
-        occ_frac = move_orange(env,orangeName,orangePos[0:3],orangeColor,treePos[0:3],collisionR,camName)
+        orange, occ_frac = move_orange(env,orangeName,orangePos[0:3],orangeColor,treePos[0:3],collisionR,camName)
         #TODO: store occ_frac somewhere
     camAct = makeCamAct(x0)
     env.set_actions(camName,camAct)
     env.step()
-    return (camName, envName)
+    return (camName, envName, orange)
 
 def run_model(model,image_arr,mean_image=None,device=None):
     #Calculate new goal
@@ -391,7 +391,7 @@ def run_gcop(x,tree,orange,t=0,tf=15,N=100,save_path=None):#TODO:Add in args to 
 
     cyl_r = 1.0 + 0.8 #0.6
     cyl_h = 1.6 + 0.2
-
+    print(orange)
     ref_traj = gcophrotor.trajgen_R(N,tf,epochs,cameraPos,tuple(R0.as_matrix().flatten()),v0,w0,
             tuple(orange), yawf, tuple(tree[0:3]),cyl_r,cyl_h,tuple(q),tuple(qf),tuple(r),yaw_g,0,0,
             stiffness,stiff_mult)
