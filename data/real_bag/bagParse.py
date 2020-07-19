@@ -174,6 +174,7 @@ def main():
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument('bag_dir', help="bag dir")
+	parser.add_argument('--parse_traj', type=int, default=1, help="Pre parse data") 
 	args = parser.parse_args()
 
 	bag_list = os.listdir(args.bag_dir)
@@ -257,70 +258,111 @@ def main():
 		ctr += 1
 		data_dict = {}
 		po_data_dict = {}
+		bad_angles = None
 
+		if True:
+			pt_n = 0
+			while True:
+				pt_odom = data[pt_n]
+				p0 = (pt_odom.transform.translation.x, pt_odom.transform.translation.y, pt_odom.transform.translation.z)
 
-		pt_n = 0
-		while True:
-			pt_odom = data[pt_n]
-			p0 = (pt_odom.transform.translation.x, pt_odom.transform.translation.y, pt_odom.transform.translation.z)
+				Rot0 = R.from_quat([
+					pt_odom.transform.rotation.x,
+					pt_odom.transform.rotation.y,
+					pt_odom.transform.rotation.z,
+					pt_odom.transform.rotation.w
+				])#possibly need to switch w to front
 
-			Rot0 = R.from_quat([
-				pt_odom.transform.rotation.x,
-				pt_odom.transform.rotation.y,
-				pt_odom.transform.rotation.z,
-				pt_odom.transform.rotation.w
-			])#possibly need to switch w to front
+				#print(pt_num)
+				R0 = Rot0.as_dcm()#.flatten()
+				p0 = np.array(p0)
 
-			#print(pt_num)
-			R0 = Rot0.as_dcm()#.flatten()
-			p0 = np.array(p0)
+				if addDrop(R0):
+					break
 
-			if addDrop(R0):
-				break
+				pt_n += 1
 
-			pt_n += 1
-
-		R0_ = np.eye(3)
-		p0_ = np.array([0, 0, 0])
-		#ax = plot_basis(R=R0,p=p0,ax_s=3)
-		ax = None
-		j = 0
-		for i in data.keys():
+			R0_ = np.eye(3)
+			p0_ = np.array([0, 0, 0])
 			#ax = plot_basis(R=R0,p=p0,ax_s=3)
-			ret, po_ret, indices, pos0, po_pos0 = getNextPts(data, i, (float(no_events)/total_time.secs), ax)
-			#exit(0)
-			if ret is not None:
-				data_dict[j] = ret
-				data_dict[str(j) + "_index"] = indices
-				data_dict[str(j) + "_pos"] = pos0
-				po_data_dict[j] = po_ret
-				po_data_dict[str(j) + "_index"] = indices
-				po_data_dict[str(j) + "_pos"] = po_pos0
-				Img.fromarray(img_data[i]).save(save_folder + "/image" + str(j) + ".png")
-				j += 1
+			ax = None
+			j = 0
+			for i in data.keys():
+				#ax = plot_basis(R=R0,p=p0,ax_s=3)
+				ret, po_ret, indices, pos0, po_pos0 = getNextPts(data, i, (float(no_events)/total_time.secs), ax)
+				#exit(0)
+				if ret is not None:
+					data_dict[j] = ret
+					data_dict[str(j) + "_index"] = indices
+					data_dict[str(j) + "_pos"] = pos0
+					po_data_dict[j] = po_ret
+					po_data_dict[str(j) + "_index"] = indices
+					po_data_dict[str(j) + "_pos"] = po_pos0
+					Img.fromarray(img_data[i]).save(save_folder + "/image" + str(j) + ".png")
+					j += 1
 
+			#plt.show()
+			#plt.savefig(plot_folder + "bag" + str(ctr - 1) + ".png")
+			print(len(data_dict))
+			data_dict["nEvents"] = no_events
+			data_dict["time_secs"] = total_time.secs
+			data_dict["time_nsecs"] = total_time.nsecs
+			po_data_dict["nEvents"] = no_events
+			po_data_dict["time_secs"] = total_time.secs
+			po_data_dict["time_nsecs"] = total_time.nsecs
+			with open(save_folder + '/data.pickle','wb') as f:
+				pickle.dump(po_data_dict,f,pickle.HIGHEST_PROTOCOL)
+			with open(save_folder + '/orientation_data.pickle','wb') as f:
+				pickle.dump(data_dict,f,pickle.HIGHEST_PROTOCOL)
+
+
+		if args.parse_traj == 0:
+			data_dict = {}
+			data_list = []
+			pt_n = 0
+			print(img_id)
+			for i in range(img_id):
+				pt_odom = data[i]
+				p = (pt_odom.transform.translation.x, pt_odom.transform.translation.y, pt_odom.transform.translation.z)
+
+				RotR = R.from_quat([
+					pt_odom.transform.rotation.x,
+					pt_odom.transform.rotation.y,
+					pt_odom.transform.rotation.z,
+					pt_odom.transform.rotation.w
+				])#possibly need to switch w to front
+
+				Rot = RotR.as_dcm()
+				p = np.array(p)
+
+				if not addDrop(Rot):
+					continue
+
+				pt = np.zeros((6))
+				pt[0:3] = p
+				pt[3:6] = RotR.as_euler('zyx')
+				data_list.append(pt)
+				#Img.fromarray(img_data[i]).save(save_folder + "/image" + str(pt_n) + ".png")
+				pt_n += 1
+
+			print(len(data_list), pt_n)
+			data_dict["nEvents"] = pt_n
+			data_dict["time_secs"] = total_time.secs
+			data_dict["time_nsecs"] = total_time.nsecs
+			data_dict["data"] = data_list
+			with open(save_folder + '/data.pickle_no_parse','wb') as f:
+				pickle.dump(data_dict,f,pickle.HIGHEST_PROTOCOL)
+
+
+	if args.parse_traj == 1 and not bad_angles is None:
+		fopen = open("points.pickle", "wb")
+		pickle.dump(bad_angles, fopen)
+		R0 = np.eye(3)
+		p0 = np.array([0, 0, 0])
+		#ax = plot_basis(R=R0,p=p0,ax_s=3)
+		#for x in bad_angles:
+		#plot_basis(ax, x, p0, alpha=0.5)
 		#plt.show()
-		#plt.savefig(plot_folder + "bag" + str(ctr - 1) + ".png")
-		print(len(data_dict))
-		data_dict["nEvents"] = no_events
-		data_dict["time_secs"] = total_time.secs
-		data_dict["time_nsecs"] = total_time.nsecs
-		po_data_dict["nEvents"] = no_events
-		po_data_dict["time_secs"] = total_time.secs
-		po_data_dict["time_nsecs"] = total_time.nsecs
-		with open(save_folder + '/data.pickle','wb') as f:
-			pickle.dump(po_data_dict,f,pickle.HIGHEST_PROTOCOL)
-		with open(save_folder + '/orientation_data.pickle','wb') as f:
-			pickle.dump(data_dict,f,pickle.HIGHEST_PROTOCOL)
-
-	fopen = open("points.pickle", "wb")
-	pickle.dump(bad_angles, fopen)
-	R0 = np.eye(3)
-	p0 = np.array([0, 0, 0])
-	#ax = plot_basis(R=R0,p=p0,ax_s=3)
-	#for x in bad_angles:
-	#	plot_basis(ax, x, p0, alpha=0.5)
-	#plt.show()
 
 if __name__ == "__main__":
 	main()

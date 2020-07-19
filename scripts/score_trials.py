@@ -1,7 +1,7 @@
 import os
 
 def main():
-	all_data = open("./gifs/simulation_data.csv","r")
+	all_data = open("./simulation_data.csv","r")
 	trials = 10
 	ftrial = []
 	for i in range(trials):

@@ -74,7 +74,7 @@ def dl_signal(signal,frame):
 def dl_init(x):
     signal.signal(signal.SIGINT,dl_signal)
 
-def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass):
+def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass,args):
   idx = idx.astype(int)
   trial_idx = 0
 
@@ -103,68 +103,149 @@ def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass):
   #      image = temp_image
   #  else:
   #      image = np.concatenate((image,temp_image),axis=2)
-  if real:
+  if False: #TODO bad fix
     points = traj_data[trial_idx][idx]
   else:
-    p0 = np.array(traj_data[trial_idx][idx][0])
-    R0 = np.array(traj_data[trial_idx][idx][1])
+    #p0 = np.array(traj_data[trial_idx][idx][0])
+    #R0 = np.array(traj_data[trial_idx][idx][1])
     points = []
-    if dataclass.custom_dataset is None:
-        for pt in range(dataclass.num_pts):
-            temp_idx = int(idx + dataclass.h[trial]*dataclass.dt*(pt+1))
-            p = traj_data[trial_idx][temp_idx][0]
-            Ri = traj_data[trial_idx][temp_idx][1]
-            p = np.array(p)
-            p = list(np.matmul(R0.T,p-p0))
-            Ri = np.matmul(R0.T,Ri)
-            Ri_zyx = list(R.from_dcm(Ri).as_euler('zyx'))
-            p.extend(Ri_zyx)
-            points.append(p)
-    elif dataclass.custom_dataset == "Run18":
-        indices = np.floor(np.add(np.array([1, 2, 3]) * dataclass.h[trial], idx)).astype(int)
-        """
-        for x, ii in enumerate(indices):
-            if ii >= num_list[trial_idx]:
-                delta = idx if (x == 0) else indices[x-1]
-                dt = np.floor(((num_list[trial_idx] -1) - delta)/(3-x)).astype(int)
-                z = 3 - x
-                while (dt < 1) and z != 0:
-                    dt = np.floor(((num_list[trial_idx] - 1) - delta)/z).astype(int)
-                    z -= 1
-                for j in range(0,z):
-                    indices[j+x] = delta + ((j+1)*dt)
 
-                delta = 3 - (z+x)
+    if not args.real:
+        p0 = np.array(traj_data[trial_idx][idx][0])
+        R0 = np.array(traj_data[trial_idx][idx][1])
 
-                for j in range(0, delta):
-                    indices[x+z+j] = num_list[trial_idx] - 1
+        if dataclass.custom_dataset is None:
+            for pt in range(dataclass.num_pts):
+                temp_idx = int(idx + dataclass.h[trial]*dataclass.dt*(pt+1))
+                p = traj_data[trial_idx][temp_idx][0]
+                Ri = traj_data[trial_idx][temp_idx][1]
+                p = np.array(p)
+                p = list(np.matmul(R0.T,p-p0))
+                Ri = np.matmul(R0.T,Ri)
+                Ri_zyx = list(R.from_dcm(Ri).as_euler('zyx'))
+                p.extend(Ri_zyx)
+                points.append(p)
+        elif dataclass.custom_dataset == "Run18":
+            indices = np.floor(np.add(np.array([1, 2, 3]) * dataclass.h[trial], idx)).astype(int)
+            """
+            for x, ii in enumerate(indices):
+                if ii >= num_list[trial_idx]:
+                    delta = idx if (x == 0) else indices[x-1]
+                    dt = np.floor(((num_list[trial_idx] -1) - delta)/(3-x)).astype(int)
+                    z = 3 - x
+                    while (dt < 1) and z != 0:
+                        dt = np.floor(((num_list[trial_idx] - 1) - delta)/z).astype(int)
+                        z -= 1
+                    for j in range(0,z):
+                        indices[j+x] = delta + ((j+1)*dt)
 
-                break
-        """
-        for i in range(len(indices)):
-            if (indices[i] >= num_list[trial_idx]):
-                if i == 0:
-                    indices[i] = idx
-                else:
-                    indices[i] = indices[i-1]
+                    delta = 3 - (z+x)
 
-        for x, ii in enumerate(indices):
-            if (ii < idx):
-                    print(idx, ii)
-            p = np.array(traj_data[trial_idx][ii][0])
-            Ri = np.array(traj_data[trial_idx][ii][1])
-            p = list(np.matmul(R0.T,p-p0))
-            Ri = np.matmul(R0.T,Ri)
-            Ri_zyx = list(R.from_dcm(Ri).as_euler('zyx'))
-            p.extend(Ri_zyx)
-            points.append(p)
+                    for j in range(0, delta):
+                        indices[x+z+j] = num_list[trial_idx] - 1
 
+                    break
+            """
+            for i in range(len(indices)):
+                if (indices[i] >= num_list[trial_idx]):
+                    if i == 0:
+                        indices[i] = idx
+                    else:
+                        indices[i] = indices[i-1]
 
+            for x, ii in enumerate(indices):
+                if (ii < idx):
+                        print(idx, ii)
+                p = np.array(traj_data[trial_idx][ii][0])
+                Ri = np.array(traj_data[trial_idx][ii][1])
+                p = list(np.matmul(R0.T,p-p0))
+                Ri = np.matmul(R0.T,Ri)
+                Ri_zyx = list(R.from_dcm(Ri).as_euler('zyx'))
+                p.extend(Ri_zyx)
+                points.append(p)
+
+    else:
+        if dataclass.custom_dataset is None:
+            #print(trial_idx, idx, dataclass.num_list[trial_idx])
+            points = np.array(dataclass.traj_list[trial_idx][idx])
+            #print(points)
+            #p0 = np.array(self.traj_list[trial_idx][idx][0])
+            #R0 = np.array(self.traj_list[trial_idx][idx][1])
+            #points = []
+            #for pt in range(self.num_pts):
+            #    temp_idx = int(idx + self.h*self.dt*(pt+1))
+            #    p = self.traj_list[trial_idx][temp_idx][0]
+            #    p = np.array(p)
+            #    p = np.matmul(R0.T,p-p0)
+            #    points.append(p)
+
+            #if self.image_transform:
+            #    data = {}
+            #    data["img"] = image
+            #    data["pts"] = points
+            #    image, points = self.image_transform(data)
+
+            #return {'image':image, 'points':points}
+
+        elif dataclass.custom_dataset == "no_parse":
+            point = np.array(dataclass.traj_list[trial_idx][idx])
+            p0 = np.array(point[0:3])
+            R0 = R.from_euler('zyx', point[3:6]).as_dcm()
+            points = []
+            h = (float(dataclass.nEvents[trial_idx])/dataclass.time_secs[trial_idx])
+            indices = np.floor(np.add(np.array([1, 2, 3]) * h, idx)).astype(int)
+
+            for i in range(len(indices)):
+                if (indices[i] >= dataclass.num_list[trial_idx]):
+                    if i == 0:
+                        indices[i] = idx
+                    else:
+                        indices[i] = indices[i-1]
+
+            point_list = [p0]
+            rot_list = [R0]
+
+            for x, ii in enumerate(indices):
+                if (ii < idx):
+                        print(idx, ii)
+                #print(ii, dataclass.num_list[trial_idx])
+                pt = np.array(dataclass.traj_list[trial_idx][ii])
+                p = np.array(pt[0:3])
+                Ri = R.from_euler('zyx', pt[3:6]).as_dcm()
+                point_list.append(p)
+                rot_list.append(Ri)
+
+            #flipped = False
+            #if self.image_transform:
+            #    data = {}
+            #    data["img"] = image
+            #    data["pts"] = point_list
+            #    data["rots"] = rot_list
+            #    image, point_list, rot_list, flipped = self.image_transform(data)
+
+            p0 = np.array(point_list[0])
+            R0 = np.array(rot_list[0])
+
+            for ii in range(1,len(point_list)):
+                p = np.array(point_list[ii])
+                Ri = np.array(rot_list[ii])
+                #print(R0)
+                #print(p0)
+                #print(p)
+                p = list(np.matmul(R0.T,p-p0))
+                Ri = np.matmul(R0.T,Ri)
+                Ri_zyx = list(R.from_dcm(Ri).as_euler('zyx'))
+
+                p.extend(Ri_zyx)
+                points.append(p)
+
+            #points = np.matmul(np.array(R0).T, (np.array(points) - np.array(p0)).T).T
 
   local_pts = []
   ctr = 0
   #print(points)
   #exit()
+  #print(points)
   for point in points:
     #Convert into bins
     min_i = np.array(model.min[ctr])
@@ -187,7 +268,7 @@ def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass):
   local_pts.resize((model.num_points,6,model.bins))
   return local_pts
 
-def loadData(idx,num_list,run_dir,model,traj_data,real,dataclass):
+def loadData(idx,num_list,run_dir,model,traj_data,real,dataclass,args):
   waypoints_x = []
   waypoints_y = []
   waypoints_z = []
@@ -196,7 +277,7 @@ def loadData(idx,num_list,run_dir,model,traj_data,real,dataclass):
   waypoints_yaw = []
 
   for ii in idx:
-    waypoint = parseFiles(ii,num_list,run_dir,model,traj_data,real,dataclass)
+    waypoint = parseFiles(ii,num_list,run_dir,model,traj_data,real,dataclass,args)
     #images.append(np.array(image)) #- mean_image))
     waypoints_x.append(waypoint[:,0,:])
     waypoints_y.append(waypoint[:,1,:])
@@ -467,7 +548,7 @@ def main():
         device = torch.device('cpu')
     print('Device: ', device)
     print('Model Device: ', next(model.parameters()).device)
-    
+
     #Create Optimizer
     learning_rate = args.learning_rate
     learn_rate_decay = np.power(1e-3,1/float(args.epochs))#0.9991#10 / args.epochs
@@ -496,7 +577,7 @@ def main():
     if args.traj:
         plotting_data = dict()
         data_loc = copy.deepcopy(args.data)
-        val_outputs_x, val_outputs_y, val_outputs_z, val_outputs_yaw, val_outputs_p, val_outputs_r = loadData(val_idx,dataclass.num_list,data_loc,model,dataclass.traj_list,args.real,dataclass)
+        val_outputs_x, val_outputs_y, val_outputs_z, val_outputs_yaw, val_outputs_p, val_outputs_r = loadData(val_idx,dataclass.num_list,data_loc,model,dataclass.traj_list,args.real,dataclass,args)
         print(len(val_idx))
         plotting_data['idx'] = range(len(val_idx))
 

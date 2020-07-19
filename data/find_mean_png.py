@@ -6,10 +6,10 @@ i = 0
 
 mean_img = None
 w = 640
-h = 380
+h = 380 #380
 
 
-base_dir = "Run19"
+base_dir = "real_world_traj_bag"
 for dirs in os.listdir(base_dir):
 	print(dirs)
 	for file in os.listdir(base_dir + "/" + dirs):
@@ -25,5 +25,5 @@ for dirs in os.listdir(base_dir):
 
 			i += 1
 
-np.save("mean_imgv2_data_Run19.npy", mean_img)
+np.save("mean_imgv2_data_real_world_traj_bag.npy", mean_img)
 

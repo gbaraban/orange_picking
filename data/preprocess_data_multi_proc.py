@@ -8,9 +8,9 @@ args = sys.argv
 
 dirs = args[1:]
 
-mean_img = np.load("mean_imgv2_data_Run20.npy")
+mean_img = np.load("mean_imgv2_data_real_world_traj_bag.npy")
 
-data_loc = "Run20"
+data_loc = "real_world_traj_bag"
 np_data_loc = data_loc.rstrip("/") + "_np"
 if not os.path.exists(np_data_loc):
     os.mkdir(np_data_loc)

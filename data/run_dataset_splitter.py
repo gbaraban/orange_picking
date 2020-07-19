@@ -7,7 +7,7 @@ import shutil
 def main(loc):
 	trial_dirs = os.listdir(loc)
 	print(len(trial_dirs))
-	test_perc = 0.15
+	test_perc = 0.07
 
 	random.seed(76)
 
@@ -24,8 +24,8 @@ def main(loc):
 	print(len(trial_train))
 
 
-	dest_train = "Run20/"
-	dest_test = "Run20_test/"
+	dest_train = "real_world_traj_bag/"
+	dest_test = "real_world_traj_bag_test/"
 
 	ctr = 0
 	for t_dir in trial_train:
@@ -39,5 +39,5 @@ def main(loc):
 
 
 if __name__ == "__main__":
-	loc = "./Run20_final/"
+	loc = "./real_world_traj_bag_final/"
 	main(loc)

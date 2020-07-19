@@ -3,9 +3,9 @@ from PIL import Image as img
 import os
 import time
 
-mean_img = np.load("mean_imgv2_data_real_world_traj_bag.npy")
+mean_img = np.load("mean_imgv2_data_real_world_traj_bag480.npy")
 
-data_loc = "real_world_traj_bag"
+data_loc = "real_world_traj_bag480"
 np_data_loc = data_loc.rstrip("/") + "_np"
 if not os.path.exists(np_data_loc):
     os.mkdir(np_data_loc)
@@ -26,7 +26,7 @@ if not os.path.exists(np_data_loc):
 
 #f = 9
 w = 640
-h = 380
+h = 480 #380
 t = time.time()
 dirs = os.listdir(data_loc)
 for d in dirs:#files:

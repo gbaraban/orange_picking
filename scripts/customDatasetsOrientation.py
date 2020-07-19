@@ -22,7 +22,7 @@ class SubSet(Dataset):
         return self.ds[self.idx[i]]
 
 class OrangeSimDataSet(Dataset):
-    def __init__(self, root_dir, num_images, num_pts, pt_trans, img_trans, dt = 1, reduce_N = True, custom_dataset=None):
+    def __init__(self, root_dir, num_images, num_pts, pt_trans, img_trans, dt = 1, reduce_N = True, custom_dataset = None):
         self.point_transform = pt_trans
         self.image_transform = img_trans
         self.num_pts = num_pts
