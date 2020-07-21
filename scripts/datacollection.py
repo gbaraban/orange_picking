@@ -51,7 +51,7 @@ if __name__ == "__main__":
 		#print(orange)
 
 		fname = "trial" + str(exp) + "_"  + str(round(occlusion,2))  + "/"
-                os.makedirs(data_folder + fname)
+		os.makedirs(data_folder + fname)
 
 		N = 500
 		tf = 15

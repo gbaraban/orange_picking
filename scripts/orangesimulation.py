@@ -60,7 +60,7 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
     #orangeoffset = np.array((R_i*np.cos(theta), R_i*np.sin(theta),
     #                         orangePos[2] + orangeH_rand))
     #orangePos_i = treePos_i[0:3] + orangeoffset
-    if not include_occlusion or plot_only:
+    if not include_occlusion or plot_only or occlusion is None:
         return (env,x0_i, camName, envName, orangePos_i,treePos_i)
     else:
         return (env,x0_i, camName, envName, orangePos_i,treePos_i, occlusion)
@@ -158,7 +158,7 @@ def setUpEnv(env, x0, treePos, orangePos, envAct=(0,1,0), treeScale = 0.125, ora
     camAct = makeCamAct(x0)
     env.set_actions(camName,camAct)
     env.step()
-    return (camName, envName, orange)
+    return (camName, envName, orange, occ_frac)
 
 def run_model(model,image_arr,mean_image=None,device=None):
     #Calculate new goal
