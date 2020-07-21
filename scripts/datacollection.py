@@ -38,10 +38,7 @@ if __name__ == "__main__":
 	exp = 0
 	trials = 20
 	np.random.seed(args.seed)
-	while (exp <= trials) or args.loop:
-		fname = "trial" + str(exp) + "/"
-		os.makedirs(data_folder + fname)
-
+	while (exp < trials) or args.loop:
 		overviewname = "traj_plot" + str(exp)
 		picturename = "image"
 		suffix = ".png"
@@ -49,9 +46,13 @@ if __name__ == "__main__":
 		#env = UnityEnvironment(file_name=env_name, worker_id=args.worker_id+exp, seed=args.seed+exp)
 		#env.reset()
 		#env, x0_i, camName, envName, orangePos_i,treePos_i
-		(env, x, camName, envName, orange, tree) = shuffleEnv(env_name,future_version=True,trial_num=exp,args=args) #add plotonly
-		orange = orange[0,0:3]
+		(env, x, camName, envName, orange, tree, occlusion) = shuffleEnv(env_name,future_version=True,trial_num=exp,args=args,include_occlusion=True) #add plotonly
+		#orange = orange[0,0:3]
 		#print(orange)
+
+		fname = "trial" + str(exp) + "_"  + str(round(occlusion,2))  + "/"
+                os.makedirs(data_folder + fname)
+
 		N = 500
 		tf = 15
 		ref_traj = run_gcop(x, tree, orange, tf=tf ,N=N, save_path=data_folder + fname)

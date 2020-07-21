@@ -15,7 +15,7 @@ def gcopVecToUnity(v):
     temp = np.array((v[0],v[2],v[1]))
     return temp
 
-def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=None):
+def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=None,include_occlusion=False):
     #Create environment
     print("Create env")
     if args is None:
@@ -24,15 +24,15 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
         env = UnityEnvironment(file_name=env_name,worker_id=args.worker_id+trial_num,seed=args.seed+trial_num)
     #Baseline Positions
     print("Init")
-    x0 = np.array((-10,0,1))
-    xmult = np.array((2,2,0.5))
+    x0 = np.array((-5,0,1))
+    xmult = np.array((1,1,0.2))
     yaw0 = 0
     ymult = np.pi
     treePosYaw = np.array((0,0,0,0))
     treemult = np.array((0.5,0.5,0,180))
     treeHeight = 1.6
     orangePos = np.array((0,0,0.5))
-    orangeR = 0.7 #0.6
+    orangeR = 0.6 #0.6
     orangeRmult = 0.1 #0.3
     orangeHmult = 0.5
     #randomize environment
@@ -47,12 +47,12 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
     R_i = orangeR + orangeR_rand
     orangeoffset = np.array((R_i*np.cos(theta), R_i*np.sin(theta),
                              orangePos[2] + orangeH_rand))
-    cR = 0.1*np.random.random_sample()
+    cR = 0.3 * np.random.random_sample()
     orangePos_i = treePos_i[0:3] + orangeoffset
     x0_i = np.hstack((x0_i,yaw0_i,0,0))
     envAct = np.array((np.random.randint(6),np.random.randint(6),0))
     if not plot_only:
-        (camName, envName, orangePos_i) = setUpEnv(env,x0_i,treePos_i,orangePos_i,envAct, orangeColor = np.random.randint(9),future_version=future_version,collisionR = cR)
+        (camName, envName, orangePos_i, occlusion) = setUpEnv(env,x0_i,treePos_i,orangePos_i,envAct, orangeColor = np.random.randint(9),future_version=future_version,collisionR = cR)
     else:
         camName = ""
 
@@ -60,8 +60,10 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
     #orangeoffset = np.array((R_i*np.cos(theta), R_i*np.sin(theta),
     #                         orangePos[2] + orangeH_rand))
     #orangePos_i = treePos_i[0:3] + orangeoffset
-
-    return (env,x0_i, camName, envName, orangePos_i,treePos_i)
+    if not include_occlusion or plot_only:
+        return (env,x0_i, camName, envName, orangePos_i,treePos_i)
+    else:
+        return (env,x0_i, camName, envName, orangePos_i,treePos_i, occlusion)
 
 
 def quat_between(qa, qb, t, quat=False):
@@ -187,17 +189,17 @@ def run_model(model,image_arr,mean_image=None,device=None):
 def trajCost(x_traj,u_traj,tree,orange,tf=15):
     N = len(x_traj)-1
     dt = float(tf)/N
-    q = (15,15,10,#rotation log
-         0,0,2.5,#position
-         150,150,150,#rotation rate
-         10,10,10)#velocity
-    qf = (40,40,40,#rotation log
+    q = (1,1,1,#rotation log
+         0,0,0.1,#position
+         275,275,275,#rotation rate
+         50,50,50)#velocity
+    qf = (75,75,75,#rotation log
          50,50,50,#position
-         5,5,5,#rotation rate
-         5,5,5)#velocity
+         25,25,25,#rotation rate
+         15,15,15)#velocity
     r = (.1,.1,.1,1)
-    cyl_r = 1.0 + 0.8 #0.6
-    cyl_h = 1.6 + 0.3
+    cyl_r = 1.0 + 0.3 #0.6
+    cyl_h = 1.6 + 0.4
     stiffness=500
     yaw_g = 250
     yawf = np.arctan2(tree[1]-orange[1],tree[0]-orange[0])
@@ -350,17 +352,17 @@ def run_gcop(x,tree,orange,t=0,tf=15,N=100,save_path=None):#TODO:Add in args to 
     epochs = 400
     stiffness = 500
     stiff_mult = 2.0
-    q = (15,15,10,#rotation log
-         0,0,2.5,#position
-         150,150,150,#rotation rate
-         10,10,10)#velocity
-    qf = (40,40,40,#rotation log
+    q = (1,1,1,#rotation log
+         0,0,0.05,#position
+         275,275,275,#rotation rate
+         40,40,40)#velocity
+    qf = (75,75,75,#rotation log
          50,50,50,#position
-         5,5,5,#rotation rate
-         5,5,5)#velocity
+         25,25,25,#rotation rate
+         15,15,15)#velocity
     r = (.1,.1,.1,1)
-    cyl_r = 1.0 + 0.8 #0.6
-    cyl_h = 1.6 + 0.3
+    cyl_r = 1.0 + 0.3 #0.6
+    cyl_h = 1.6 + 0.4
     yaw_g = 250
     yawf = np.arctan2(tree[1]-orange[1],tree[0]-orange[0])
     if (len(x) is 2):
