@@ -98,8 +98,8 @@ def move_orange(env,orangeName,orangePos,orangeColor,treePos,collisionR,camName=
         orangeAct = np.array([np.hstack((gcopVecToUnity(tempPos),orangeColor,1))])
         env.set_actions(orangeName,orangeAct)
         env.step()
-        tempPos = treePos + np.array([np.cos(theta)*(r+orange_offset),np.sin(theta)*(r+orange_offset),dx[2]])
-        orangeAct = np.array([np.hstack((gcopVecToUnity(tempPos),orangeColor,1))])
+        orangeAct = treePos + np.array([np.cos(theta)*(r+orange_offset),np.sin(theta)*(r+orange_offset),dx[2]])
+        #orangeAct = np.array([np.hstack((gcopVecToUnity(tempPos),orangeColor,1))])
 
         tempX = treePos + np.array([np.cos(theta)*(r+reference_r),np.sin(theta)*(r+reference_r),dx[2]])
         tempX = np.hstack((tempX,np.pi+theta,0,0))

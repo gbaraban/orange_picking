@@ -2,7 +2,7 @@ import os
 
 
 def main(loc):
-	dest_csv = open("simulation_data.csv","x")
+	dest_csv = open("./simulation_data.csv","x")
 	dest_csv.write("Model Name,Iterations,Hz,Trial,Score\n")
 	lsdir = os.listdir(loc)
 	for dir in lsdir:
@@ -22,5 +22,5 @@ def main(loc):
 
 
 if __name__ == "__main__":
-	loc = "./score/"
+	loc = "./score/simulation/"
 	main(loc)

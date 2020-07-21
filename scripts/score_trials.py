@@ -5,7 +5,7 @@ def main():
 	trials = 10
 	ftrial = []
 	for i in range(trials):
-		ftrial.append(open("./gifs/sim/trial"+str(i)+"/sim_data.csv","x"))
+		ftrial.append(open("./gifs/sim/trial"+str(i)+"/sim_data.csv","w"))
 
 	first_line = ""
 	for i, line in enumerate(all_data):

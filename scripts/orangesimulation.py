@@ -491,7 +491,7 @@ def sys_f_linear(x,goal,dt,goal_time=1,plot_flag=False):
     return new_x
 
 def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = None,
-            plot_step_flag = False,mean_image = None,trial_num=0):
+            plot_step_flag = False,mean_image = None,trial_num=0,device=None):
     x_list = []
     u_list = []
     (env,x,camName,envName,orange,tree) = shuffleEnv(env_name,trial_num=trial_num,args=args)#,x0,orange,tree)
@@ -545,7 +545,7 @@ def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = N
         if save_path is not None:
             save_image_array(image_arr[:,:,0:3],save_path,"sim_image"+str(step)) #TODO: Use concat axis from above
             save_image_array(ext_image_arr,save_path,"ext_image"+str(step)) #TODO
-        goal = run_model(model,image_arr,mean_image)
+        goal = run_model(model,image_arr,mean_image,device=device)
         if "sys_f_linear" in str(sys_f):
             if type(x).__module__ == np.__name__:
                 pass
@@ -582,9 +582,9 @@ def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = N
         score = trajCost(x_list,u_list,tree,orange)
 
     if score is not None:
-        if not os.path.exists("./score/"):
-            os.mkdir("./score/")
-        file = open("./score/"+ save_path.replace("/", "_").strip("_") , "x")
+        if not os.path.exists("./score/simulation/"):
+            os.makedirs("./score/simulation/")
+        file = open("./score/simulation/"+ save_path.replace("/", "_").strip("_") , "x")
         file.write(str(score))
         file.close()
 
@@ -604,7 +604,7 @@ def main():
   parser.add_argument('--num_pts', type=int, default=3, help='number of output waypoints')
   parser.add_argument('--capacity', type=float, default=1, help='network capacity')
   parser.add_argument('--bins', type=int, default=30, help='number of bins per coordinate')
-  parser.add_argument('--outputs', type=int, default=3, help='number of coordinates')
+  parser.add_argument('--outputs', type=int, default=6, help='number of coordinates')
   parser.add_argument('--min', type=tuple, default=(0,-0.5,-0.5), help='minimum xyz ')
   parser.add_argument('--max', type=tuple, default=(1,0.5,0.5), help='maximum xyz')
   parser.add_argument('--resnet18', type=int, default=0, help='ResNet18')
@@ -615,7 +615,7 @@ def main():
   #parser.add_argument('--physics', type=float, default=50, help="Freq at which physics sim is performed")
   parser.add_argument('--env', type=str, default="unity/env_v7", help='unity filename')
   parser.add_argument('--plot_step', type=bool, default=False, help='PLot each step')
-  parser.add_argument('--mean_image', type=str, default='data/mean_imgv2_data_Run19.npy', help='Mean Image')
+  parser.add_argument('--mean_image', type=str, default='data/mean_imgv2_data_Run20.npy', help='Mean Image')
   args = parser.parse_args()
   #args.min = [(0,-0.5,-0.1),(0,-1,-0.15),(0,-1.5,-0.2),(0,-2,-0.3),(0,-3,-0.5)]
   #args.max = [(1,0.5,0.1),(2,1,0.15),(4,1.5,0.2),(6,2,0.3),(7,0.3,0.5)]
@@ -647,6 +647,21 @@ def main():
       print('mean image file found')
       mean_image = np.load(args.mean_image)
   #env.reset()
+  #Pick CUDA Device
+  use_cuda = torch.cuda.is_available()
+  print('Cuda Flag: ',use_cuda)
+  if use_cuda:
+      if args.gpu:
+          device = torch.device('cuda:'+str(args.gpu))
+          model = model.to(device)
+      else:
+          device = torch.device('cuda')
+          model = model.to(device)
+          #if (torch.cuda.device_count() > 1):
+          #    model = nn.DataParallel(model)
+  else:
+      device = torch.device('cpu')
+
   #Iterate simulations
   run_num = args.name
   globalfolder = 'data/simulation/Sim' + str(run_num) + '_' + str(args.steps) + '_' + str(args.hz) + '/'  #'_' + str(args.physics) + '/'
@@ -661,7 +676,7 @@ def main():
     foldername = "trial" + str(trial_num) + "/"
     os.makedirs(globalfolder + foldername)
     err_code = run_sim(args,sys_f_gcop,args.env,model,plot_step_flag = args.plot_step,
-                       max_steps=args.steps,dt=(1.0)/args.hz,
+                       max_steps=args.steps,dt=(1.0)/args.hz,device=device,
                        save_path = globalfolder+foldername,mean_image=mean_image,trial_num=trial_num)
     if err_code is not 0:
       print('Simulation did not converge.  code is: ', err_code)

@@ -15,7 +15,7 @@ import os
 import gcophrotor
 from torch.utils.tensorboard import SummaryWriter
 from customTransforms import *
-
+from orangeimages import *
 
 class DAggerSet(Dataset):
     def __init__(self,batch_list,pt_trans):
@@ -29,6 +29,7 @@ class DAggerSet(Dataset):
         img = np.transpose(np.array(value[0]), [2,0,1])
         #img = np.array(img).astype('float32')
         points = self.pt_trans(value[1])
+        #print(points)
         return {'image':img,'points':points,"flipped":False}
 
 def DAggerCompare(x,goals,ref_goals,cyl_o,cyl_h=1.6,cyl_r=0.6):
@@ -59,8 +60,12 @@ def DAggerCompare(x,goals,ref_goals,cyl_o,cyl_h=1.6,cyl_r=0.6):
 
 def wp_from_traj(expert_path,t,tf=15,goal_times=[1,2,3]):
     N = len(expert_path)-1#Because gcop makes N+1 x trajectories
-    h = float(tf)/N
-    goal_idx = [int((t+temp)/h) for temp in goal_times]
+    #if N == 0:
+    #    N = 1
+    h = float(N)/float(tf)
+    #if h == 0:
+    #    print(N) 
+    goal_idx = [int((t+(temp*h))) for temp in goal_times]
     waypoints = []
     for idx in goal_idx:
         if idx >= N:
@@ -69,6 +74,7 @@ def wp_from_traj(expert_path,t,tf=15,goal_times=[1,2,3]):
             waypoints.append(expert_path[0])
         else:
             waypoints.append(expert_path[idx])
+    #print(waypoints)
     return waypoints
 
 def transform_local(points,x):
@@ -99,8 +105,8 @@ def load_run18(args):
     from customDatasetsOrientation import OrangeSimDataSet, SubSet
     custom = "Run18"
     traj = True
-    data = "./data/Run19/"
-    val_perc = 0.8 #TODO: adjust this for number of training trajectories, we are using train traj, so we want to adjust (1-val_perc)
+    data = "./data/Run20/"
+    val_perc = 0.9 #TODO: adjust this for number of training trajectories, we are using train traj, so we want to adjust (1-val_perc)
 
     pt_trans = transforms.Compose([pointToBins(args.min, args.max, args.bins)])
     img_trans = transforms.Compose([RandomHorizontalTrajFlip()])
@@ -128,7 +134,7 @@ def load_run18(args):
 
     #val_idx = len(val_indices)
     train_idx =  len(train_indices) #dataclass.num_samples - val_idx
-    print("Train size: " + str(train_idx))
+    #print("Train size: " + str(train_idx))
     #print(train_set_size)
     random.shuffle(train_indices)
 
@@ -144,7 +150,7 @@ def load_run18(args):
     return train_data
 
 
-def retrain_model(args, model,loader,device,ctr="Latest",writer=None,save_path=None,epochs=2,learning_rate=5e-3):
+def retrain_model(args, model,loader,device,ctr="Latest",writer=None,save_path=None,epochs=5,learning_rate=5e-3):
     #Run epochs of training on model
     #Include tensorboard output
     #Create Optimizer
@@ -219,13 +225,13 @@ def run_DAgger(args,sys_f,env_name,model,data_list=[],j=4,device=None,
     ts_path = addTimestamp(os.path.join("./model/logs","tensorboard_"))
     writer = SummaryWriter(ts_path)
     trial_num = 0
-    while eps > 1e-2:
+    while eps > 5e-3:
         #Filenames
         foldername = "trial" + str(trial_num) + "/"
         os.makedirs(save_path + foldername)
         num_fails = 0
         print("Running Environment ",ctr)
-        (env,x0,camName,orange,tree) = shuffleEnv(env_name)
+        (env,x0,camName,envName,orange,tree) = shuffleEnv(env_name,trial_num=trial_num)
         if camName is "":
             print("camName not found")
             env.close()
@@ -244,10 +250,10 @@ def run_DAgger(args,sys_f,env_name,model,data_list=[],j=4,device=None,
                 camAct = makeCamAct(expert_path[temp_idx])
                 if image_arr is None:
                     image_arr = unity_image(env,camAct,camName)
-                    print(image_arr.shape)
+                    #print(image_arr.shape)
                 else:
                     image_arr = np.concatenate((image_arr,unity_image(env,camAct,camName)),axis=2)#TODO: check axis number
-                    print(image_arr.shape)
+                    #print(image_arr.shape)
             #Optionally save image
             if save_path is not None:
                 save_image_array(image_arr[:,:,0:3],save_path+foldername,"sim_image"+str(step)) #TODO: use concatenation axis from above
@@ -276,7 +282,7 @@ def run_DAgger(args,sys_f,env_name,model,data_list=[],j=4,device=None,
             data_list.append(new_dataset)
             run18_data = load_run18(args) #Done here so that everytime different random trajs from run18 get picked
             data_list.append(run18_data) #read online it might work, but not 100% sure
-            dataloader = DataLoader(ConcatDataset(data_list),batch_size=batch,shuffle=True,num_workers=j)
+            dataloader = DataLoader(ConcatDataset(data_list),batch_size=args.batch,shuffle=True,num_workers=j)
             retrain_model(args,model,dataloader,device,writer=writer,save_path=model_path,ctr=ctr)
             data_list = data_list[:-1]
         ctr += 1
@@ -295,17 +301,19 @@ def main():
   parser.add_argument('--num_pts', type=int, default=3, help='number of output waypoints')
   parser.add_argument('--capacity', type=float, default=1, help='network capacity')
   parser.add_argument('--bins', type=int, default=30, help='number of bins per coordinate')
-  parser.add_argument('--outputs', type=int, default=3, help='number of coordinates')
+  parser.add_argument('--outputs', type=int, default=6, help='number of coordinates')
   parser.add_argument('--min', type=tuple, default=(0,-0.5,-0.5), help='minimum xyz ')
   parser.add_argument('--max', type=tuple, default=(1,0.5,0.5), help='maximum xyz')
+  parser.add_argument('--resnet18', type=int, default=0, help='ResNet18')
   #Simulation Options
-  parser.add_argument('--iters', type=int, default=30, help='number of simulations')
+  #parser.add_argument('--iters', type=int, default=30, help='number of simulations')
   parser.add_argument('--steps', type=int, default=100, help='Steps per simulation')
-  parser.add_argument('--hz', type=float, default=10, help='Recalculation rate')
-  parser.add_argument('--env', type=str, default="unity/env_v6", help='unity filename')
+  parser.add_argument('--hz', type=float, default=5, help='Recalculation rate')
+  parser.add_argument('--physics', type=float, default=5, help='Recalculation rate')
+  parser.add_argument('--env', type=str, default="unity/env_v7", help='unity filename')
   parser.add_argument('--plot_step', type=bool, default=False, help='PLot each step')
-  parser.add_argument('--mean_image', type=str, default='data/mean_imgv2_data_Run18.npy', help='Mean Image')
-  parser.add_argument('--worker_id', type=int, default=100, help='Worker ID for Unity')
+  parser.add_argument('--mean_image', type=str, default='data/mean_imgv2_data_Run20.npy', help='Mean Image')
+  parser.add_argument('--worker_id', type=int, default=0, help='Worker ID for Unity')
   #Training Options
   parser.add_argument('-j', type=int, default=4, help='number of loader workers')
   parser.add_argument('--batch', type=int, default=256, help='batch size')
@@ -314,12 +322,16 @@ def main():
   args.max = [(1,0.5,0.1,np.pi,np.pi/2,np.pi),(2,1,0.15,np.pi,np.pi/2,np.pi),(4,1.5,0.2,np.pi,np.pi/2,np.pi),(6,2,0.3,np.pi,np.pi/2,np.pi),(7,0.3,0.5,np.pi,np.pi/2,np.pi)]
   np.random.seed(args.seed)
   #Load model
-  model = OrangeNet8(capacity=args.capacity,num_img=args.num_images,num_pts=args.num_pts,bins=args.bins,n_outputs=args.outputs)
+  if not args.resnet18:
+      model = OrangeNet8(capacity=args.capacity,num_img=args.num_images,num_pts=args.num_pts,bins=args.bins,mins=args.min,maxs=args.max,n_outputs=args.outputs)
+  else:
+      model = OrangeNet18(capacity=args.capacity,num_img=args.num_images,num_pts=args.num_pts,bins=args.bins,mins=args.min,maxs=args.max,n_outputs=args.outputs)
+
   model.min = args.min
   model.max = args.max
 
-  if args.worker_id == 100:
-      args.worker_id = args.seed
+  #if args.worker_id == 100:
+  #    args.worker_id = args.seed
 
   if os.path.isfile(args.load):
       checkpoint = torch.load(args.load)
@@ -352,16 +364,16 @@ def main():
       device = torch.device('cpu')
   #Make Run Folder
   run_num = 0
-  globalfolder = 'data/dagger/Sim' + str(run_num) + '/'
+  globalfolder = 'data/dagger/Sim' + str(run_num) + '_' + str(args.steps) + '_' + str(args.hz) + '_' + str(args.physics) + '/'
   while os.path.exists(globalfolder):
       run_num += 1
-      globalfolder = 'data/dagger/Sim' + str(run_num) + '/'
+      globalfolder = 'data/dagger/Sim' + str(run_num) +  '_' + str(args.steps) + '_' + str(args.hz) + '_' + str(args.physics) + '/'
   #Load in Initial Dataset
   datasets = []
   #TODO: Run18 HERE: did it inside runDagger, for random trajectories being used for each retrainining
   #Perform DAgger process
-  ret_value = run_DAgger(args,sys_f_linear,args.env,model,datasets,j=args.j,max_steps=args.iters,dt=1/args.hz,device = device,
-                         save_path=globalfolder,mean_image=mean_image)
+  ret_value = run_DAgger(args,sys_f_gcop,args.env,model,datasets,j=args.j,max_steps=args.steps,dt=1/args.hz,device = device,
+                         save_path=globalfolder,mean_image=mean_image,physics_hz=args.physics)
   if ret_value is not 0:
       print("Dagger failed with code: ", ret_value)
 
