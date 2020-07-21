@@ -47,7 +47,7 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
     R_i = orangeR + orangeR_rand
     orangeoffset = np.array((R_i*np.cos(theta), R_i*np.sin(theta),
                              orangePos[2] + orangeH_rand))
-    cR = 0.3 * np.random.random_sample()
+    cR = 0.3 * np.random.random_sample() + 0.1
     orangePos_i = treePos_i[0:3] + orangeoffset
     x0_i = np.hstack((x0_i,yaw0_i,0,0))
     envAct = np.array((np.random.randint(6),np.random.randint(6),0))

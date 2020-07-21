@@ -33,7 +33,7 @@ if __name__ == "__main__":
 	while os.path.exists(data_folder):
 		run_num += 1
 		data_folder = base_folder + "Run" + str(run_num) + "/"
-
+	os.makedirs(data_folder)
 	print(data_folder)
 	exp = 0
 	trials = 20
@@ -50,7 +50,7 @@ if __name__ == "__main__":
 		#orange = orange[0,0:3]
 		#print(orange)
 
-		fname = "trial" + str(exp) + "_"  + str(round(occlusion,2))  + "/"
+		fname = "trial" + str(exp) + "_"  + str(abs(round(occlusion,2)))  + "/"
 		os.makedirs(data_folder + fname)
 
 		N = 500
@@ -81,3 +81,4 @@ if __name__ == "__main__":
 
 		exp += 1
 		env.close()
+		os.system("python3 scripts/generate_gifs.py " + str(fname) + " --loc " + data_folder + " --gifs " + base_folder + "/gifs/ --data_collection 1 &")
