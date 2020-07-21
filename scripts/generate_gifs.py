@@ -55,7 +55,9 @@ def generate_gif_data(fname, loc="/home/gabe/ws/ros_ws/src/orange_picking/data/s
                         break
 
         if len(im) > 0:
-                temp_name = fname.strip().strip("/").strip()
+                run_num = loc.strip().strip("/").rsplit('/',1)[1]
+                temp_name = run_num + "_" + fname.strip().strip("/").strip()
+                print(temp_name)
                 im[0].save(gifs + temp_name + '.gif',save_all=True, append_images=im[1:], duration=10, loop=0,optimize=True, quality=100)
 
 
