@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<launch>
+  <param name="path_topic" type="string" value="path" />
+  <param name="goal_topic" type="string" value="goal" />
+  <param name="matrice_name" type="string" value="matrice" />
+  <param name="world_name" type="string" value="world" />
+  <param name="goal_name" type="string" value="goal" />
+  <node pkg="tf" type="static_transform_publisher" name="world_broadcaster" args="0 0 0 0 0 0 1 world optitrak 10"/>
+  <node pkg="tf" type="static_transform_publisher" name="camera_broadcaster" args="0 0 0 0 0 0 1 matrice camera_link 10"/>
+</launch>
