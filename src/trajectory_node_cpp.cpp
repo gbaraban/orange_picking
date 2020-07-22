@@ -23,9 +23,10 @@
 #include "geometry_msgs/TransformStamped.h"
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/transform_broadcaster.h"
-//#include <Matrix3x3.h>
+#include "tf2/LinearMath/Quaternion.h"
+#include "tf2/LinearMath/Matrix3x3.h"
 #include <string>
-#include "gcop/quat.h"
+//#include "gcop/quat.h"
 
 using namespace std;
 using namespace Eigen;
@@ -45,8 +46,7 @@ void solver_process_goal(int N, double tf, int epochs, Body3dState x0,
      Vector12d q, Vector12d qf, Vector4d r, double yawgain, double rpgain,double dir_gain,
      vector<Body3dState> &xout, vector<Vector4d> &us)
 {
-  cout << "N: " << N << " tf: " << tf << " epochs: "  << epochs << endl;
-  cout << "x0: pos: " << x0.p[0] << " " << x0.p[1] << " " << x0.p[2] << endl;
+/*  cout << "x0: pos: " << x0.p[0] << " " << x0.p[1] << " " << x0.p[2] << endl;
   cout << "x0: Rot: " << endl << x0.R(0,0) << " " << x0.R(0,1) << " " << x0.R(0,2) << endl;
   cout << x0.R(1,0) << " " << x0.R(1,1) << " " << x0.R(1,2) << endl;
   cout << x0.R(2,0) << " " << x0.R(2,1) << " " << x0.R(2,2) << endl;
@@ -61,10 +61,7 @@ void solver_process_goal(int N, double tf, int epochs, Body3dState x0,
   cout << "goal3: pos: " << goal3.p[0] << " " << goal3.p[1] << " " << goal3.p[2] << endl;
   cout << "goal3: Rot: " << endl << goal3.R(0,0) << " " << goal3.R(0,1) << " " << goal3.R(0,2) << endl;
   cout << goal3.R(1,0) << " " << goal3.R(1,1) << " " << goal3.R(1,2) << endl;
-  cout << goal3.R(2,0) << " " << goal3.R(2,1) << " " << goal3.R(2,2) << endl;
-  cout << "Q: " << q[0] << " " << q[1] << " " << q[2] << endl << q[3] << " " << q[4] << " " << q[5] << endl << q[6] << " " << q[7] << " " << q[8] << endl << q[9] << " " << q[10] << " " << q[11] << endl; 
-  cout << "Qf: " << qf[0] << " " << qf[1] << " " << qf[2] << endl << qf[3] << " " << qf[4] << " " << qf[5] << endl << qf[6] << " " << qf[7] << " " << qf[8] << endl << qf[9] << " " << qf[10] << " " << qf[11] << endl; 
-  cout << "R: " << r[0] << " " << r[1] << " " << r[2] << " " << r[3] << endl;
+  cout << goal3.R(2,0) << " " << goal3.R(2,1) << " " << goal3.R(2,2) << endl;*/
   //Parameters
   double h = tf/N;
   //System
@@ -135,30 +132,46 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   Body3dState x0;
   //Read from TF
   geometry_msgs::TransformStamped temp;
-  cout << "Looking Up" << world_name << "-> " << matrice_name << endl;
   try {
     temp = tfBuffer.lookupTransform(world_name,matrice_name,ros::Time(0),ros::Duration(5.0));
   } catch (tf2::TransformException &ex) {
     ROS_WARN("Could not find the transform");
     return;
   }
-  cout << "Looked Up" << endl;
   x0.p << temp.transform.translation.x, temp.transform.translation.y, temp.transform.translation.z;
-  Quat quat(temp.transform.rotation.w,temp.transform.rotation.x,temp.transform.rotation.y,temp.transform.rotation.z);
-  double m[16];
-  quat.ToSE3(m);
-  x0.R << m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10]; 
+  tf2::Quaternion temp_quat(temp.transform.rotation.x,temp.transform.rotation.y,temp.transform.rotation.z,temp.transform.rotation.w);
+  tf2::Matrix3x3 temp_mat(temp_quat);
+  //double m[16];
+  //quat.ToSE3(m);
+  /*cout << "x0 temp_mat: " << endl;
+  for (int ii = 0; ii < 3; ++ ii) {
+    for (int jj = 0; jj < 3; ++ jj) {
+      cout << temp_mat[ii][jj] << " ";
+    }
+    cout << endl;
+  }*/
+  //x0.R << m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10]; 
+  x0.R << temp_mat[0][0], temp_mat[0][1], temp_mat[0][2],
+          temp_mat[1][0], temp_mat[1][1], temp_mat[1][2],
+          temp_mat[2][0], temp_mat[2][1], temp_mat[2][2]; 
   Body3dState goal[3];
   for (int ii = 0; ii < 3; ++ii){
-    cout << "2" << endl;
     Vector3d local_p;
     local_p << msg->poses[ii].position.x, msg->poses[ii].position.y, msg->poses[ii].position.z;
-    quat = Quat(msg->poses[ii].orientation.w,msg->poses[ii].orientation.x,msg->poses[ii].orientation.y,msg->poses[ii].orientation.z);
-    quat.ToSE3(m);
+    //tf2::convert(msg->poses[ii].orientation,temp_quat);
+    temp_quat = tf2::Quaternion(msg->poses[ii].orientation.x,msg->poses[ii].orientation.y,msg->poses[ii].orientation.z,msg->poses[ii].orientation.w);
+    //Quat(msg->poses[ii].orientation.w,msg->poses[ii].orientation.x,msg->poses[ii].orientation.y,msg->poses[ii].orientation.z);
+    //quat.ToSE3(m);
+    temp_mat = tf2::Matrix3x3(temp_quat);
     Matrix3d local_R;
-    local_R << m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10];
-    goal[ii].p = x0.R*local_p + x0.p;
+    local_R << temp_mat[0][0], temp_mat[0][1], temp_mat[0][2],
+               temp_mat[1][0], temp_mat[1][1], temp_mat[1][2],
+               temp_mat[2][0], temp_mat[2][1], temp_mat[2][2]; 
+    //local_R << m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10];
+    goal[ii].p = x0.R*local_p + x0.p;//TODO: double check this.  maybe local R needs to be inverted?
     goal[ii].R = x0.R*local_R;
+    goal[ii].v << 0, 0, 0;
+    goal[ii].w << 0, 0, 0;
     temp.header.stamp = ros::Time::now();
     temp.header.frame_id = matrice_name;
     temp.child_frame_id = goal_name + std::to_string(ii);
@@ -169,11 +182,10 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
     temp.transform.rotation.y = msg->poses[ii].orientation.y;
     temp.transform.rotation.z = msg->poses[ii].orientation.z;
     temp.transform.rotation.w = msg->poses[ii].orientation.w;
-    cout << "Publishing Goal " << ii << endl;
     br.sendTransform(temp);
   }
   Vector12d q;
-  q << 0,0,0,0,0,0,10,10,10,10,10,10;
+  q << 0,0,0,0,0,0,15,15,15,10,10,10;
   Vector12d qf;
   qf << 10,10,10,10,10,10,0,0,0,0,0,0;
   Vector4d r;
@@ -184,7 +196,7 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   vector<Body3dState> xs(N+1);
   vector<Vector4d> us(N);
   solver_process_goal(N, tf, epochs, x0, goal[0], goal[1], goal[2],q, qf, r, yawgain, rpgain, dir_gain, xs, us);
-  cout << "Solved: pos: " << xs[0].p[0] << " " << xs[0].p[1] << " " << xs[0].p[2] << endl;
+  //cout << "Solved: pos: " << xs[0].p[0] << " " << xs[0].p[1] << " " << xs[0].p[2] << endl;
   nav_msgs::Path pa;
   pa.poses.clear();
   pa.header.stamp = ros::Time::now();
@@ -198,21 +210,18 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
     p.pose.position.z = xs[ii].p[2];
     for (int jj = 0; jj < 3; ++jj) {
       for (int kk = 0; kk < 3; ++kk) {
-        int temp_idx = 4*jj + kk;
         double temp_val = xs[ii].R(jj,kk);
-        m[temp_idx] = temp_val;
+        temp_mat[jj][kk] = temp_val;
       }
-      m[4*jj + 3] = 0;
     }
-    m[15] = 0;
-    quat.FromSE3(m);
-    p.pose.orientation.x = quat.qx;
-    p.pose.orientation.y = quat.qy;
-    p.pose.orientation.z = quat.qz;
-    p.pose.orientation.w = quat.qw;
+    temp_mat.getRotation(temp_quat);
+    p.pose.orientation.x = temp_quat.getX();
+    p.pose.orientation.y = temp_quat.getY();
+    p.pose.orientation.z = temp_quat.getZ();
+    p.pose.orientation.w = temp_quat.getW();
     pa.poses.push_back(p);
   }
-  cout << "Publishing pa" << endl;
+  //cout << "Publishing pa" << endl;
   pub.publish(pa);
   cout << "Callback Ended" << endl;
 }
