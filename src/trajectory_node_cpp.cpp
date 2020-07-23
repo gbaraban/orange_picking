@@ -281,10 +281,14 @@ TrajectoryNode(): lis(tfBuffer)
     goal_name = "goal";
   }
   if (!(n.getParam("filter_alpha",filter_alpha))){
-    goal_name = 1;
+    filter_alpha = 1;
   }
   cout << "Publishing to " << path_topic << endl;
   cout << "Subscribing to " << goal_topic << endl;
+  cout << "Matrice Name set to " << matrice_name << endl;
+  cout << "World Name set to " << world_name << endl;
+  cout << "Goal Name set to " << goal_name << endl;
+  cout << "Filter Alpha set to " << filter_alpha << endl;
   pub = n.advertise<nav_msgs::Path>(path_topic,1000);
   sub = n.subscribe(goal_topic,1000,&TrajectoryNode::callback,this);
   first_call = true;
