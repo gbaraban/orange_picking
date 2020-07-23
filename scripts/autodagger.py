@@ -56,10 +56,10 @@ def generate_gif(fname, loc="/home/gabe/ws/ros_ws/src/orange_picking/data/simula
 
 def get_variety():
 	var = {}
-	var["iters"] = [5]
+	var["iters"] = [10]
 	var["outputs"] = [6]
 	var["steps"] = [100, 250, 500]
-	var["hz"] = [1,2,3,5,10,25]
+	var["hz"] = [1,3,5,10,12,15,20]
 	#var["physics"] = [10,50,100]
 	labels = []
 	s = []
@@ -74,21 +74,30 @@ def get_variety():
 	print(num)
 	return labels, variety
 
+def get_selective_variety():
+	variety = [{10, 6, 100, 3}]
+	labels = ["iters", "outputs", "steps", "hz"]
+	return variety, labels
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--loc', type=str, default="/home/gabe/ws/ros_ws/src/orange_picking/useful_models.csv", help='random seed')
     parser.add_argument('--j', type=int, default=4, help='approx number of unity threads running')
+    parser.add_argument('--explore', type=int, default=0, help="selective variety or explorative")
     args = parser.parse_args()
 
     data = read_csv(args.loc)
     i = 1
     wid = 0
-    labels, vars = get_variety()
+    if args.explore == 1:
+        labels, vars = get_variety()
+    else:
+        labels, vars = get_selective_variety()
     #print(data)
     for k in data.keys():
         d = data[k]
         print(d)
-        proc = "python3 scripts/orangesimulation.py " + str(d["model_loc"]) + str(d["model"]) + " --name " + str(k) + " "
+        proc = "python3 scripts/orangesimulation.py --gpu 1 " + str(d["model_loc"]) + str(d["model"]) + " --name " + str(k) + " "
         if d["resnet"] == "18":
             proc +=  " --resnet18 1 "
 
@@ -106,6 +115,7 @@ def main():
                 os.system(t_proc)
             else:
                 os.system(t_proc + " &" )
+            #exit(0)
             i += 1
 
 
