@@ -269,7 +269,7 @@ TrajectoryNode(): lis(tfBuffer)
     path_topic = "path";
   }
   if (!(n.getParam("goal_topic",goal_topic))){
-    goal_topic = "goal";
+    goal_topic = "goal_points";
   }
   if (!(n.getParam("matrice_name",matrice_name))){
     matrice_name = "matrice";
