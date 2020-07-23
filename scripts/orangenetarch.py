@@ -96,7 +96,7 @@ class OrangeNet8(torch.nn.Module):
         self.outputs = n_outputs
         #Blocks
         #TODO: Add input layer
-        self.conv1 = nn.Conv2d(in_channels=3,out_channels=int(32*self.f),kernel_size=5,stride=2,padding = 10)
+        self.conv1 = nn.Conv2d(in_channels=self.num_images*3,out_channels=int(32*self.f),kernel_size=5,stride=2,padding = 10)
         self.maxpool = nn.MaxPool2d(kernel_size = 3, stride = 2)
         self.block1 = make_layer8(int(32*self.f),int(32*self.f), stride_length=2)
         self.block2 = make_layer8(int(32*self.f),int(64*self.f), stride_length=2)

@@ -437,6 +437,7 @@ def main():
     pt_trans = transforms.Compose([pointToBins(args.min,args.max,args.bins)])#,GaussLabels(1,1e-10,args.bins)])
 
     if args.train == 1 and args.data_aug_flip == 1:
+        print("Image transform set")
         img_trans = transforms.Compose([RandomHorizontalTrajFlip(p=0.5)])
     else:
         img_trans = None

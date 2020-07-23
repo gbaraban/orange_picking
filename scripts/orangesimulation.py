@@ -190,9 +190,9 @@ def trajCost(x_traj,u_traj,tree,orange,tf=15):
     N = len(x_traj)-1
     dt = float(tf)/N
     q = (1,1,1,#rotation log
-         0,0,0.1,#position
+         0,0,0.05,#position
          275,275,275,#rotation rate
-         50,50,50)#velocity
+         40,40,40)#velocity
     qf = (75,75,75,#rotation log
          50,50,50,#position
          25,25,25,#rotation rate
@@ -391,8 +391,8 @@ def run_gcop(x,tree,orange,t=0,tf=15,N=100,save_path=None):#TODO:Add in args to 
                     'cyl_o':tree , 'q':q, 'qf':qf, 'r':r, 'yaw_gain':yaw_g}
             pickle.dump(metadata,f,pickle.HIGHEST_PROTOCOL)
 
-    cyl_r = 1.0 + 0.8 #0.6
-    cyl_h = 1.6 + 0.2
+    #cyl_r = 1.0 + 0.8 #0.6
+    #cyl_h = 1.6 + 0.2
     print(orange)
     ref_traj = gcophrotor.trajgen_R(N,tf,epochs,cameraPos,tuple(R0.as_matrix().flatten()),v0,w0,
             tuple(orange), yawf, tuple(tree[0:3]),cyl_r,cyl_h,tuple(q),tuple(qf),tuple(r),yaw_g,0,0,
@@ -515,7 +515,7 @@ def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = N
         return 2
     ref_traj = run_gcop(x,tree,orange)[0]#Take xs only
     #print(x.shape)
-    image_spacing = 1#number of timesteps between images in multi-image networks
+    image_spacing = 1/dt #number of timesteps between images in multi-image networks
     for step in range(max_steps):
         #x_list.append(x)
         print("State: ",x)
@@ -534,7 +534,7 @@ def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = N
         #Get Image
         image_arr = None
         for ii in range(model.num_images):
-            temp_idx = max(0,int(len(x_list) - 1 - ii*image_spacing))
+            temp_idx = max(0,int(len(x_list) - 1 - int(ii*image_spacing)))
             camAct = makeCamAct(x_list[temp_idx])
             if image_arr is None:
                 (image_arr,ext_image_arr) = unity_image(env,camAct,camName,envName)
@@ -648,6 +648,13 @@ def main():
   else:
       print('mean image file found')
       mean_image = np.load(args.mean_image)
+
+  import copy
+  temp_image = copy.deepcopy(mean_image)
+  if args.num_images != 1:
+      for i in range(args.num_images - 1):
+          mean_image = np.concatenate((mean_image,temp_image),axis=2)
+
   #env.reset()
   #Pick CUDA Device
   use_cuda = torch.cuda.is_available()

@@ -93,6 +93,8 @@ class OrangeSimDataSet(Dataset):
                     trial_subdir = os.listdir(root_dir + "/" + trial_dir)
                     with open(self.run_dir+'/'+trial_dir+'/trajdata.pickle','rb') as f:
                         data = pickle.load(f)#,encoding='latin1')
+                        if len(data) == 2:
+                            data = data[0]
                         self.traj_list.append(data) #[0:run_data[trial_dir]]
                     with open(self.run_dir+"/"+trial_dir+"/metadata.pickle",'rb') as data_f:
                         data = pickle.load(data_f)#, encoding='latin1')
@@ -140,7 +142,7 @@ class OrangeSimDataSet(Dataset):
         image = None
         image_idx = idx
         for ii in range(self.num_images):
-            temp_idx = max(0,image_idx - ii)
+            temp_idx = max(0,image_idx - int(ii*self.h[trial]))
             temp_image = np.load(self.np_dir+trial+'/image'+str(temp_idx)+'.npy')
             temp_image = np.transpose(temp_image,[2,0,1])
             #if self.image_transform:
@@ -148,8 +150,9 @@ class OrangeSimDataSet(Dataset):
             if image is None:
                 image = temp_image
             else:
-                image = np.concatenate((image,temp_image),axis=2)
+                image = np.concatenate((image,temp_image),axis=0)
         image = image.astype('float32')
+        #print(image.shape)
         p0 = np.array(self.traj_list[trial_idx][idx][0])
         R0 = np.array(self.traj_list[trial_idx][idx][1])
         points = []

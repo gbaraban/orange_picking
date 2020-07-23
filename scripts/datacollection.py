@@ -46,7 +46,7 @@ if __name__ == "__main__":
 		#env = UnityEnvironment(file_name=env_name, worker_id=args.worker_id+exp, seed=args.seed+exp)
 		#env.reset()
 		#env, x0_i, camName, envName, orangePos_i,treePos_i
-		(env, x, camName, envName, orange, tree, occlusion) = shuffleEnv(env_name,future_version=True,trial_num=exp,args=args,include_occlusion=True) #add plotonly
+		(env, x, camName, envName, orange, tree, occlusion) = shuffleEnv(env_name,future_version=False,trial_num=exp,args=args,include_occlusion=True) #add plotonly
 		#orange = orange[0,0:3]
 		#print(orange)
 
