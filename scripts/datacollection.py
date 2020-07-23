@@ -36,6 +36,7 @@ if __name__ == "__main__":
 	os.makedirs(data_folder)
 	print(data_folder)
 	exp = 0
+	trial_num = 0
 	trials = 20
 	np.random.seed(args.seed)
 	while (exp < trials) or args.loop:
@@ -46,12 +47,19 @@ if __name__ == "__main__":
 		#env = UnityEnvironment(file_name=env_name, worker_id=args.worker_id+exp, seed=args.seed+exp)
 		#env.reset()
 		#env, x0_i, camName, envName, orangePos_i,treePos_i
-		(env, x, camName, envName, orange, tree, occlusion) = shuffleEnv(env_name,future_version=False,trial_num=exp,args=args,include_occlusion=True) #add plotonly
+		(env, x, camName, envName, orange, tree, occlusion) = shuffleEnv(env_name,future_version=True,trial_num=trial_num,args=args,include_occlusion=True) #add plotonly
+		trial_num += 1
 		#orange = orange[0,0:3]
 		#print(orange)
-
+		if occlusion > 0.80:
+			print("No thanks", occlusion)
+			continue
+		#env.close()
 		fname = "trial" + str(exp) + "_"  + str(abs(round(occlusion,2)))  + "/"
 		os.makedirs(data_folder + fname)
+		exp += 1
+
+		#continue
 
 		N = 500
 		tf = 15
@@ -79,6 +87,5 @@ if __name__ == "__main__":
 			image.save(data_folder + fname + picturename + str(ctr) + suffix)
 			ctr += 1
 
-		exp += 1
 		env.close()
 		os.system("python3 scripts/generate_gifs.py " + str(fname) + " --loc " + data_folder + " --gifs " + base_folder + "/gifs/ --data_collection 1 &")

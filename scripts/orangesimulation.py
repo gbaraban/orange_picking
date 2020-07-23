@@ -24,8 +24,12 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
         env = UnityEnvironment(file_name=env_name,worker_id=args.worker_id+trial_num,seed=args.seed+trial_num)
     #Baseline Positions
     print("Init")
-    x0 = np.array((-5,0,1))
-    xmult = np.array((1,1,0.2))
+    quad_omega = (np.random.rand(1) * 2*np.pi) - np.pi
+    quadR = 5
+    quad_x = quadR * np.cos(quad_omega)
+    quad_y = quadR * np.sin(quad_omega)
+    x0 = np.array((quad_x,quad_y,1))
+    xmult = np.array((0.5,0.5,0.2))
     yaw0 = 0
     ymult = np.pi
     treePosYaw = np.array((0,0,0,0))
@@ -47,7 +51,7 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
     R_i = orangeR + orangeR_rand
     orangeoffset = np.array((R_i*np.cos(theta), R_i*np.sin(theta),
                              orangePos[2] + orangeH_rand))
-    cR = 0.20 * np.random.random_sample() + 0.1
+    cR = (0.2 * min(1.0,max(0.0, np.random.normal(0.5)))) + 0.22
     orangePos_i = treePos_i[0:3] + orangeoffset
     x0_i = np.hstack((x0_i,yaw0_i,0,0))
     envAct = np.array((np.random.randint(6),np.random.randint(6),0))
@@ -190,13 +194,13 @@ def trajCost(x_traj,u_traj,tree,orange,tf=15):
     N = len(x_traj)-1
     dt = float(tf)/N
     q = (1,1,1,#rotation log
-         0,0,0.05,#position
+         0,0,0,#position
          275,275,275,#rotation rate
-         40,40,40)#velocity
-    qf = (75,75,75,#rotation log
-         50,50,50,#position
-         25,25,25,#rotation rate
-         15,15,15)#velocity
+         10,10,10)#velocity
+    qf = (275,275,275,#rotation log
+         250,250,250,#position
+         200,200,200,#rotation rate
+         200,200,200)#velocity
     r = (.1,.1,.1,1)
     cyl_r = 1.0 + 0.3 #0.6
     cyl_h = 1.6 + 0.4
@@ -353,13 +357,13 @@ def run_gcop(x,tree,orange,t=0,tf=15,N=100,save_path=None):#TODO:Add in args to 
     stiffness = 500
     stiff_mult = 2.0
     q = (1,1,1,#rotation log
-         0,0,0.05,#position
+         0,0,0,#position
          275,275,275,#rotation rate
-         40,40,40)#velocity
-    qf = (75,75,75,#rotation log
-         50,50,50,#position
-         25,25,25,#rotation rate
-         15,15,15)#velocity
+         10,10,10)#velocity
+    qf = (275,275,275,#rotation log
+         250,250,250,#position
+         200,200,200,#rotation rate
+         200,200,200)#velocity
     r = (.1,.1,.1,1)
     cyl_r = 1.0 + 0.3 #0.6
     cyl_h = 1.6 + 0.4
