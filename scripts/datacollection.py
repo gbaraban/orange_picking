@@ -53,6 +53,7 @@ if __name__ == "__main__":
 		#print(orange)
 		if occlusion > 0.80:
 			print("No thanks", occlusion)
+			env.close()
 			continue
 		#env.close()
 		fname = "trial" + str(exp) + "_"  + str(abs(round(occlusion,2)))  + "/"

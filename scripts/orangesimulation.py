@@ -21,6 +21,8 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
     if args is None:
         env = UnityEnvironment(file_name=env_name,worker_id=trial_num,seed=trial_num)
     else:
+        print(trial_num)
+        print(args.worker_id+trial_num)
         env = UnityEnvironment(file_name=env_name,worker_id=args.worker_id+trial_num,seed=args.seed+trial_num)
     #Baseline Positions
     print("Init")
@@ -29,7 +31,7 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
     quad_x = quadR * np.cos(quad_omega)
     quad_y = quadR * np.sin(quad_omega)
     x0 = np.array((quad_x,quad_y,1))
-    xmult = np.array((0.5,0.5,0.2))
+    xmult = np.array((0.5,0.5,0.1))
     yaw0 = 0
     ymult = np.pi
     treePosYaw = np.array((0,0,0,0))
@@ -190,20 +192,20 @@ def run_model(model,image_arr,mean_image=None,device=None):
     print(goal[0,:])
     return goal
 
-def trajCost(x_traj,u_traj,tree,orange,tf=15):
+def trajCost(x_traj,u_traj,tree,orange,tf=10):
     N = len(x_traj)-1
     dt = float(tf)/N
     q = (1,1,1,#rotation log
-         0,0,0,#position
-         275,275,275,#rotation rate
-         10,10,10)#velocity
+         0,0,2,#position
+         300,300,300,#rotation rate
+         20,20,20)#velocity
     qf = (275,275,275,#rotation log
          250,250,250,#position
          200,200,200,#rotation rate
          200,200,200)#velocity
     r = (.1,.1,.1,1)
     cyl_r = 1.0 + 0.3 #0.6
-    cyl_h = 1.6 + 0.4
+    cyl_h = 1.6 + 1.0
     stiffness=500
     yaw_g = 250
     yawf = np.arctan2(tree[1]-orange[1],tree[0]-orange[0])
@@ -355,21 +357,21 @@ def trajCost(x_traj,u_traj,tree,orange,tf=15):
             cost = cost[0]
     return cost
 
-def run_gcop(x,tree,orange,t=0,tf=15,N=100,save_path=None):#TODO:Add in args to adjust more params
-    epochs = 400
+def run_gcop(x,tree,orange,t=0,tf=10,N=100,save_path=None):#TODO:Add in args to adjust more params
+    epochs = 750
     stiffness = 500
     stiff_mult = 2.0
     q = (1,1,1,#rotation log
-         0,0,0,#position
-         275,275,275,#rotation rate
-         10,10,10)#velocity
+         0,0,2,#position
+         300,300,300,#rotation rate
+         20,20,20)#velocity
     qf = (275,275,275,#rotation log
          250,250,250,#position
          200,200,200,#rotation rate
          200,200,200)#velocity
     r = (.1,.1,.1,1)
     cyl_r = 1.0 + 0.3 #0.6
-    cyl_h = 1.6 + 0.4
+    cyl_h = 1.6 + 1.0
     yaw_g = 250
     yawf = np.arctan2(tree[1]-orange[1],tree[0]-orange[0])
     if (len(x) is 2):
