@@ -319,7 +319,7 @@ class FakeArgs:
         self.batch = batch
 
 
-def main_function(load_model=None,gpu=None,seed=0,num_images=1,num_pts=3,capacity=1,bins=1,outputs=6,resnet18=False,steps=100,hz=5,physics=5,env="unity/env_v7",plot_step=False,
+def main_function(load=None,gpu=None,seed=0,num_images=1,num_pts=3,capacity=1,bins=30,outputs=6,resnet18=False,steps=100,hz=5,physics=5,env="unity/env_v7",plot_step=False,
                   mean_image='data/mean_imgv2_data_Run20.npy',worker_id=0,j=4,batch=128):
   #parser = argparse.ArgumentParser()
   #parser.add_argument('load', help='model to load')
@@ -360,7 +360,7 @@ def main_function(load_model=None,gpu=None,seed=0,num_images=1,num_pts=3,capacit
   model.min = mins
   model.max = maxs
 
-  args = FakeArgs(load_model,gpu,seed,num_images,num_pts,capacity,bins,outputs,mins,maxs,resnet18,steps,hz,physics,env,plot_step,mean_image,worker_id,j,batch)
+  args = FakeArgs(load,gpu,seed,num_images,num_pts,capacity,bins,outputs,mins,maxs,resnet18,steps,hz,physics,env,plot_step,mean_image,worker_id,j,batch)
 
   #if args.worker_id == 100:
   #    args.worker_id = args.seed
@@ -369,7 +369,7 @@ def main_function(load_model=None,gpu=None,seed=0,num_images=1,num_pts=3,capacit
       checkpoint = torch.load(load)
       model.load_state_dict(checkpoint)
       model.eval()
-      print("Loaded Model: ",load)
+      print("Loaded Model: ", load)
   else:
       print("No checkpoint found at: ", load)
       return

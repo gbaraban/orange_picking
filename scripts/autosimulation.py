@@ -58,8 +58,8 @@ def get_variety():
 	var = {}
 	var["iters"] = [10]
 	var["outputs"] = [6]
-	var["steps"] = [500] #[100, 250, 500]
-	var["hz"] = [25, 30] #[1,3,5,10,12,15,20]
+	var["steps"] = [100, 250, 500]
+	var["hz"] = [1,3,5,10,12,15,20,25,30]
 	#var["physics"] = [10,50,100]
 	labels = []
 	s = []
@@ -72,18 +72,19 @@ def get_variety():
 
 	variety = list(itertools.product(*s))
 	print(num)
+	print(labels)
 	return labels, variety
 
 def get_selective_variety():
-	variety = [{10, 6, 100, 3}]
+	variety = [[10, 6, 100, 3], [10, 6, 100, 5], [10, 6, 150, 5], [10, 6, 100, 10], [10, 6, 150, 10], [10, 6, 250, 10], [10, 6, 250, 12], [10, 6, 250, 15], [10, 6, 350, 15], [10, 6, 250, 20], [10, 6, 350, 20], [10, 6, 500, 15], [10, 6, 500, 20], [10, 6, 500, 25]]
 	labels = ["iters", "outputs", "steps", "hz"]
-	return variety, labels
+	return labels, variety
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--loc', type=str, default="/home/gabe/ws/ros_ws/src/orange_picking/useful_models.csv", help='random seed')
-    parser.add_argument('--j', type=int, default=4, help='approx number of unity threads running')
-    parser.add_argument('--explore', type=int, default=1, help="selective variety or explorative")
+    parser.add_argument('--j', type=int, default=2, help='approx number of unity threads running')
+    parser.add_argument('--explore', type=int, default=0, help="selective variety or explorative")
     args = parser.parse_args()
 
     data = read_csv(args.loc)
@@ -94,6 +95,7 @@ def main():
     else:
         labels, vars = get_selective_variety()
     #print(data)
+    #exit()
     for k in data.keys():
         d = data[k]
         print(d)
@@ -110,10 +112,12 @@ def main():
 
             t_proc += " --worker_id " + str(int(wid))
             print(t_proc)
-
+            #exit(0)
             if i%args.j == 0:
+                #pass
                 os.system(t_proc)
             else:
+                #pass
                 os.system(t_proc + " &" )
             #exit(0)
             i += 1

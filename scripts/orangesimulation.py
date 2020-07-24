@@ -350,6 +350,9 @@ def trajCost(x_traj,u_traj,tree,orange,tf=15):
         #print("Running Cost: ", cost)
     else:
         print("Unrecognized x format: ",len(x))
+    if isinstance(cost, list) or isinstance(cost,np.ndarray):
+        if len(cost) == 1:
+            cost = cost[0]
     return cost
 
 def run_gcop(x,tree,orange,t=0,tf=15,N=100,save_path=None):#TODO:Add in args to adjust more params

@@ -1,2 +1,3 @@
-name,description,resnet,model_loc,model
-1,data_aug + resnet8 + dagger,8,/home/gabe/ws/ros_ws/src/orange_picking/model/logs/variable_log/2020-07-20_04-02-27/,model58.pth.tar
+name,description,resnet,model_loc,model,num_images
+1,data_aug + resnet8 + num_images 3,8,/home/gabe/ws/ros_ws/src/orange_picking/model/logs/variable_log/2020-07-22_06-25-57/,model59.pth.tar,3
+2,data_aug + resnet8 + num_images 1,8,/home/gabe/ws/ros_ws/src/orange_picking/model/logs/variable_log/2020-07-22_06-29-55/,model79.pth.tar,1
