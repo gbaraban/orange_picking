@@ -15,7 +15,7 @@ def gcopVecToUnity(v):
     temp = np.array((v[0],v[2],v[1]))
     return temp
 
-def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=None,include_occlusion=False,orange_spawn=True):
+def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=None,include_occlusion=False,spawn_orange=True):
     #Create environment
     print("Create env")
     if args is None:
@@ -198,7 +198,7 @@ def trajCost(x_traj,u_traj,tree,orange,tf=10):
     N = len(x_traj)-1
     dt = float(tf)/N
     q = (1,1,1,#rotation log
-         0,0,2,#position
+         0,0,10,#position
          300,300,300,#rotation rate
          20,20,20)#velocity
     qf = (275,275,275,#rotation log
@@ -207,7 +207,7 @@ def trajCost(x_traj,u_traj,tree,orange,tf=10):
          200,200,200)#velocity
     r = (.1,.1,.1,1)
     cyl_r = 1.0 + 0.3 #0.6
-    cyl_h = 1.6 + 3.0
+    cyl_h = 1.6 + 1.0
     stiffness=500
     yaw_g = 250
     yawf = np.arctan2(tree[1]-orange[1],tree[0]-orange[0])
@@ -364,7 +364,7 @@ def run_gcop(x,tree,orange,t=0,tf=10,N=100,save_path=None):#TODO:Add in args to 
     stiffness = 500
     stiff_mult = 2.0
     q = (1,1,1,#rotation log
-         0,0,2,#position
+         0,0,10,#position
          300,300,300,#rotation rate
          20,20,20)#velocity
     qf = (275,275,275,#rotation log
@@ -373,7 +373,7 @@ def run_gcop(x,tree,orange,t=0,tf=10,N=100,save_path=None):#TODO:Add in args to 
          200,200,200)#velocity
     r = (.1,.1,.1,1)
     cyl_r = 1.0 + 0.3 #0.6
-    cyl_h = 1.6 + 3.0
+    cyl_h = 1.6 + 1.0
     yaw_g = 250
     yawf = np.arctan2(tree[1]-orange[1],tree[0]-orange[0])
     if (len(x) is 2):
