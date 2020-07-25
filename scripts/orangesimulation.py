@@ -15,7 +15,7 @@ def gcopVecToUnity(v):
     temp = np.array((v[0],v[2],v[1]))
     return temp
 
-def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=None,include_occlusion=False):
+def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=None,include_occlusion=False,orange_spawn=True):
     #Create environment
     print("Create env")
     if args is None:
@@ -58,7 +58,7 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
     x0_i = np.hstack((x0_i,yaw0_i,0,0))
     envAct = np.array((np.random.randint(6),np.random.randint(6),0))
     if not plot_only:
-        (camName, envName, orangePos_i, occlusion) = setUpEnv(env,x0_i,treePos_i,orangePos_i,envAct, orangeColor = np.random.randint(9),future_version=future_version,collisionR = cR)
+        (camName, envName, orangePos_i, occlusion) = setUpEnv(env,x0_i,treePos_i,orangePos_i,envAct, orangeColor = np.random.randint(9),future_version=future_version,collisionR = cR,spawn_orange=spawn_orange)
     else:
         camName = ""
 
@@ -119,12 +119,12 @@ def quat_between(qa, qb, t, quat=False):
 
 
 def setUpEnv(env, x0, treePos, orangePos, envAct=(0,1,0), treeScale = 0.125, orangeScale = 0.07,
-             orangeColor = 0, future_version=False, collisionR = None):
+             orangeColor = 0, future_version=False, collisionR = None, spawn_orange=True):
     print("Reset Env")
     env.reset()
     treeAct = np.array([np.hstack((gcopVecToUnity(treePos[0:3]),treePos[3],1))])
     envAct = np.array([np.hstack((envAct,1))])
-    if not future_version: #future_version is master branch of mlagents as of 05/12/2020 
+    if not future_version: #future_version is master branch of mlagents as of 05/12/2020
         print("Get names Env")
         names = env.get_behavior_names()
     else:
@@ -155,11 +155,13 @@ def setUpEnv(env, x0, treePos, orangePos, envAct=(0,1,0), treeScale = 0.125, ora
     env.set_actions(treeName,treeAct)
     env.step()
     if (collisionR is None):
+        if not spawn_orange:
+            orangePos = np.array([0.0, 0.0, 0.0])
         orangeAct = np.array([np.hstack((gcopVecToUnity(orangePos),orangeColor,1))])
         env.set_actions(orangeName,orangeAct)
         env.step()
     else:
-        orange, occ_frac = move_orange(env,orangeName,orangePos[0:3],orangeColor,treePos[0:3],collisionR,camName)
+        orange, occ_frac = move_orange(env,orangeName,orangePos[0:3],orangeColor,treePos[0:3],collisionR,camName,spawn_orange=spawn_orange)
         #TODO: store occ_frac somewhere
     camAct = makeCamAct(x0)
     env.set_actions(camName,camAct)
@@ -205,7 +207,7 @@ def trajCost(x_traj,u_traj,tree,orange,tf=10):
          200,200,200)#velocity
     r = (.1,.1,.1,1)
     cyl_r = 1.0 + 0.3 #0.6
-    cyl_h = 1.6 + 1.0
+    cyl_h = 1.6 + 3.0
     stiffness=500
     yaw_g = 250
     yawf = np.arctan2(tree[1]-orange[1],tree[0]-orange[0])
@@ -371,7 +373,7 @@ def run_gcop(x,tree,orange,t=0,tf=10,N=100,save_path=None):#TODO:Add in args to 
          200,200,200)#velocity
     r = (.1,.1,.1,1)
     cyl_r = 1.0 + 0.3 #0.6
-    cyl_h = 1.6 + 1.0
+    cyl_h = 1.6 + 3.0
     yaw_g = 250
     yawf = np.arctan2(tree[1]-orange[1],tree[0]-orange[0])
     if (len(x) is 2):
@@ -505,7 +507,7 @@ def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = N
             plot_step_flag = False,mean_image = None,trial_num=0,device=None):
     x_list = []
     u_list = []
-    (env,x,camName,envName,orange,tree) = shuffleEnv(env_name,trial_num=trial_num,args=args)#,x0,orange,tree)
+    (env,x,camName,envName,orange,tree,occ) = shuffleEnv(env_name,trial_num=trial_num,args=args,include_occlusion=True)#,x0,orange,tree)
     print(x)
     print(x.shape)
     if "sys_f_gcop" in str(sys_f):
@@ -522,7 +524,9 @@ def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = N
         print("Close Env")
         env.close()
         return 2
-    ref_traj = run_gcop(x,tree,orange)[0]#Take xs only
+    traj = run_gcop(x,tree,orange)
+    ref_traj = traj[0] #Take xs only
+    u_ref_traj = traj[1]
     #print(x.shape)
     image_spacing = 1/dt #number of timesteps between images in multi-image networks
     for step in range(max_steps):
@@ -589,8 +593,10 @@ def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = N
     print("Close Env")
     env.close()
     score = None
+    gcop_score = None
     if len(u_list) != 0:
         score = trajCost(x_list,u_list,tree,orange)
+        gcop_score = trajCost(ref_traj,u_ref_traj,tree,orange)
 
     if score is not None:
         if not os.path.exists("./score/simulation/"):
@@ -598,6 +604,13 @@ def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = N
         file = open("./score/simulation/"+ save_path.replace("/", "_").strip("_") , "x")
         file.write(str(score))
         file.close()
+
+        if not os.path.exists("./score/gcop_simulation/"):
+            os.makedirs("./score/gcop_simulation/")
+        file = open("./score/gcop_simulation/"+ save_path.replace("/", "_").strip("_") , "x")
+        file.write(str(gcop_score))
+        file.close()
+
 
     os.system("python3 scripts/generate_gifs.py " + save_path + " --loc /home/gabe/ws/ros_ws/src/orange_picking/ &")
     return 1

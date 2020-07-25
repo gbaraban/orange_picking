@@ -50,7 +50,7 @@ def unity_image(env,act,cam_name,env_name=None):
         return envobs
     return (obs,envobs)
 
-def move_orange(env,orangeName,orangePos,orangeColor,treePos,collisionR,camName=None):
+def move_orange(env,orangeName,orangePos,orangeColor,treePos,collisionR,camName=None,spawn_orange=True):
     dx = orangePos[0:3] - treePos[0:3]
     theta = np.arctan2(dx[1],dx[0])
     r_min = 0
@@ -72,6 +72,8 @@ def move_orange(env,orangeName,orangePos,orangeColor,treePos,collisionR,camName=
     if (camName is None):
         r = (r_max + r_min)/2 - collisionR + orange_offset
         tempPos = treePos + np.array([np.cos(theta)*r,np.sin(theta)*r,dx[2]+orange_h_offset])
+        if not spawn_orange:
+            tempPos = np.array([0.0, 0.0, 0.0])
         orangeAct = np.array([np.hstack((gcopVecToUnity(tempPos),orangeColor,1))])
         env.set_actions(orangeName,orangeAct)
         env.step()
@@ -96,6 +98,8 @@ def move_orange(env,orangeName,orangePos,orangeColor,treePos,collisionR,camName=
         unobscured_score = np.count_nonzero(image_trunc > threshold)
         r = r - collisionR
         tempPos = treePos + np.array([np.cos(theta)*(r),np.sin(theta)*(r),dx[2]+orange_h_offset])
+        if not spawn_orange:
+            tempPos = np.array([0.0, 0.0, 0.0])
         orangeAct = np.array([np.hstack((gcopVecToUnity(tempPos),orangeColor,1))])
         env.set_actions(orangeName,orangeAct)
         env.step()
