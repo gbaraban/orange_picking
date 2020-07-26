@@ -53,7 +53,7 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
     R_i = orangeR + orangeR_rand
     orangeoffset = np.array((R_i*np.cos(theta), R_i*np.sin(theta),
                              orangePos[2] + orangeH_rand))
-    cR = (0.2 * min(1.0,max(0.0, np.random.normal(0.5)))) + 0.22
+    cR = (0.15 * min(1.0,max(0.0, np.random.normal(0.5)))) + 0.2
     orangePos_i = treePos_i[0:3] + orangeoffset
     x0_i = np.hstack((x0_i,yaw0_i,0,0))
     envAct = np.array((np.random.randint(6),np.random.randint(6),0))
@@ -198,9 +198,9 @@ def trajCost(x_traj,u_traj,tree,orange,tf=10):
     N = len(x_traj)-1
     dt = float(tf)/N
     q = (1,1,1,#rotation log
-         0,0,10,#position
+         0,0,25,#position
          300,300,300,#rotation rate
-         20,20,20)#velocity
+         40,40,40)#velocity
     qf = (275,275,275,#rotation log
          250,250,250,#position
          200,200,200,#rotation rate
@@ -209,7 +209,7 @@ def trajCost(x_traj,u_traj,tree,orange,tf=10):
     cyl_r = 1.0 + 0.3 #0.6
     cyl_h = 1.6 + 1.0
     stiffness=500
-    yaw_g = 250
+    yaw_g = 450
     yawf = np.arctan2(tree[1]-orange[1],tree[0]-orange[0])
     orange = np.array(orange)
     rotf = R.from_euler('zyx',(yawf,0,0))
@@ -360,13 +360,13 @@ def trajCost(x_traj,u_traj,tree,orange,tf=10):
     return cost
 
 def run_gcop(x,tree,orange,t=0,tf=10,N=100,save_path=None):#TODO:Add in args to adjust more params
-    epochs = 750
+    epochs = 600
     stiffness = 500
     stiff_mult = 2.0
     q = (1,1,1,#rotation log
-         0,0,10,#position
+         0,0,25,#position
          300,300,300,#rotation rate
-         20,20,20)#velocity
+         40,40,40)#velocity
     qf = (275,275,275,#rotation log
          250,250,250,#position
          200,200,200,#rotation rate
@@ -374,7 +374,7 @@ def run_gcop(x,tree,orange,t=0,tf=10,N=100,save_path=None):#TODO:Add in args to 
     r = (.1,.1,.1,1)
     cyl_r = 1.0 + 0.3 #0.6
     cyl_h = 1.6 + 1.0
-    yaw_g = 250
+    yaw_g = 450
     yawf = np.arctan2(tree[1]-orange[1],tree[0]-orange[0])
     if (len(x) is 2):
         cameraPos = tuple(x[0])

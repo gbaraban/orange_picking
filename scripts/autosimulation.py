@@ -76,14 +76,14 @@ def get_variety():
 	return labels, variety
 
 def get_selective_variety():
-	variety = [[10, 6, 100, 3], [10, 6, 100, 5], [10, 6, 150, 5], [10, 6, 100, 10], [10, 6, 150, 10], [10, 6, 250, 10], [10, 6, 250, 12], [10, 6, 250, 15], [10, 6, 350, 15], [10, 6, 250, 20], [10, 6, 350, 20], [10, 6, 500, 15], [10, 6, 500, 20], [10, 6, 500, 25]]
+	variety = [[10, 6, 100, 3], [10, 6, 150, 3], [10, 6, 100, 5], [10, 6, 150, 5], [10, 6, 100, 10], [10, 6, 150, 10], [10, 6, 250, 10], [10, 6, 250, 12],  [10, 6, 350, 12], [10, 6, 250, 15], [10, 6, 350, 15], [10, 6, 250, 20], [10, 6, 350, 20], [10, 6, 500, 15], [10, 6, 500, 20], [10, 6, 500, 25], [10, 6, 600, 15], [10, 6, 600, 20], [10, 6, 600, 25]]
 	labels = ["iters", "outputs", "steps", "hz"]
 	return labels, variety
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--loc', type=str, default="/home/gabe/ws/ros_ws/src/orange_picking/useful_models.csv", help='random seed')
-    parser.add_argument('--j', type=int, default=2, help='approx number of unity threads running')
+    parser.add_argument('--j', type=int, default=5, help='approx number of unity threads running')
     parser.add_argument('--explore', type=int, default=0, help="selective variety or explorative")
     args = parser.parse_args()
 
@@ -94,12 +94,15 @@ def main():
         labels, vars = get_variety()
     else:
         labels, vars = get_selective_variety()
-    #print(data)
+    print(data)
+    gpu = [0, 0, 0, 1, 1]
     #exit()
     for k in data.keys():
         d = data[k]
         print(d)
-        proc = "python3 scripts/orangesimulation.py --gpu 0 " + str(d["model_loc"]) + str(d["model"]) + " --name " + str(k) + " --num_images " + str(d["num_images"]) + "  "
+        #print(k)
+        #continue
+        proc = "python3 scripts/orangesimulation.py  " + str(d["model_loc"]) + str(d["model"]) + " --name " + str(k) + " --num_images " + str(d["num_images"]) + "  "
         if d["resnet"] == "18":
             proc +=  " --resnet18 1 "
 
@@ -111,6 +114,7 @@ def main():
                     wid += int(v)
 
             t_proc += " --worker_id " + str(int(wid))
+            t_proc += " --gpu " + str(gpu[i%args.j]) + " "
             print(t_proc)
             #exit(0)
             if i%args.j == 0:
