@@ -10,6 +10,7 @@ from plotting.parsetrajfile import *
 import os
 import gcophrotor
 from orangeimages import *
+import time
 
 def gcopVecToUnity(v):
     temp = np.array((v[0],v[2],v[1]))
@@ -17,15 +18,15 @@ def gcopVecToUnity(v):
 
 def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=None,include_occlusion=False,spawn_orange=True):
     #Create environment
-    print("Create env")
+    #print("Create env")
     if args is None:
         env = UnityEnvironment(file_name=env_name,worker_id=trial_num,seed=trial_num)
     else:
-        print(trial_num)
-        print(args.worker_id+trial_num)
+        #print(trial_num)
+        #print(args.worker_id+trial_num)
         env = UnityEnvironment(file_name=env_name,worker_id=args.worker_id+trial_num,seed=args.seed+trial_num)
     #Baseline Positions
-    print("Init")
+    #print("Init")
     quad_omega = (np.random.rand(1) * 2*np.pi) - np.pi
     quadR = 5
     quad_x = quadR * np.cos(quad_omega)
@@ -44,7 +45,7 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
     #randomize environment
     xoffset = 2*xmult*(np.random.rand(3) - 0.5)
     x0_i = x0 + xoffset
-    yaw0_i = yaw0 + 2*ymult*(np.random.rand(1) - 0.5)
+    #yaw0_i = yaw0 + 2*ymult*(np.random.rand(1) - 0.5)
     treeoffset = treemult*(np.random.rand(4) - 0.5)
     treePos_i = treePosYaw + treeoffset
     theta = 2*np.pi*np.random.random_sample()
@@ -53,8 +54,9 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
     R_i = orangeR + orangeR_rand
     orangeoffset = np.array((R_i*np.cos(theta), R_i*np.sin(theta),
                              orangePos[2] + orangeH_rand))
-    cR = (0.15 * min(1.0,max(0.0, np.random.normal(0.5)))) + 0.2
+    cR = (0.1 * min(1.0,max(0.0, np.random.normal(0.5)))) + 0.2
     orangePos_i = treePos_i[0:3] + orangeoffset
+    yaw0_i = np.arctan2(treePos_i[1]-x0_i[1],treePos_i[0]-x0_i[0])
     x0_i = np.hstack((x0_i,yaw0_i,0,0))
     envAct = np.array((np.random.randint(6),np.random.randint(6),0))
     if not plot_only:
@@ -120,15 +122,15 @@ def quat_between(qa, qb, t, quat=False):
 
 def setUpEnv(env, x0, treePos, orangePos, envAct=(0,1,0), treeScale = 0.125, orangeScale = 0.07,
              orangeColor = 0, future_version=False, collisionR = None, spawn_orange=True):
-    print("Reset Env")
+    #print("Reset Env")
     env.reset()
     treeAct = np.array([np.hstack((gcopVecToUnity(treePos[0:3]),treePos[3],1))])
     envAct = np.array([np.hstack((envAct,1))])
     if not future_version: #future_version is master branch of mlagents as of 05/12/2020
-        print("Get names Env")
+        #print("Get names Env")
         names = env.get_behavior_names()
     else:
-        print("Get names Env")
+        #print("Get names Env")
         names = env.behavior_specs
 
     camName = ""
@@ -136,7 +138,7 @@ def setUpEnv(env, x0, treePos, orangePos, envAct=(0,1,0), treeScale = 0.125, ora
     treeName = ""
     orangeName = ""
     for n in names:
-        print(n)
+        #print(n)
         if "Tree" in n:
             treeName = n
             continue
@@ -191,7 +193,7 @@ def run_model(model,image_arr,mean_image=None,device=None):
             point.append(model.min[pt][coord] + bin_size*predict[0,coord,pt])
         goal.append(np.array(point))
     goal = np.array(goal)
-    print(goal[0,:])
+    #print(goal[0,:])
     return goal
 
 def trajCost(x_traj,u_traj,tree,orange,tf=10):
@@ -322,21 +324,21 @@ def trajCost(x_traj,u_traj,tree,orange,tf=10):
         rot = R.from_dcm(x_traj[N][1])
         cost += Lf(x_traj[N][0],rot,x_traj[N][2],x_traj[N][3])
     elif (len(x_traj[0]) is 6):
-        print("zero:", x_traj[0])
+        #print("zero:", x_traj[0])
         x_last = x_traj[0][0:3]
         rot_last = R.from_euler('zyx', x_traj[0][3:6])#.as_matrix()
         for i in range(N):
             rot = R.from_euler('zyx', x_traj[i][3:6])#.as_matrix()
-            print("I: ", i, x_traj[i])
+            #print("I: ", i, x_traj[i])
             if len(x_traj[0]) is 6:
                 x = x_traj[i][0:3]
             else:
                 x = np.array(x_traj[i][0])
             #print(logR(rot*rot_last.inv())) 
             w = np.array(logR(rot*rot_last.inv()))/dt
-            print("x ",x)
-            print(len(x) is 6)
-            print("last: ",x_last)
+            #print("x ",x)
+            #print(len(x) is 6)
+            #print("last: ",x_last)
             v = np.array((np.array(x) - np.array(x_last)))/dt
             cost += L(x,x_last,rot,v,w,u_traj[i])
             #print("Running Cost: ", cost)
@@ -404,7 +406,7 @@ def run_gcop(x,tree,orange,t=0,tf=10,N=100,save_path=None):#TODO:Add in args to 
 
     #cyl_r = 1.0 + 0.8 #0.6
     #cyl_h = 1.6 + 0.2
-    print(orange)
+    #print(orange)
     ref_traj = gcophrotor.trajgen_R(N,tf,epochs,cameraPos,tuple(R0.as_matrix().flatten()),v0,w0,
             tuple(orange), yawf, tuple(tree[0:3]),cyl_r,cyl_h,tuple(q),tuple(qf),tuple(r),yaw_g,0,0,
             stiffness,stiff_mult)
@@ -412,13 +414,13 @@ def run_gcop(x,tree,orange,t=0,tf=10,N=100,save_path=None):#TODO:Add in args to 
 
 def sys_f_gcop(x,goal,dt,goal_time=3,hz=50,plot_flag=False):
     N = goal_time*hz
-    epochs = 15
+    epochs = 10
     q = (0,0,0,#rotation log#(0,0,0,0,0,0,0,0,0,0,0,0)
          0,0,0,#position
-         15,15,15,#rotation rate
-         10,10,10)#velocity
-    qf = (10,10,10,#rotation log
-         10,10,10,#position
+         10,10,5,#rotation rate
+         30,30,30)#velocity
+    qf = (40,40,40,#rotation log
+         15,15,15,#position
          0,0,0,#rotation rate
          0,0,0)#velocity
     r = (.01,.01,.01,0.001)
@@ -447,12 +449,12 @@ def sys_f_gcop(x,goal,dt,goal_time=3,hz=50,plot_flag=False):
     gcop_out = gcophrotor.trajgen_goal(N,goal_time,epochs,x0,goal_list[0],goal_list[1],goal_list[2],q,qf,r,0,0,0)
     ref_traj = gcop_out[0]
     ref_u_traj = gcop_out[1]
-    print(dt)
+    #print(dt)
     final_idx = int(dt*hz)
-    print(final_idx)
-    print(len(ref_traj))
-    print(len(ref_u_traj))
-    print(np.array(ref_traj[final_idx][0])-np.array(ref_traj[0][0]))
+    #print(final_idx)
+    #print(len(ref_traj))
+    #print(len(ref_u_traj))
+    #print(np.array(ref_traj[final_idx][0])-np.array(ref_traj[0][0]))
     if plot_flag:# or np.linalg.norm(dx) < 1e-3:
         print(goal)
         make_step_plot(goal_list,ref_traj[0:final_idx])
@@ -503,13 +505,21 @@ def sys_f_linear(x,goal,dt,goal_time=1,plot_flag=False):
     #exit(0)
     return new_x
 
-def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = None,
+def run_sim(args,sys_f,env_name,model,eps=0.3, max_steps=99,dt=0.1,save_path = None,
             plot_step_flag = False,mean_image = None,trial_num=0,device=None):
     x_list = []
     u_list = []
-    (env,x,camName,envName,orange,tree,occ) = shuffleEnv(env_name,trial_num=trial_num,args=args,include_occlusion=True)#,x0,orange,tree)
-    print(x)
-    print(x.shape)
+    ret_val = None
+    occ = 1.0
+    while occ > 0.6:
+        (env,x,camName,envName,orange,tree,occ) = shuffleEnv(env_name,trial_num=trial_num,args=args,include_occlusion=True) #,spawn_orange=False)#,x0,orange,tree)
+        if occ > 0.6:
+            trial_num += 1
+            env.close()
+            time.sleep(5)
+    print("Occlusion: ", occ)
+    #print(x)
+    #print(x.shape)
     if "sys_f_gcop" in str(sys_f):
         x_ = tuple(x[0:3])
         rot_m = R.from_euler('zyx', x[3:6]).as_matrix()
@@ -517,13 +527,13 @@ def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = N
         x = tuple((x_,rot))
         x = x[0:] + tuple(((0,0,0),(0,0,0)))
     x_list.append(x)
-    print(x)
+    #print(x)
     #exit()
     if camName is "":
         print("camName not set")
         print("Close Env")
         env.close()
-        return 2
+        return 2, trial_num
     traj = run_gcop(x,tree,orange)
     ref_traj = traj[0] #Take xs only
     u_ref_traj = traj[1]
@@ -531,19 +541,21 @@ def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = N
     image_spacing = 1/dt #number of timesteps between images in multi-image networks
     for step in range(max_steps):
         #x_list.append(x)
-        print("State: ",x)
+        #print("State: ",x)
         if "sys_f_linear" in str(sys_f):
             dist = eps + 1
         else:
             dist = np.linalg.norm(x[0] - orange)
         if dist < eps:#TODO:Change to > when using DAgger
             print("exit if")
-            if save_path is not None:
-                ts = np.linspace(0,dt*(len(x_list)-1),len(x_list))
-                make_full_plots(ts,x_list,orange,tree,saveFolder=save_path,truth=ref_traj)
+            #if save_path is not None:
+            #    ts = np.linspace(0,dt*(len(x_list)-1),len(x_list))
+            #    make_full_plots(ts,x_list,orange,tree,saveFolder=save_path,truth=ref_traj)
             print("Close Env")
             env.close()
-            return 0
+            #return 0, trial_num
+            ret_val = 0
+            break
         #Get Image
         image_arr = None
         for ii in range(model.num_images):
@@ -552,10 +564,10 @@ def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = N
             if image_arr is None:
                 (image_arr,ext_image_arr) = unity_image(env,camAct,camName,envName)
                 #image_arr = unity_image(env,camAct,camName)
-                print(image_arr.shape)
+                #print(image_arr.shape)
             else:
                 image_arr = np.concatenate((image_arr,unity_image(env,camAct,camName,None)),axis=2)#TODO: check axis number
-                print(image_arr.shape)
+                #print(image_arr.shape)
         #Optionally save image
         if save_path is not None:
             save_image_array(image_arr[:,:,0:3],save_path,"sim_image"+str(step)) #TODO: Use concat axis from above
@@ -581,7 +593,7 @@ def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = N
             x_list.extend(x)
             x = x[len(x)-1]
             #print("x: ", step, len(x), x)
-            print("gcop ", len(x_list), len(u_list))
+            #print("gcop ", len(x_list), len(u_list))
         else:
             x_list.extend(x)
 
@@ -589,8 +601,13 @@ def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = N
     if save_path is not None:
         ts = np.linspace(0,dt*(len(x_list)-1),len(x_list))
         print("Saving at ",save_path)
-        #make_full_plots(ts,x_list,orange,tree,saveFolder=save_path,truth=ref_traj) #TODO
-    print("Close Env")
+        pickle.dump(x_list, open(save_path + "traj_data.pickle", "wb"))
+        pickle.dump(ref_traj, open(save_path + "ref_traj.pickle", "wb"))
+        pickle.dump(u_list, open(save_path + "traj_u_data.pickle", "wb"))
+        pickle.dump(u_ref_traj, open(save_path + "ref_u_traj.pickle", "wb"))
+
+        make_full_plots(ts,x_list,orange,tree,saveFolder=save_path,truth=ref_traj) #TODO
+    #print("Close Env")
     env.close()
     score = None
     gcop_score = None
@@ -610,10 +627,11 @@ def run_sim(args,sys_f,env_name,model,eps=0.1, max_steps=99,dt=0.1,save_path = N
         file = open("./score/gcop_simulation/"+ save_path.replace("/", "_").strip("_") , "x")
         file.write(str(gcop_score))
         file.close()
-
+    if ret_val is None:
+        ret_val = 1
 
     os.system("python3 scripts/generate_gifs.py " + save_path + " --loc /home/gabe/ws/ros_ws/src/orange_picking/ &")
-    return 1
+    return ret_val, trial_num
 
 def main():
   parser = argparse.ArgumentParser()
@@ -639,12 +657,12 @@ def main():
   #parser.add_argument('--physics', type=float, default=50, help="Freq at which physics sim is performed")
   parser.add_argument('--env', type=str, default="unity/env_v7", help='unity filename')
   parser.add_argument('--plot_step', type=bool, default=False, help='PLot each step')
-  parser.add_argument('--mean_image', type=str, default='data/mean_imgv2_data_Run20.npy', help='Mean Image')
+  parser.add_argument('--mean_image', type=str, default='data/mean_imgv2_data_Run23.npy', help='Mean Image')
   args = parser.parse_args()
   #args.min = [(0,-0.5,-0.1),(0,-1,-0.15),(0,-1.5,-0.2),(0,-2,-0.3),(0,-3,-0.5)]
   #args.max = [(1,0.5,0.1),(2,1,0.15),(4,1.5,0.2),(6,2,0.3),(7,0.3,0.5)]
-  args.min = [(0,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0,-1,-0.15,-np.pi,-np.pi/2,-np.pi),(0,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0,-2,-0.3,-np.pi,-np.pi/2,-np.pi),(0,-3,-0.5,-np.pi,-np.pi/2,-np.pi)]
-  args.max = [(1,0.5,0.1,np.pi,np.pi/2,np.pi),(2,1,0.15,np.pi,np.pi/2,np.pi),(4,1.5,0.2,np.pi,np.pi/2,np.pi),(6,2,0.3,np.pi,np.pi/2,np.pi),(7,0.3,0.5,np.pi,np.pi/2,np.pi)]
+  args.min = [(0.,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.,-1.,-0.15,-np.pi,-np.pi/2,-np.pi),(0.,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.,-2.,-0.3,-np.pi,-np.pi/2,-np.pi),(0.,-3.,-0.5,-np.pi,-np.pi/2,-np.pi)]
+  args.max = [(1.,0.5,0.1,np.pi,np.pi/2,np.pi),(2.,1.,0.15,np.pi,np.pi/2,np.pi),(4.,1.5,0.2,np.pi,np.pi/2,np.pi),(6.,2.,0.3,np.pi,np.pi/2,np.pi),(7.,0.3,0.5,np.pi,np.pi/2,np.pi)]
   np.random.seed(args.seed)
   #Load model
   if not args.resnet18:
@@ -655,11 +673,11 @@ def main():
   model.min = args.min
   model.max = args.max
   if os.path.isfile(args.load):
-    print(args.load)
+    #print(args.load)
     checkpoint = torch.load(args.load)
     model.load_state_dict(checkpoint)
     model.eval()
-    print("Loaded Model: ",args.load)
+    #print("Loaded Model: ",args.load)
   else:
     print("No checkpoint found at: ", args.load)
     return
@@ -668,7 +686,7 @@ def main():
       print('mean image file not found', args.mean_image)
       return 0
   else:
-      print('mean image file found')
+      #print('mean image file found')
       mean_image = np.load(args.mean_image)
 
   import copy
@@ -680,7 +698,7 @@ def main():
   #env.reset()
   #Pick CUDA Device
   use_cuda = torch.cuda.is_available()
-  print('Cuda Flag: ',use_cuda)
+  #print('Cuda Flag: ',use_cuda)
   if use_cuda:
       if args.gpu:
           device = torch.device('cuda:'+str(args.gpu))
@@ -700,15 +718,18 @@ def main():
     run_num += 1
     globalfolder = 'data/simulation/Sim' + str(run_num) + '_' + str(args.steps) + '_' + str(args.hz) + '/'  #'_' + str(args.physics) + '/'
   trial_num = -1
-  while trial_num < (args.iters-1) or args.iters is -1:
+  exp = -1
+  while exp < (args.iters-1) or args.iters is -1:
     trial_num += 1
+    exp += 1
     print('Trial Number ',trial_num)
     #Filenames
     foldername = "trial" + str(trial_num) + "/"
     os.makedirs(globalfolder + foldername)
-    err_code = run_sim(args,sys_f_gcop,args.env,model,plot_step_flag = args.plot_step,
+    err_code, trial_num = run_sim(args,sys_f_gcop,args.env,model,plot_step_flag = args.plot_step,
                        max_steps=args.steps,dt=(1.0)/args.hz,device=device,
                        save_path = globalfolder+foldername,mean_image=mean_image,trial_num=trial_num)
+
     if err_code is not 0:
       print('Simulation did not converge.  code is: ', err_code)
 

@@ -51,7 +51,7 @@ if __name__ == "__main__":
 		trial_num += 1
 		#orange = orange[0,0:3]
 		#print(orange)
-		if occlusion > 0.70:
+		if occlusion > 0.60:
 			print("No thanks", occlusion)
 			env.close()
 			continue

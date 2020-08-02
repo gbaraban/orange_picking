@@ -14,9 +14,9 @@ class pointToBins(object):
         local_pts = []
         for ctr, point in enumerate(points):
             #Convert into bins
-            min_i = np.array(self.min_list[ctr])
-            max_i = np.array(self.max_list[ctr])
-            point = np.array(point)
+            min_i = np.array(self.min_list[ctr]).astype(float)
+            max_i = np.array(self.max_list[ctr]).astype(float)
+            point = np.array(point).astype(float)
             bin_nums = (point - min_i)/(max_i-min_i)
             bin_nums_scaled = (bin_nums*self.bins).astype(int)
             bin_nums = np.clip(bin_nums_scaled,a_min=0,a_max=self.bins-1)

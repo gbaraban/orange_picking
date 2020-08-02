@@ -127,7 +127,7 @@ def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass,args):
                 points.append(p)
         elif dataclass.custom_dataset == "Run18":
             indices = np.floor(np.add(np.array([1, 2, 3]) * dataclass.h[trial], idx)).astype(int)
-
+            """
             for x, ii in enumerate(indices):
                 if ii >= num_list[trial_idx]:
                     delta = idx if (x == 0) else indices[x-1]
@@ -145,7 +145,7 @@ def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass,args):
                         indices[x+z+j] = num_list[trial_idx] - 1
 
                     break
-
+            """
             for i in range(len(indices)):
                 if (indices[i] >= num_list[trial_idx]):
                     if i == 0:
@@ -430,8 +430,8 @@ def main():
     else:
         args.real_test = True
 
-    args.min = [(0,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0,-1,-0.15,-np.pi,-np.pi/2,-np.pi),(0,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0,-2,-0.3,-np.pi,-np.pi/2,-np.pi),(0,-3,-0.5,-np.pi,-np.pi/2,-np.pi)]
-    args.max = [(1,0.5,0.1,np.pi,np.pi/2,np.pi),(2,1,0.15,np.pi,np.pi/2,np.pi),(4,1.5,0.2,np.pi,np.pi/2,np.pi),(6,2,0.3,np.pi,np.pi/2,np.pi),(7,0.3,0.5,np.pi,np.pi/2,np.pi)]
+    args.min = [(0.,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.,-1.,-0.15,-np.pi,-np.pi/2,-np.pi),(0.,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.,-2.,-0.3,-np.pi,-np.pi/2,-np.pi),(0.,-3,-0.5,-np.pi,-np.pi/2,-np.pi)]
+    args.max = [(1.,0.5,0.1,np.pi,np.pi/2,np.pi),(2.,1.,0.15,np.pi,np.pi/2,np.pi),(4.,1.5,0.2,np.pi,np.pi/2,np.pi),(6.,2.,0.3,np.pi,np.pi/2,np.pi),(7.,0.3,0.5,np.pi,np.pi/2,np.pi)]
     #args.traj = False
     #Data Transforms
     pt_trans = transforms.Compose([pointToBins(args.min,args.max,args.bins)])#,GaussLabels(1,1e-10,args.bins)])
@@ -558,7 +558,7 @@ def main():
     #ReduceLROnPlateau is an interesting idea
 
     #Save Parameters
-    save_variables_divider = 10
+    save_variables_divider = 5 #10
     log_path = './model/logs'
     save_path = createStampedFolder(os.path.join(log_path, 'variable_log'))
     tensorboard_path = addTimestamp(os.path.join(log_path, 'tensorboard_'))
@@ -792,7 +792,7 @@ def main():
         for ii, acc in enumerate(val_acc):
             writer.add_scalar('val_acc_'+str(ii),acc[0],(epoch+1)*len(train_loader))
         print('Val Cross-Entropy Loss: ',sum(val_loss),val_loss)
-        print('Val Accuracy: ',acc_list)
+        print('Val Accuracy: ',val_acc)
         #Adjust LR
         scheduler.step()
         print('Learning Rate Set to: ',scheduler.get_lr())

@@ -1,3 +1,4 @@
+import time
 import numpy as np
 from mlagents_envs.environment import UnityEnvironment
 import PIL.Image as img
@@ -105,13 +106,13 @@ def load_run18(args,model):
     from customDatasetsOrientation import OrangeSimDataSet, SubSet
     custom = "Run18"
     traj = True
-    data = "./data/Run20/"
-    val_perc = 0.9 #TODO: adjust this for number of training trajectories, we are using train traj, so we want to adjust (1-val_perc)
+    data = "./data/Run23/"
+    val_perc = 0.95 #TODO: adjust this for number of training trajectories, we are using train traj, so we want to adjust (1-val_perc)
 
     pt_trans = transforms.Compose([pointToBins(model.min, model.max, model.bins)])
     img_trans = transforms.Compose([RandomHorizontalTrajFlip()])
 
-    dataclass = OrangeSimDataSet(data, model.num_images, model.num_pts, pt_trans, img_trans, custom_dataset=custom)
+    dataclass = OrangeSimDataSet(data, model.num_images, model.num_points, pt_trans, img_trans, custom_dataset=custom)
 
     val_order = np.ceil(len(dataclass.num_samples_dir_size)*val_perc).astype(int)
     #val_indices = []
@@ -143,14 +144,14 @@ def load_run18(args,model):
 
     train_data = SubSet(dataclass,train_idx)
     #val_data = SubSet(dataclass,val_idx)
-
+    print(len(train_idx))
     #Create DataLoaders
     #train_loader = DataLoader(train_data,batch_size=args.batch_size,shuffle=True,num_workers=args.j, worker_init_fn=dl_init)
     #exit()
     return train_data
 
 
-def retrain_model(args, model,loader,device,ctr="Latest",writer=None,save_path=None,epochs=100,learning_rate=5e-5):
+def retrain_model(args, model,loader,device,ctr="Latest",writer=None,save_path=None,epochs=5,learning_rate=5e-5):
     #Run epochs of training on model
     #Include tensorboard output
     #Create Optimizer
@@ -215,6 +216,7 @@ def retrain_model(args, model,loader,device,ctr="Latest",writer=None,save_path=N
     print("Saving Model")
     name = save_path+'/model' + str(ctr) + '.pth.tar'
     torch.save(model.state_dict(),name)
+    print(name)
     return name
 
 def run_DAgger(args,sys_f,env_name,model,data_list=[],j=4,device=None,
@@ -226,13 +228,20 @@ def run_DAgger(args,sys_f,env_name,model,data_list=[],j=4,device=None,
     ts_path = addTimestamp(os.path.join("./model/logs","tensorboard_"))
     writer = SummaryWriter(ts_path)
     trial_num = 0
-    while eps > 5e-3:
+    exp = 0
+    while eps > 1e-3:
         #Filenames
         foldername = "trial" + str(trial_num) + "/"
         os.makedirs(save_path + foldername)
         num_fails = 0
         print("Running Environment ",ctr)
-        (env,x0,camName,envName,orange,tree) = shuffleEnv(env_name,trial_num=trial_num)
+        occ = 1.0
+        while occ > 0.6:
+            (env,x0,camName,envName,orange,tree,occ) = shuffleEnv(env_name,trial_num=exp,include_occlusion=True,args=args)
+            if occ > 0.6:
+                exp += 1
+                env.close()
+                time.sleep(5)
         if camName is "":
             print("camName not found")
             env.close()
@@ -255,6 +264,8 @@ def run_DAgger(args,sys_f,env_name,model,data_list=[],j=4,device=None,
                 else:
                     image_arr = np.concatenate((image_arr,unity_image(env,camAct,camName)),axis=2)#TODO: check axis number
                     #print(image_arr.shape)
+            if step%50 == 0:
+                print(step, image_arr.shape)
             #Optionally save image
             if save_path is not None:
                 save_image_array(image_arr[:,:,0:3],save_path+foldername,"sim_image"+str(step)) #TODO: use concatenation axis from above
@@ -272,6 +283,7 @@ def run_DAgger(args,sys_f,env_name,model,data_list=[],j=4,device=None,
                 new_path = run_gcop(x_new,tree,orange,t=step*dt,tf=max_steps*dt,N=int((max_steps*dt)*physics_hz)) #max_steps-1-step)
                 expert_path[-len(new_path[0]):]=new_path[0]
                 u_path[-len(new_path[1]):]=new_path[1]
+        print("Steps completed")
         if num_fails < 20:
             eps = eps/2
             print("Only ",num_fails," interventions, reducing eps to ",eps)
@@ -288,6 +300,7 @@ def run_DAgger(args,sys_f,env_name,model,data_list=[],j=4,device=None,
             data_list = data_list[:-1]
         ctr += 1
         trial_num += 1
+        exp += 1
         env.close()
     if get_name:
         return 0, model_name
@@ -348,8 +361,8 @@ def main_function(load=None,gpu=None,seed=0,num_images=1,num_pts=3,capacity=1,bi
   #parser.add_argument('-j', type=int, default=4, help='number of loader workers')
   #parser.add_argument('--batch', type=int, default=256, help='batch size')
   #args = parser.parse_args()
-  mins = [(0,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0,-1,-0.15,-np.pi,-np.pi/2,-np.pi),(0,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0,-2,-0.3,-np.pi,-np.pi/2,-np.pi),(0,-3,-0.5,-np.pi,-np.pi/2,-np.pi)]
-  maxs = [(1,0.5,0.1,np.pi,np.pi/2,np.pi),(2,1,0.15,np.pi,np.pi/2,np.pi),(4,1.5,0.2,np.pi,np.pi/2,np.pi),(6,2,0.3,np.pi,np.pi/2,np.pi),(7,0.3,0.5,np.pi,np.pi/2,np.pi)]
+  mins = [(0.,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.,-1.,-0.15,-np.pi,-np.pi/2,-np.pi),(0.,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.,-2.,-0.3,-np.pi,-np.pi/2,-np.pi),(0.,-3.,-0.5,-np.pi,-np.pi/2,-np.pi)]
+  maxs = [(1.,0.5,0.1,np.pi,np.pi/2,np.pi),(2.,1.,0.15,np.pi,np.pi/2,np.pi),(4.,1.5,0.2,np.pi,np.pi/2,np.pi),(6.,2.,0.3,np.pi,np.pi/2,np.pi),(7.,0.3,0.5,np.pi,np.pi/2,np.pi)]
   np.random.seed(seed)
   #Load model
   if not resnet18:
@@ -433,14 +446,14 @@ def main():
   parser.add_argument('--physics', type=float, default=5, help='Recalculation rate')
   parser.add_argument('--env', type=str, default="unity/env_v7", help='unity filename')
   parser.add_argument('--plot_step', type=bool, default=False, help='PLot each step')
-  parser.add_argument('--mean_image', type=str, default='data/mean_imgv2_data_Run20.npy', help='Mean Image')
+  parser.add_argument('--mean_image', type=str, default='data/mean_imgv2_data_Run23.npy', help='Mean Image')
   parser.add_argument('--worker_id', type=int, default=0, help='Worker ID for Unity')
   #Training Options
   parser.add_argument('-j', type=int, default=4, help='number of loader workers')
-  parser.add_argument('--batch', type=int, default=256, help='batch size')
+  parser.add_argument('--batch', type=int, default=128, help='batch size')
   args = parser.parse_args()
-  args.min = [(0,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0,-1,-0.15,-np.pi,-np.pi/2,-np.pi),(0,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0,-2,-0.3,-np.pi,-np.pi/2,-np.pi),(0,-3,-0.5,-np.pi,-np.pi/2,-np.pi)]
-  args.max = [(1,0.5,0.1,np.pi,np.pi/2,np.pi),(2,1,0.15,np.pi,np.pi/2,np.pi),(4,1.5,0.2,np.pi,np.pi/2,np.pi),(6,2,0.3,np.pi,np.pi/2,np.pi),(7,0.3,0.5,np.pi,np.pi/2,np.pi)]
+  args.min = [(0.,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.,-1.,-0.15,-np.pi,-np.pi/2,-np.pi),(0.,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.,-2.,-0.3,-np.pi,-np.pi/2,-np.pi),(0.,-3.,-0.5,-np.pi,-np.pi/2,-np.pi)]
+  args.max = [(1.,0.5,0.1,np.pi,np.pi/2,np.pi),(2.,1.,0.15,np.pi,np.pi/2,np.pi),(4.,1.5,0.2,np.pi,np.pi/2,np.pi),(6.,2.,0.3,np.pi,np.pi/2,np.pi),(7.,0.3,0.5,np.pi,np.pi/2,np.pi)]
   np.random.seed(args.seed)
   #Load model
   if not args.resnet18:
@@ -469,6 +482,13 @@ def main():
   else:
       print('mean image file found')
       mean_image = np.load(args.mean_image)
+
+  import copy
+  temp_image = copy.deepcopy(mean_image)
+  if args.num_images != 1:
+      for i in range(args.num_images - 1):
+          mean_image = np.concatenate((mean_image,temp_image),axis=2)
+
   #Pick CUDA Device
   use_cuda = torch.cuda.is_available()
   print('Cuda Flag: ',use_cuda)
