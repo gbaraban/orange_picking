@@ -127,7 +127,7 @@ void solver_process(int N, double tf, int epochs, Body3dState x0,
     //yawcost.b = temp_b;
     for (int ii = 0; ii < epochs; ++ii) {
       ddp.Iterate();
-     //cout << "Stiffness: " << cylcost.b << " Iteration Num: " << ii << " DDP V: " << ddp.V << endl;
+     //cout << "Stiffness: " << cylcost.b << " Iteration Num: " << ii << " DDP V: " << ddpn endl;
      // long te = timer_us(timer);
      // if (te > time_limit) break;
     }
@@ -390,12 +390,18 @@ gcophrotor_trajgen_goal(PyObject *self, PyObject *args)
   Body3dState goal1;
   goal1.p << g1x, g1y, g1z;
   goal1.R << R11, R12, R13, R14, R15, R16, R17, R18, R19;
+  goal1.v << 0, 0, 0;
+  goal1.w << 0, 0, 0;
   Body3dState goal2;
   goal2.p << g2x, g2y, g2z;
   goal2.R << R21, R22, R23, R24, R25, R26, R27, R28, R29;
+  goal2.v << 0, 0, 0;
+  goal2.w << 0, 0, 0;
   Body3dState goal3;
   goal3.p << g3x, g3y, g3z;
   goal3.R << R31, R32, R33, R34, R35, R36, R37, R38, R39;
+  goal3.v << 0, 0, 0;
+  goal3.w << 0, 0, 0;
   solver_process_goal(N, tf, epochs, x0, goal1,goal2,goal3,
                  q,qf,r,yawgain,rpgain,dir_gain,
                  xs, us);
@@ -478,6 +484,8 @@ gcophrotor_trajgen(PyObject *self, PyObject *args)
   Body3dState x0;
   x0.p << x0x,x0y,x0z;
   x0.R << cos(yaw0), -sin(yaw0), 0, sin(yaw0), cos(yaw0), 0, 0, 0, 1;
+  x0.v << 0, 0, 0;
+  x0.w << 0, 0, 0;
   Vector3d xfp(xfx,xfy,xfz);
   Vector3d cyl_o(cx,cy,cz);
   vector<Vector4d> us(N);
