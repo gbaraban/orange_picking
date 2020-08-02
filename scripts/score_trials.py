@@ -2,7 +2,7 @@ import os
 
 def main():
 	all_data = open("./simulation_data.csv","r")
-	trials = 10
+	trials = 11
 	ftrial = []
 	for i in range(trials):
 		ftrial.append(open("./gifs/sim/trial"+str(i)+"/sim_data.csv","w"))

@@ -326,7 +326,7 @@ void solver_process_goal(int N, double tf, int epochs, Body3dState x0,
   //cout << "Pre For DDP" << endl;
   for (int ii = 0; ii < epochs; ++ii) {
     ddp.Iterate();
-    cout << " Iteration Num: " << ii << " DDP V: " << ddp.V << endl;
+    //cout << " Iteration Num: " << ii << " DDP V: " << ddp.V << endl;
    // long te = timer_us(timer);
    // if (te > time_limit) break;
   }
