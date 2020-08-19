@@ -31,7 +31,7 @@ def parse_state(state,targ = None):
         targ = np.array(targ)
     if (len(state) is 2) or (len(state) is 4):
         pos = np.array(state[0])
-        rot = R.from_matrix(np.array(state[1]))
+        rot = R.from_dcm(np.array(state[1]))
         ypr = rot.as_euler(seq = 'zyx', degrees = True)
     elif (len(state) is 6):
         pos = np.array(state[0:3])
@@ -47,7 +47,7 @@ def parse_state(state,targ = None):
         yawcost = 1 - np.dot(df, rot.apply(np.array([1,0,0])))
     else:
         yd = yawcost = None
-    logR = logRot(rot.as_matrix())
+    logR = logRot(rot.as_dcm())
     return pos[0],pos[1],pos[2], ypr[2], ypr[1], ypr[0], yd, yawcost, logR
 
 def make_step_plot(goals,states,saveFolder=None,name=None):
@@ -126,24 +126,24 @@ def make_full_plots(ts,states, targ=None, cyl_o=None, cyl_r=0.6, cyl_h=1.6, save
       thetac, zc = np.meshgrid(theta,zs)
       xc = cyl_r * np.cos(thetac) + cyl_o[0]
       yc = cyl_r * np.sin(thetac) + cyl_o[1]
-      ax.plot_surface(xc,yc,zc)
+      ax.plot_surface(xc,yc,zc,alpha=0.5)
   #Plot x0 and xf
   if targ is not None:
       ax.plot3D((x_list[0],targ[0]),(y_list[0],targ[1]),(z_list[0],targ[2]),'black')
   #Plot trajectory
   ax.plot3D(x_list,y_list,z_list)
-  for state in states:
-      if (len(state) is 2) or (len(state) is 4):
-          p = state[0]
-          rot_mat = np.array(state[1])
-      elif len(state) is 6:
-          p = state[0:3]
-          rot_mat = R.from_euler('zyx',state[3:6]).as_matrix()
-      colors = ['red','blue','green']
-      for ii in [0,1,2]:
-        alpha = 0.5
-        v = tuple(rot_mat[:,ii])
-        ax.plot3D((p[0],p[0] + alpha*v[0]),(p[1],p[1]+alpha*v[1]),(p[2],p[2]+alpha*v[2]),colors[ii])
+  #for state in states:
+  #    if (len(state) is 2) or (len(state) is 4):
+  #        p = state[0]
+  #        rot_mat = np.array(state[1])
+  #    elif len(state) is 6:
+  #        p = state[0:3]
+  #        rot_mat = R.from_euler('zyx',state[3:6]).as_matrix()
+  #    colors = ['red','blue','green']
+  #    for ii in [0,1,2]:
+  #      alpha = 0.5
+  #      v = tuple(rot_mat[:,ii])
+  #      ax.plot3D((p[0],p[0] + alpha*v[0]),(p[1],p[1]+alpha*v[1]),(p[2],p[2]+alpha*v[2]),colors[ii])
   max_range = np.array([max(x_list) - min(x_list),max(y_list) - min(y_list),max(z_list) - min(z_list)]).max()
   mid = np.array([(max(x_list)+min(x_list))/2.0,(max(y_list)+min(y_list))/2.0,(max(z_list)+min(z_list))/2.0])
   ax.set_xlim(mid[0]-max_range/2.0,mid[0]+max_range/2.0)
@@ -225,10 +225,14 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser()
   parser.add_argument('fname', help='pickle file')
   args = parser.parse_args()
-  with open(args.fname+'/metadata.pickle','rb') as f:
-    metadata = pickle.load(f)
-  with open(args.fname+'/trajdata.pickle','rb') as f:
+  #with open(args.fname+'/metadata.pickle','rb') as f:
+  #  metadata = pickle.load(f)
+  with open(args.fname+'/traj_data.pickle','rb') as f:
     trajdata = pickle.load(f)
-  ts = np.linspace(0,metadata['tf'],metadata['N']+1)
-  targ = metadata['xf']
-  make_full_plots(ts,trajdata,targ,metadata['cyl_o'],metadata['cyl_r'],metadata['h'],None)
+  with open(args.fname+'/ref_traj.pickle','rb') as f:
+    refdata = pickle.load(f)
+  #ts = np.linspace(0,metadata['tf'],metadata['N']+1)
+  ts = np.linspace(0,15,len(trajdata))
+  #targ = metadata['xf']
+  #make_full_plots(ts,trajdata,targ,metadata['cyl_o'],metadata['cyl_r'],metadata['h'],None)
+  make_full_plots(ts,trajdata,cyl_o = (0,0,0),truth = refdata)#targ,metadata['cyl_o'],metadata['cyl_r'],metadata['h'],None)
