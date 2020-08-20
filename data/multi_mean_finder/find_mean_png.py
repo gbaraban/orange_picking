@@ -2,7 +2,7 @@ import numpy as np
 import os
 from PIL import Image
 
-total_procs = 16
+total_procs = 17
 
 
 fnum = 0
@@ -19,7 +19,7 @@ w = 640
 h = 380
 
 
-base_dir = "../Run20"
+base_dir = "../Run23"
 all_dirs = os.listdir(base_dir)
 all_dirs.sort()
 each = int(len(all_dirs)/total_procs)

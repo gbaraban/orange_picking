@@ -73,7 +73,7 @@ def move_orange(env,orangeName,orangePos,orangeColor,treePos,collisionR,camName=
         r = (r_max + r_min)/2 - collisionR + orange_offset
         tempPos = treePos + np.array([np.cos(theta)*r,np.sin(theta)*r,dx[2]+orange_h_offset])
         if not spawn_orange:
-            tempPos = np.array([0.0, 0.0, 0.0])
+            tempPos = np.array([0.0, 0.0, -1.5])
         orangeAct = np.array([np.hstack((gcopVecToUnity(tempPos),orangeColor,1))])
         env.set_actions(orangeName,orangeAct)
         env.step()
@@ -99,8 +99,10 @@ def move_orange(env,orangeName,orangePos,orangeColor,treePos,collisionR,camName=
         r = r - collisionR
         tempPos = treePos + np.array([np.cos(theta)*(r),np.sin(theta)*(r),dx[2]+orange_h_offset])
         if not spawn_orange:
-            tempPos = np.array([0.0, 0.0, 0.0])
+            tempPos = np.array([0.0, 0.0, -1.5])
+        orangePosTrue = tempPos
         orangeAct = np.array([np.hstack((gcopVecToUnity(tempPos),orangeColor,1))])
+        orangeActTrue = orangeAct
         env.set_actions(orangeName,orangeAct)
         env.step()
         orangeAct = treePos + np.array([np.cos(theta)*(r+orange_offset),np.sin(theta)*(r+orange_offset),dx[2]+orange_h_offset])
@@ -118,4 +120,4 @@ def move_orange(env,orangeName,orangePos,orangeColor,treePos,collisionR,camName=
         obscured_score = np.count_nonzero(image_trunc > threshold)
         occlusion_ratio = 1 - (obscured_score/unobscured_score)
         print("Occluded: ", occlusion_ratio*100, "%")
-        return orangeAct, occlusion_ratio
+        return orangeAct, occlusion_ratio, orangePosTrue, orangeActTrue

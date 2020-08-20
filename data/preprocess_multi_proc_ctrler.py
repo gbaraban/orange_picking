@@ -1,7 +1,7 @@
 import os
 import subprocess
 
-num_procs = 16
+num_procs = 8
 data_loc = "real_world_traj_bag"
 dirs = os.listdir(data_loc)
 

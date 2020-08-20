@@ -76,14 +76,15 @@ def get_variety():
 	return labels, variety
 
 def get_selective_variety():
-	variety = [[10, 6, 2500, 3], [10, 6, 2500, 5], [10, 6, 2500, 7], [10, 6, 2500, 10], [10, 6, 2500, 12], [10, 6, 2500, 15], [10, 6, 2500, 17], [10, 6, 2500, 20], [10, 6, 2500, 25]] #[[10, 6, 100, 5], [10, 6, 150, 10], [10, 6, 250, 12], [10, 6, 250, 15], [10, 6, 350, 15], [10, 6, 500, 20], [10, 6, 500, 25], [10, 6, 600, 20], [10, 6, 600, 25]] 750, 1000 steps
+	variety = [[10, 6, 100, 3], [10, 6, 150, 3], [10, 6, 100, 5], [10, 6, 150, 5], [10, 6, 100, 10], [10, 6, 150, 10], [10, 6, 250, 10], [10, 6, 250, 12],  [10, 6, 350, 12], [10, 6, 250, 15], [10, 6, 350, 15], [10, 6, 250, 20], [10, 6, 350, 20], [10, 6, 500, 15], [10, 6, 500, 20], [10, 6, 500, 25], [10, 6, 600, 15], [10, 6, 600, 20], [10, 6, 600, 25], [10, 6, 750, 20], [10, 6, 750, 15], [10, 6, 1000, 20], [10, 6, 1000, 15]]
+	print(len(variety))
 	labels = ["iters", "outputs", "steps", "hz"]
 	return labels, variety
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--loc', type=str, default="/home/gabe/ws/ros_ws/src/orange_picking/useful_models.csv", help='random seed')
-    parser.add_argument('--j', type=int, default=14, help='approx number of unity threads running')
+    parser.add_argument('--j', type=int, default=12, help='approx number of unity threads running')
     parser.add_argument('--explore', type=int, default=0, help="selective variety or explorative")
     args = parser.parse_args()
 
@@ -95,7 +96,8 @@ def main():
     else:
         labels, vars = get_selective_variety()
     print(data)
-    gpu = [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1]
+    gpu = [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1]
+    print(len(gpu))
     #exit()
     for k in data.keys():
         d = data[k]
@@ -111,7 +113,7 @@ def main():
             for n, v in enumerate(var):
                 t_proc += " --" + str(labels[n]) + " " + str(v) + " "
                 if labels[n] == "iters":
-                    wid += int(v)
+                    wid += int(v + 10)
 
             t_proc += " --worker_id " + str(int(wid))
             t_proc += " --gpu " + str(gpu[i%args.j]) + " "

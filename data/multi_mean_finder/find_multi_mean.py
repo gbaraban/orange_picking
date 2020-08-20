@@ -8,9 +8,10 @@ def main(loc):
 	dirs = os.listdir(loc)
 	for dir in dirs:
 		if dir.startswith("mean"):
+			print(dir)
 			np_file = os.listdir(loc + "/" + dir)[0]
 			size = int(np_file.strip("mean").strip(".npy"))
-			img = np.load(loc + "/" + dir + "/" + np_file)
+			img = np.load(loc + "/" + dir + "/" + np_file,allow_pickle=True)
 			if mean_img is None:
 				mean_img = img
 			else:

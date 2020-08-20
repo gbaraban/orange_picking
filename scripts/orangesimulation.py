@@ -16,9 +16,12 @@ def gcopVecToUnity(v):
     temp = np.array((v[0],v[2],v[1]))
     return temp
 
-def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=None,include_occlusion=False,spawn_orange=True):
+def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=None,include_occlusion=False,spawn_orange=True,exp=None):
     #Create environment
     #print("Create env")
+    if exp is None:
+        exp = trial_num
+
     if args is None:
         env = UnityEnvironment(file_name=env_name,worker_id=trial_num,seed=trial_num)
     else:
@@ -56,11 +59,12 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
                              orangePos[2] + orangeH_rand))
     cR = (0.1 * min(1.0,max(0.0, np.random.normal(0.5)))) + 0.2
     orangePos_i = treePos_i[0:3] + orangeoffset
+    orangePosTrue = orangePos_i
     yaw0_i = np.arctan2(treePos_i[1]-x0_i[1],treePos_i[0]-x0_i[0])
     x0_i = np.hstack((x0_i,yaw0_i,0,0))
     envAct = np.array((np.random.randint(6),np.random.randint(6),0))
     if not plot_only:
-        (camName, envName, orangePos_i, occlusion) = setUpEnv(env,x0_i,treePos_i,orangePos_i,envAct, orangeColor = np.random.randint(9),future_version=future_version,collisionR = cR,spawn_orange=spawn_orange)
+        (camName, envName, orangePos_i, occlusion, orangePosTrue) = setUpEnv(env,x0_i,treePos_i,orangePos_i,envAct, orangeColor = np.random.randint(9),future_version=future_version,collisionR = cR,spawn_orange=spawn_orange, exp=exp)
     else:
         camName = ""
 
@@ -71,7 +75,7 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
     if not include_occlusion or plot_only or occlusion is None:
         return (env,x0_i, camName, envName, orangePos_i,treePos_i)
     else:
-        return (env,x0_i, camName, envName, orangePos_i,treePos_i, occlusion)
+        return (env,x0_i, camName, envName, orangePos_i,treePos_i, occlusion, orangePosTrue)
 
 
 def quat_between(qa, qb, t, quat=False):
@@ -121,7 +125,7 @@ def quat_between(qa, qb, t, quat=False):
 
 
 def setUpEnv(env, x0, treePos, orangePos, envAct=(0,1,0), treeScale = 0.125, orangeScale = 0.07,
-             orangeColor = 0, future_version=False, collisionR = None, spawn_orange=True):
+             orangeColor = 0, future_version=False, collisionR = None, spawn_orange=True, exp=None):
     #print("Reset Env")
     env.reset()
     treeAct = np.array([np.hstack((gcopVecToUnity(treePos[0:3]),treePos[3],1))])
@@ -156,6 +160,7 @@ def setUpEnv(env, x0, treePos, orangePos, envAct=(0,1,0), treeScale = 0.125, ora
     env.step()
     env.set_actions(treeName,treeAct)
     env.step()
+    orangeAct = None
     if (collisionR is None):
         if not spawn_orange:
             orangePos = np.array([0.0, 0.0, 0.0])
@@ -163,12 +168,20 @@ def setUpEnv(env, x0, treePos, orangePos, envAct=(0,1,0), treeScale = 0.125, ora
         env.set_actions(orangeName,orangeAct)
         env.step()
     else:
-        orange, occ_frac = move_orange(env,orangeName,orangePos[0:3],orangeColor,treePos[0:3],collisionR,camName,spawn_orange=spawn_orange)
+        orange, occ_frac, orangePosTrue, orangeAct = move_orange(env,orangeName,orangePos[0:3],orangeColor,treePos[0:3],collisionR,camName,spawn_orange=spawn_orange)
         #TODO: store occ_frac somewhere
     camAct = makeCamAct(x0)
     env.set_actions(camName,camAct)
     env.step()
-    return (camName, envName, orange, occ_frac)
+    if exp is not None:
+        meta = {}
+        meta["env"] = envAct
+        meta["tree"] = treeAct
+        meta["orange"] = orangeAct
+        meta["cam"] = camAct
+        fopen_pickle = open("./meta/trial" + str(exp) + ".pickle", "wb")
+        pickle.dump(meta, fopen_pickle)
+    return (camName, envName, orange, occ_frac, orangePosTrue)
 
 def run_model(model,image_arr,mean_image=None,device=None):
     #Calculate new goal
@@ -417,10 +430,10 @@ def sys_f_gcop(x,goal,dt,goal_time=3,hz=50,plot_flag=False):
     epochs = 10
     q = (0,0,0,#rotation log#(0,0,0,0,0,0,0,0,0,0,0,0)
          0,0,0,#position
-         10,10,5,#rotation rate
-         30,30,30)#velocity
-    qf = (40,40,40,#rotation log
-         15,15,15,#position
+         15,15,15,#rotation rate
+         10,10,10)#velocity
+    qf = (10,10,10,#rotation log
+         10,10,10,#position
          0,0,0,#rotation rate
          0,0,0)#velocity
     r = (.01,.01,.01,0.001)
@@ -506,13 +519,13 @@ def sys_f_linear(x,goal,dt,goal_time=1,plot_flag=False):
     return new_x
 
 def run_sim(args,sys_f,env_name,model,eps=0.3, max_steps=99,dt=0.1,save_path = None,
-            plot_step_flag = False,mean_image = None,trial_num=0,device=None):
+            plot_step_flag = False,mean_image = None,trial_num=0,device=None,exp=None):
     x_list = []
     u_list = []
     ret_val = None
     occ = 1.0
     while occ > 0.6:
-        (env,x,camName,envName,orange,tree,occ) = shuffleEnv(env_name,trial_num=trial_num,args=args,include_occlusion=True) #,spawn_orange=False)#,x0,orange,tree)
+        (env,x,camName,envName,orange,tree,occ,orangePosTrue) = shuffleEnv(env_name,trial_num=trial_num,args=args,include_occlusion=True,exp=exp) #,spawn_orange=False)#,x0,orange,tree)
         if occ > 0.6:
             trial_num += 1
             env.close()
@@ -546,7 +559,7 @@ def run_sim(args,sys_f,env_name,model,eps=0.3, max_steps=99,dt=0.1,save_path = N
             dist = eps + 1
         else:
             dist = np.linalg.norm(x[0] - orange)
-        if dist < eps:#TODO:Change to > when using DAgger
+        if dist < eps and False:#TODO:Change to > when using DAgger
             print("exit if")
             #if save_path is not None:
             #    ts = np.linspace(0,dt*(len(x_list)-1),len(x_list))
@@ -601,14 +614,20 @@ def run_sim(args,sys_f,env_name,model,eps=0.3, max_steps=99,dt=0.1,save_path = N
     if save_path is not None:
         ts = np.linspace(0,dt*(len(x_list)-1),len(x_list))
         print("Saving at ",save_path)
+        metadata = {}
+        metadata["tree"] = tree
+        metadata["orangeTrue"] = orangePosTrue
+        metadata["orange"] = orange
+        pickle.dump(metadata, open(save_path + "metadata.pickle", "wb"))
         pickle.dump(x_list, open(save_path + "traj_data.pickle", "wb"))
         pickle.dump(ref_traj, open(save_path + "ref_traj.pickle", "wb"))
         pickle.dump(u_list, open(save_path + "traj_u_data.pickle", "wb"))
         pickle.dump(u_ref_traj, open(save_path + "ref_u_traj.pickle", "wb"))
 
-        make_full_plots(ts,x_list,orange,tree,saveFolder=save_path,truth=ref_traj) #TODO
+        #make_full_plots(ts,x_list,orange,tree,saveFolder=save_path,truth=ref_traj) #TODO
     #print("Close Env")
-    env.close()
+    if ret_val is None:
+        env.close()
     score = None
     gcop_score = None
     if len(u_list) != 0:
@@ -722,14 +741,14 @@ def main():
   while exp < (args.iters-1) or args.iters is -1:
     trial_num += 1
     exp += 1
-    print('Trial Number ',trial_num)
+    print('Trial Number ', exp)
     #Filenames
-    foldername = "trial" + str(trial_num) + "/"
+    foldername = "trial" + str(exp) + "/"
     os.makedirs(globalfolder + foldername)
     err_code, trial_num = run_sim(args,sys_f_gcop,args.env,model,plot_step_flag = args.plot_step,
                        max_steps=args.steps,dt=(1.0)/args.hz,device=device,
-                       save_path = globalfolder+foldername,mean_image=mean_image,trial_num=trial_num)
-
+                       save_path = globalfolder+foldername,mean_image=mean_image,trial_num=trial_num,exp=exp)
+    time.sleep(5)
     if err_code is not 0:
       print('Simulation did not converge.  code is: ', err_code)
 

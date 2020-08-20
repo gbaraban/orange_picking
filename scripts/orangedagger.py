@@ -237,7 +237,7 @@ def run_DAgger(args,sys_f,env_name,model,data_list=[],j=4,device=None,
         print("Running Environment ",ctr)
         occ = 1.0
         while occ > 0.6:
-            (env,x0,camName,envName,orange,tree,occ) = shuffleEnv(env_name,trial_num=exp,include_occlusion=True,args=args)
+            (env,x0,camName,envName,orange,tree,occ,orangePosTrue) = shuffleEnv(env_name,trial_num=exp,include_occlusion=True,args=args)
             if occ > 0.6:
                 exp += 1
                 env.close()

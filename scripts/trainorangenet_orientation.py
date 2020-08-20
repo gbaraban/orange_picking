@@ -395,10 +395,18 @@ def main():
     parser.add_argument('--data_aug_flip',type=int,default=1, help='Horizontal flipping on/off')
     parser.add_argument('--real_test',type=int,default=0,help='self.h = 380/480')
     parser.add_argument('--freeze',type=str,default="",help='layer to freeze while training, linear or conv')
+    parser.add_argument('--plot_data',type=int,default=0,help="plot data for accuracy")
+    parser.add_argument('--input_size',type=float,default=1,help='input size change')
+
     args = parser.parse_args()
 
     if args.custom == "":
         args.custom = None
+
+    if args.plot_data == 0:
+        args.plot_data = False
+    else:
+        args.plot_data = True
 
     if args.yaw_only == 0:
         args.yaw_only = False
@@ -458,7 +466,7 @@ def main():
     #mean_image = np.zeros((model.w, model.h, 3))
     #img_trans = None 
     #Create dataset class
-    dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, custom_dataset=args.custom)
+    dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, custom_dataset=args.custom, input=args.input_size)
 
     #Break up into validation and training
     #val_perc = 0.07
@@ -521,9 +529,9 @@ def main():
         n_outputs = 6
 
     if not args.resnet18:
-        model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,retrain_off=args.freeze)
+        model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,retrain_off=args.freeze,input=args.input_size)
     else:
-        model = OrangeNet18(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test)
+        model = OrangeNet18(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,input=args.input_size)
 
     if args.load:
         if os.path.isfile(args.load):
@@ -774,8 +782,9 @@ def main():
             for ii in plotting_data['idx']:
                 plotting_data['data'][ii].append(resnet_output[ii,:,:,:])
 
-            with open(plot_data_path+'/data.pickle','wb') as f:
-                pickle.dump(plotting_data,f,pickle.HIGHEST_PROTOCOL)
+            if args.plot_data:
+                with open(plot_data_path+'/data.pickle','wb') as f:
+                    pickle.dump(plotting_data,f,pickle.HIGHEST_PROTOCOL)
         if not args.yaw_only:
             val_loss = [val_loss[temp].item()/len(val_loader) for temp in range(6)]
         else:

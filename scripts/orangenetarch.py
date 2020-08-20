@@ -77,14 +77,14 @@ def make_layer8(in_size,out_size,stride_length=1):
             #Block8(out_size,out_size))
 
 class OrangeNet8(torch.nn.Module):
-    def __init__(self, capacity = 1, num_img = 1, num_pts = 3, bins = 30, mins = None, maxs = None, n_outputs = 3, real_test = False, retrain_off = ""):
+    def __init__(self, capacity = 1, num_img = 1, num_pts = 3, bins = 30, mins = None, maxs = None, n_outputs = 3, real_test = False, retrain_off = "", input = 1.0):
         super(OrangeNet8, self).__init__()
         #Parameters
-        self.w = 640 #300
+        self.w = 640 * input #300
         if real_test:
-            self.h = 480
+            self.h = 480 * input
         else:
-            self.h = 380 #200
+            self.h = 380 * input #200
         self.num_points = num_pts
         self.num_images = num_img
         self.f = capacity#5.0#2.0#1.5#125#1#0.25
@@ -106,6 +106,10 @@ class OrangeNet8(torch.nn.Module):
             linear_layer_size = 43008
         else:
             linear_layer_size = 34944
+
+        if input == 0.5:
+            linear_layer_size = 9856
+
         in_size = linear_layer_size*self.f#122880#temp
         self.fc1 = nn.Linear(int(in_size),int(4096*self.f))
         self.fc2 = nn.Linear(int(4096*self.f),int(2048*self.f))
@@ -146,14 +150,14 @@ class OrangeNet8(torch.nn.Module):
         return x
 
 class OrangeNet18(torch.nn.Module):
-    def __init__(self, capacity = 1, num_img = 1, num_pts = 3, bins = 30, mins = None, maxs = None, n_outputs = 3, real_test = False):
+    def __init__(self, capacity = 1, num_img = 1, num_pts = 3, bins = 30, mins = None, maxs = None, n_outputs = 3, real_test = False, input = 1.0):
         super(OrangeNet18, self).__init__()
         #Parameters
-        self.w = 640 #300
+        self.w = 640 * input #300
         if real_test:
-            self.h = 480
+            self.h = 480 * input
         else:
-            self.h = 380 #200 
+            self.h = 380 * input #200 
         self.num_points = num_pts
         self.num_images = num_img
         self.f = capacity#5.0#2.0#1.5#125#1#0.25

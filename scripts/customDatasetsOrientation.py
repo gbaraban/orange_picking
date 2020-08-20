@@ -10,7 +10,7 @@ from torch.utils.data import Dataset, DataLoader
 from customTransforms import *
 import pickle
 from scipy.spatial.transform import Rotation as R
-
+import cv2
 
 class SubSet(Dataset):
     def __init__(self,dataset,idx):
@@ -22,7 +22,7 @@ class SubSet(Dataset):
         return self.ds[self.idx[i]]
 
 class OrangeSimDataSet(Dataset):
-    def __init__(self, root_dir, num_images, num_pts, pt_trans, img_trans, dt = 1, reduce_N = True, custom_dataset = None):
+    def __init__(self, root_dir, num_images, num_pts, pt_trans, img_trans, dt = 1, reduce_N = True, custom_dataset = None, input = 1.0):
         self.point_transform = pt_trans
         self.image_transform = img_trans
         self.num_pts = num_pts
@@ -38,6 +38,7 @@ class OrangeSimDataSet(Dataset):
         self.num_samples_dir_size = {}
         self.h = {}
         self.custom_dataset = custom_dataset
+        self.input_size = input
 
         if self.custom_dataset is None:
             if reduce_N:
@@ -144,6 +145,11 @@ class OrangeSimDataSet(Dataset):
         for ii in range(self.num_images):
             temp_idx = max(0,image_idx - int(ii*self.h[trial]))
             temp_image = np.load(self.np_dir+trial+'/image'+str(temp_idx)+'.npy')
+            if self.input_size != 1.0:
+                h, w, _ = temp_image.shape
+                h *= self.input_size
+                w *= self.input_size
+                temp_image = cv2.resize(temp_image, dsize=(int(h), int(w)), interpolation=cv2.INTER_CUBIC)
             temp_image = np.transpose(temp_image,[2,0,1])
             #if self.image_transform:
             #    temp_image = self.image_transform(temp_image)
