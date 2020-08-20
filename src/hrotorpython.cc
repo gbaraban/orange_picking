@@ -25,7 +25,46 @@ using namespace gcop;
 typedef Ddp<Body3dState, 12, 4> HrotorDdp;
 typedef ConstraintCost<Body3dState, 12, 4, Dynamic, 3> DirectionConstraintCost;
 
-//Params params;
+/**********************************
+hrotorpython.cc guide:
+***********************************
+This file contains the functions being exported to Python as the gcophrotor library.
+It contains the following functions:
+
+void solver_process(int N, double tf, int epochs, Body3dState x0,
+		    Vector3d xfp, double yawf, Vector3d cyl_o, double cyl_r, double cyl_h,
+                    Vector12d q, Vector12d qf, Vector4d r, 
+		    double yawgain, double rpgain,double dir_gain,
+                    double stiffness, double stiff_mult, vector<Body3dState> &xout, vector<Vector4d> &us)
+
+void solver_process_goal(int N, double tf, int epochs, Body3dState x0,
+     Body3dState goal1, Body3dState goal2, Body3dState goal3,
+     Vector12d q, Vector12d qf, Vector4d r, double yawgain, double rpgain,double dir_gain,
+     vector<Body3dState> &xout, vector<Vector4d> &us)
+
+static PyObject * gcophrotor_trajgen_R(PyObject *self, PyObject *args)
+static PyObject * gcophrotor_trajgen_goal(PyObject *self, PyObject *args)
+static PyObject * gcophrotor_trajgen(PyObject *self, PyObject *args)
+static PyObject * gcophrotor_dynamic_step(PyObject *self, PyObject *args)
+PyMODINIT_FUNC PyInit_gcophrotor(void)
+*/
+
+/*Helper Function that performs DDP 
+Args:
+N: The length (in points) of the desired trajectory
+tf: The length (in time) of the desired trajectory
+epochs: The number of DDP iterations to perform at each stiffness level
+x0: The initial state
+xfp: The desired final position
+yawf: The desired final yaw
+cyl_o, cyl_r, cyl_h: The base location, radius, and height of the cylinder obstacle
+q, qf, r: The weights for the quadratic cost
+yawgain: The weight on the yaw pointing error cost
+rpgain, dir_gain: The weights for roll/pitch and direction costs (currently unused)
+stiffness: The final stiffness used for the obstacle costs
+stiff_mult: The rate of increase of the stiffness.  At first, the stiffness is set to 0, then 1, then multiplied by stiff_mult until it reaches the final stiffness.
+xout, us: The vectors populated with the result trajectory
+*/
 void solver_process(int N, double tf, int epochs, Body3dState x0,
 		    Vector3d xfp, double yawf, Vector3d cyl_o, double cyl_r, double cyl_h,
                     Vector12d q, Vector12d qf, Vector4d r, 
@@ -137,6 +176,24 @@ void solver_process(int N, double tf, int epochs, Body3dState x0,
   }
 }
 
+/*Python called function to perform DDP analysis with initial state fully defined:
+Args:
+N: Number of points
+tf: length (in seconds) of the trajectory
+epochs: Number of iterations at each stiffness level
+(x0,x0y,x0z): python 3-tuple of initial position
+(R): python 9-tuple of initial orientation
+(v0x, v0y, v0z): python 3-tuple of initial velocity
+(w0x, w0y, w0z): python 3-tuple of initial rotation rate
+(xfx,xfy,xfz): python 3-tuple of final position
+yawf: final yaw
+(cx,cy,cz): python 3-tuple of cylinder location
+cyl_r: cylinder radius
+cyl_h: cylinder height
+q, qf, r: python tuples with quadratic cost weights
+yawgain, rpgain, dir_gain: gains for pointing error costs (see solver_process for details)
+stiffness, stiff_mult: stiffness final level and growth rate for obstacle costs.
+*/
 static PyObject *
 gcophrotor_trajgen_R(PyObject *self, PyObject *args)
 {
@@ -233,7 +290,18 @@ gcophrotor_trajgen_R(PyObject *self, PyObject *args)
   return retObj;
 }
 
-//Params params;
+/*Helper Function that performs DDP 
+Args:
+N: The length (in points) of the desired trajectory
+tf: The length (in time) of the desired trajectory
+epochs: The number of DDP iterations to perform at each stiffness level
+x0: The initial state
+goal1, goal2, goal3: The waypoint states (equally spaced in time)
+q, r: The weights for the quadratic running cost
+qf: The weights for the waypoint cost
+yawgain, rpgain, dir_gain: (currently unused)
+xout, us: The vectors populated with the result trajectory
+*/
 void solver_process_goal(int N, double tf, int epochs, Body3dState x0,
      Body3dState goal1, Body3dState goal2, Body3dState goal3,
      Vector12d q, Vector12d qf, Vector4d r, double yawgain, double rpgain,double dir_gain,
@@ -332,6 +400,16 @@ void solver_process_goal(int N, double tf, int epochs, Body3dState x0,
   }
 }
 
+/*Python called function to perform DDP analysis with waypoint costs:
+Args:
+N: Number of points
+tf: length (in seconds) of the trajectory
+epochs: Number of iterations
+((x0,x0y,x0z)(R),(v),(w)): python tuple of (3-tuple of initial position, 9-tuple of initial orientation, 3-tuple of initial velocity, and 3-tuple of initial rotation rate)
+(g1, R1), (g2,R2), (g3,R3): three tuples of (3-tuple of waypoint position, 9-tuple of waypoint orientation)
+q, qf, r: python tuples with quadratic cost weights
+yawgain, rpgain, dir_gain: gains for pointing error costs (currently unused)
+*/
 static PyObject *
 gcophrotor_trajgen_goal(PyObject *self, PyObject *args)
 {
@@ -446,8 +524,23 @@ gcophrotor_trajgen_goal(PyObject *self, PyObject *args)
   return retObj;
 }
 
-static PyObject *
-gcophrotor_trajgen(PyObject *self, PyObject *args)
+/*Python called function to perform DDP analysis:
+Args:
+N: Number of points
+tf: length (in seconds) of the trajectory
+epochs: Number of iterations at each stiffness level
+(x0,x0y,x0z): python 3-tuple of initial position
+yaw0: initial yaw
+(xfx,xfy,xfz): python 3-tuple of final position
+yawf: final yaw
+(cx,cy,cz): python 3-tuple of cylinder location
+cyl_r: cylinder radius
+cyl_h: cylinder height
+q, qf, r: python tuples with quadratic cost weights
+yawgain, rpgain, dir_gain: gains for pointing error costs (see solver_process for details)
+stiffness, stiff_mult: stiffness final level and growth rate for obstacle costs.
+*/
+static PyObject * gcophrotor_trajgen(PyObject *self, PyObject *args)
 {
   
   int N;
@@ -533,8 +626,16 @@ gcophrotor_trajgen(PyObject *self, PyObject *args)
   return retObj;
 }
 
-static PyObject *
-gcophrotor_dynamic_step(PyObject *self, PyObject *args)
+/*Perform a single step of the system dynamics:
+Args:
+t: The time at which the step takes place and the length of the step
+(x,y,z): Python 3-tuple initial position
+(R): Python 9-tuple initial orientation
+(v): Python 3-tuple initial velocity
+(w): Python 3-tuple initial rotation rate
+(u): Python 4-tuple of input
+*/
+static PyObject * gcophrotor_dynamic_step(PyObject *self, PyObject *args)
 {
   double t;
   double R01, R02, R03;
@@ -568,6 +669,8 @@ gcophrotor_dynamic_step(PyObject *self, PyObject *args)
 		  xb.w(0),xb.w(1),xb.w(2));
   return tuple;
 }
+
+//The methods exported to python.
 static PyMethodDef pyMethods[] = {
   {"trajgen", gcophrotor_trajgen, METH_VARARGS, "Generate a trajectory."},
   {"trajgen_R", gcophrotor_trajgen_R, METH_VARARGS, "Generate a trajectory with R fully defined."},
@@ -576,13 +679,16 @@ static PyMethodDef pyMethods[] = {
   {NULL, NULL, 0, NULL}
 };
 
+//The gcophrotor details used by python
 static struct PyModuleDef gcophrotor_definition = {
   PyModuleDef_HEAD_INIT,
   "gcophrotor",
   "GCOP with Hrotor",
   -1,
   pyMethods};
-
+/*Setup function
+Used by setup.py to create a python library using the functions defined in pyMethods[]
+*/
 PyMODINIT_FUNC PyInit_gcophrotor(void)
 {
   //(void) PyInitModule("GCOP Hrotor", pyMethods);

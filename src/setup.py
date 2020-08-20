@@ -1,5 +1,6 @@
 from distutils.core import setup, Extension
 
+#Parameters for compiling gcophrotor into a .so file
 module1 = Extension('gcophrotor',
           include_dirs = [#'/home/gabe/rosSrc/dependencies/gcop/lib/utils',
                           #'/home/gabe/rosSrc/dependencies/gcop/lib/algos',

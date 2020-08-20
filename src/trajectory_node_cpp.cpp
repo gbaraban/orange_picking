@@ -31,6 +31,39 @@ using namespace std;
 using namespace Eigen;
 using namespace gcop;
 
+/**********************************
+trajectory_node_cpp.cpp guide:
+***********************************
+This file defines a ROS node that runs GCOP trajectory generation on received goal point lists.
+It contains the following functions:
+
+void solver_process_goal(int N, double tf, int epochs, Body3dState x0,
+     Body3dState goal1, Body3dState goal2, Body3dState goal3,
+     Vector12d q, Vector12d qf, Vector4d r, vector<Body3dState> &xout, vector<Vector4d> &us)
+
+void quat2Matrix(double x, double y, double z, double w, Matrix3d& R)
+
+void quat2Matrix(tf2::Quaternion temp_quat, Matrix3d& R)
+
+tf2::Quaternion matrix2Quat(Matrix3d& R)
+
+void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
+
+TrajectoryNode(): lis(tfBuffer)
+
+int main(int argc, char **argv)
+
+To use this file, compile it with catkin and use rosrun or roslaunch to run "orange_picking trajectory_node_cpp"
+When started, the main function will start a ROS node and call the TrajectoryNode constructor.
+The constructor will check the ROS parameter server for the values of all pertinent params, then start listening
+for goal messages.
+In the callback for goal messages, the node will check TF for the current position/orientation of the system, then add the goals to TF as well.  If filter_alpha was specified as a parameter, it will perform a low-pass filter on 
+the goals first.
+After putting the goals into the world frame, the callback calls solver_process_goal, which is copied from 
+hrotorpython.cc.  The values of the gains/weights for the cost function are hardcoded and should be double-checked
+before use.  After using DDP to find an optimal trajectory, the result is published to a path topic.
+********************************/
+
 class TrajectoryNode
 {
 
@@ -39,28 +72,21 @@ typedef ConstraintCost<Body3dState, 12, 4, Dynamic, 3> DirectionConstraintCost;
 
 public:
 
-//Params params;
+/*Runs DDP on the specified goals to create an optimal trejectory
+Args:
+N: The length (in points) of the desired trajectory
+tf: The length (in time) of the desired trajectory
+epochs: The number of DDP iterations to run
+x0: The starting position
+goal1, goal2, goal3: The desired waypoints.  They are assumed to be equally spaced in time.
+q, r: The weights of the quadratic running cost
+qf: The weights of the waypoint cost
+xout, us: The vectors to populate with the resulting trajectory
+*/
 void solver_process_goal(int N, double tf, int epochs, Body3dState x0,
      Body3dState goal1, Body3dState goal2, Body3dState goal3,
-     Vector12d q, Vector12d qf, Vector4d r, double yawgain, double rpgain,double dir_gain,
-     vector<Body3dState> &xout, vector<Vector4d> &us)
+     Vector12d q, Vector12d qf, Vector4d r, vector<Body3dState> &xout, vector<Vector4d> &us)
 {
-/*  cout << "x0: pos: " << x0.p[0] << " " << x0.p[1] << " " << x0.p[2] << endl;
-  cout << "x0: Rot: " << endl << x0.R(0,0) << " " << x0.R(0,1) << " " << x0.R(0,2) << endl;
-  cout << x0.R(1,0) << " " << x0.R(1,1) << " " << x0.R(1,2) << endl;
-  cout << x0.R(2,0) << " " << x0.R(2,1) << " " << x0.R(2,2) << endl;
-  cout << "goal1: pos: " << goal1.p[0] << " " << goal1.p[1] << " " << goal1.p[2] << endl;
-  cout << "goal1: Rot: " << endl << goal1.R(0,0) << " " << goal1.R(0,1) << " " << goal1.R(0,2) << endl;
-  cout << goal1.R(1,0) << " " << goal1.R(1,1) << " " << goal1.R(1,2) << endl;
-  cout << goal1.R(2,0) << " " << goal1.R(2,1) << " " << goal1.R(2,2) << endl;
-  cout << "goal2: pos: " << goal2.p[0] << " " << goal2.p[1] << " " << goal2.p[2] << endl;
-  cout << "goal2: Rot: " << endl << goal2.R(0,0) << " " << goal2.R(0,1) << " " << goal2.R(0,2) << endl;
-  cout << goal2.R(1,0) << " " << goal2.R(1,1) << " " << goal2.R(1,2) << endl;
-  cout << goal2.R(2,0) << " " << goal2.R(2,1) << " " << goal2.R(2,2) << endl;
-  cout << "goal3: pos: " << goal3.p[0] << " " << goal3.p[1] << " " << goal3.p[2] << endl;
-  cout << "goal3: Rot: " << endl << goal3.R(0,0) << " " << goal3.R(0,1) << " " << goal3.R(0,2) << endl;
-  cout << goal3.R(1,0) << " " << goal3.R(1,1) << " " << goal3.R(1,2) << endl;
-  cout << goal3.R(2,0) << " " << goal3.R(2,1) << " " << goal3.R(2,2) << endl;*/
   //Parameters
   double h = tf/N;
   //System
@@ -122,6 +148,11 @@ void solver_process_goal(int N, double tf, int epochs, Body3dState x0,
   }
 }
 
+/*Constructs a matrix out of a quaternion, using 4 doubles as inputs
+Args:
+x,y,z,w: The quaternion input
+R: The matrix output
+*/
 void quat2Matrix(double x, double y, double z, double w, Matrix3d& R) {
   tf2::Quaternion temp_quat(x,y,z,w);
   tf2::Matrix3x3 temp_mat(temp_quat);
@@ -130,6 +161,11 @@ void quat2Matrix(double x, double y, double z, double w, Matrix3d& R) {
           temp_mat[2][0], temp_mat[2][1], temp_mat[2][2]; 
 }
 
+/*Constructs a matrix out of a quaternion, using a quaternion object as input
+Args:
+temp_quat: The quaternion input
+R: The matrix output
+*/
 void quat2Matrix(tf2::Quaternion temp_quat, Matrix3d& R) {
   tf2::Matrix3x3 temp_mat(temp_quat);
   R << temp_mat[0][0], temp_mat[0][1], temp_mat[0][2],
@@ -137,6 +173,10 @@ void quat2Matrix(tf2::Quaternion temp_quat, Matrix3d& R) {
           temp_mat[2][0], temp_mat[2][1], temp_mat[2][2]; 
 }
 
+/*Constructs a quaternion out of a matrix
+Args:
+R: The matrix input
+*/
 tf2::Quaternion matrix2Quat(Matrix3d& R) {
   tf2::Matrix3x3 temp_mat;
   for (int jj = 0; jj < 3; ++jj) {
@@ -150,6 +190,13 @@ tf2::Quaternion matrix2Quat(Matrix3d& R) {
   return temp_quat;
 }
  
+/*Handles messages of containing goal points
+Args:
+msg: The goal points message (should contain 3 points)
+Assumes that the 3 goal points are associated with 1, 2, and 3 seconds in the future.
+If the transform between world_name and matrice_name cannot be found within 5 seconds of message receipt, the
+message is skipped and a warning is printed.
+*/
 void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
 {
   cout << "Callback triggered" << endl;
@@ -167,32 +214,12 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   }
   x0.p << temp.transform.translation.x, temp.transform.translation.y, temp.transform.translation.z;
   quat2Matrix(temp.transform.rotation.x,temp.transform.rotation.y,temp.transform.rotation.z,temp.transform.rotation.w,x0.R);
-  //tf2::Quaternion temp_quat(temp.transform.rotation.x,temp.transform.rotation.y,temp.transform.rotation.z,temp.transform.rotation.w);
-  //tf2::Matrix3x3 temp_mat(temp_quat);
-  /*cout << "x0 temp_mat: " << endl;
-  for (int ii = 0; ii < 3; ++ ii) {
-    for (int jj = 0; jj < 3; ++ jj) {
-      cout << temp_mat[ii][jj] << " ";
-    }
-    cout << endl;
-  }*/
-  //x0.R << temp_mat[0][0], temp_mat[0][1], temp_mat[0][2],
-  //        temp_mat[1][0], temp_mat[1][1], temp_mat[1][2],
-  //        temp_mat[2][0], temp_mat[2][1], temp_mat[2][2]; 
   Body3dState goal[3];
   for (int ii = 0; ii < 3; ++ii){
     Vector3d local_p;
     local_p << msg->poses[ii].position.x, msg->poses[ii].position.y, msg->poses[ii].position.z;
-    //tf2::convert(msg->poses[ii].orientation,temp_quat);
     Matrix3d local_R;
     quat2Matrix(msg->poses[ii].orientation.x,msg->poses[ii].orientation.y,msg->poses[ii].orientation.z,msg->poses[ii].orientation.w,local_R);
-    /*temp_quat = tf2::Quaternion(msg->poses[ii].orientation.x,msg->poses[ii].orientation.y,msg->poses[ii].orientation.z,msg->poses[ii].orientation.w);
-    temp_mat = tf2::Matrix3x3(temp_quat);
-    local_R << temp_mat[0][0], temp_mat[0][1], temp_mat[0][2],
-               temp_mat[1][0], temp_mat[1][1], temp_mat[1][2],
-               temp_mat[2][0], temp_mat[2][1], temp_mat[2][2];*/
-    //goal[ii].p = x0.R*local_p + x0.p;
-    //goal[ii].R = x0.R*local_R;
     Vector3d new_pos = x0.R*local_p + x0.p;
     Matrix3d new_rot = x0.R*local_R;
     if (first_call) {
@@ -230,7 +257,6 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   vector<Body3dState> xs(N+1);
   vector<Vector4d> us(N);
   solver_process_goal(N, tf, epochs, x0, goal[0], goal[1], goal[2],q, qf, r, yawgain, rpgain, dir_gain, xs, us);
-  //cout << "Solved: pos: " << xs[0].p[0] << " " << xs[0].p[1] << " " << xs[0].p[2] << endl;
   nav_msgs::Path pa;
   pa.poses.clear();
   pa.header.stamp = ros::Time::now();
@@ -242,13 +268,6 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
     p.pose.position.x = xs[ii].p[0];
     p.pose.position.y = xs[ii].p[1];
     p.pose.position.z = xs[ii].p[2];
-    /*for (int jj = 0; jj < 3; ++jj) {
-      for (int kk = 0; kk < 3; ++kk) {
-        double temp_val = xs[ii].R(jj,kk);
-        temp_mat[jj][kk] = temp_val;
-      }
-    }
-    temp_mat.getRotation(temp_quat);*/
     tf2::Quaternion temp_quat = matrix2Quat(xs[ii].R);
     p.pose.orientation.x = temp_quat.getX();
     p.pose.orientation.y = temp_quat.getY();
@@ -256,12 +275,20 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
     p.pose.orientation.w = temp_quat.getW();
     pa.poses.push_back(p);
   }
-  //cout << "Publishing pa" << endl;
   pub.publish(pa);
   cout << "Callback Ended" << endl;
   first_call = false;
 }
 
+/*Sets up of the node subscriber and publisher
+Checks the following params:
+path_topic: The topic to publish the path to.  Defaults to "path"
+goal_topic: The topic to subscribe to for goals.  Defaults to "goal_points"
+matrice_name: The quadcopter name in TF.  Defaults to "matrice"
+world_name: The base transform name in TF.  Defaults to "world"
+goal_name: The name to use for goal points in TF.  Defaults to "goal"
+filter_alpha: Amount of filtering to use on the goal points.  Defaults to 1, which corresponds to no filtering.
+*/
 TrajectoryNode(): lis(tfBuffer)
 {
   std::string path_topic, goal_topic;
@@ -292,7 +319,6 @@ TrajectoryNode(): lis(tfBuffer)
   pub = n.advertise<nav_msgs::Path>(path_topic,1000);
   sub = n.subscribe(goal_topic,1000,&TrajectoryNode::callback,this);
   first_call = true;
-  //lis = tf2_ros::TransformListener(tfBuffer);
 }
 
 tf2_ros::Buffer tfBuffer;
@@ -309,7 +335,9 @@ vector<Vector3d> last_pos;
 vector<tf2::Quaternion> last_quat;
 bool first_call;
 };
-
+/*The main function
+Builds an instance of TrajectoryNode and then spins.
+*/
 int main(int argc, char **argv)
 {
   cout << "Init" << endl;
