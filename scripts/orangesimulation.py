@@ -12,10 +12,48 @@ import gcophrotor
 from orangeimages import *
 import time
 
+################################
+#orangesimulation.py guide:
+################################
+
+# This file is used to handle unity simulation and iterfacing with GCOP.  It can be run itself, and also can be 
+# used as a utility library for other scripts.
+#
+# When run from the command line, this script runs the main function (see below).  
+#
+# Functions in this file:
+# gcopVecToUnity(v):
+# shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=None,include_occlusion=False,spawn_orange=True,exp=None):
+# quat_between(qa, qb, t, quat=False):
+# setUpEnv(env, x0, treePos, orangePos, envAct=(0,1,0), treeScale = 0.125, orangeScale = 0.07,
+#          orangeColor = 0, future_version=False, collisionR = None, spawn_orange=True, exp=None):
+# run_model(model,image_arr,mean_image=None,device=None):
+# trajCost(x_traj,u_traj,tree,orange,tf=10):
+# run_gcop(x,tree,orange,t=0,tf=10,N=100,save_path=None):
+# sys_f_gcop(x,goal,dt,goal_time=3,hz=50,plot_flag=False):
+# sys_f_linear(x,goal,dt,goal_time=1,plot_flag=False):
+# run_sim(args,sys_f,env_name,model,eps=0.3, max_steps=99,dt=0.1,save_path = None,
+#         plot_step_flag = False,mean_image = None,trial_num=0,device=None,exp=None):
+# main():
+
+# Takes in a 3-vector and flips it into GCOP coordinates.
 def gcopVecToUnity(v):
     temp = np.array((v[0],v[2],v[1]))
     return temp
 
+# Given a file name for a unity executable, create an instance of the Unity Environment.  
+# Then, using preset parameters, the environment is randomized.  These environments are then passed into Unity via
+# setUpEnv.  
+# 
+# Args:
+# env_name: The unity executable name
+# plot_only: When flag is set, skips Unity stuff, just creating random states and returning it.
+# future_version: Flag passed through to setUpEnv
+# trial_num: Used as a thread ID for the UnityEnvironment.  Should be different each time to stop bugs.
+# args: Passed through UnityEnvironment parameters
+# include_occlusion: Flag to change return values.
+# spawn_orange: Flag passed to setUpEnv to optionally omit the orange.  Used for exploration studies.
+# exp: Passed through to setUpEnv.  #TODO: Sid, can you explain this more?
 def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=None,include_occlusion=False,spawn_orange=True,exp=None):
     #Create environment
     #print("Create env")
@@ -77,7 +115,11 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
     else:
         return (env,x0_i, camName, envName, orangePos_i,treePos_i, occlusion, orangePosTrue)
 
-
+#Iterpolates between two quaternions. 
+#Args:
+#qa, qb: quaternions to iterpolate between
+#t: ratio for interpolation.  0 corresponds to qa and 1 corresponds to qb
+#quat: switches return format between quaternion and rotation matrix.
 def quat_between(qa, qb, t, quat=False):
         if not quat:
                 qa = R.from_euler("zyx",qa).as_quat()
@@ -123,7 +165,19 @@ def quat_between(qa, qb, t, quat=False):
 
         return qm
 
-
+# Given a UnityEnvironment object, makes the environment ready for use in simulation.
+# Args:
+# env: UnityEnvironment object.
+# x0: the initial state of the quadcopter.
+# treePos: 4-tuple of tree x, y, z, and yaw
+# orangePos: 3-tuple of orange position.  If collisionR is turned on, this is used to define height and angle.
+# envAct: 3-tuple of environmental settings.  Currently only the first two entries are used (for ground and sky colors). The third is a place holder for when tree randomization is installed.
+# treeScale, orangeScale: Currently unused
+# orangeColor: Changes the color of the orange.
+# future_version: Switches which function to use to get behavior names.
+# collisionR: If set, uses the unity collision detector to move the orange to an intersecting location.
+# spawn_orange: If false, turns off the orange.
+# exp: TODO: Sid, can you explain this?
 def setUpEnv(env, x0, treePos, orangePos, envAct=(0,1,0), treeScale = 0.125, orangeScale = 0.07,
              orangeColor = 0, future_version=False, collisionR = None, spawn_orange=True, exp=None):
     #print("Reset Env")
@@ -183,6 +237,12 @@ def setUpEnv(env, x0, treePos, orangePos, envAct=(0,1,0), treeScale = 0.125, ora
         pickle.dump(meta, fopen_pickle)
     return (camName, envName, orange, occ_frac, orangePosTrue)
 
+#Performs inference using a given torch model
+#Args:
+#model: Torch model
+#image_arr: numpy array of the image from Unity
+#mean_image: mean_image for subtraction
+#device: torch device to run the model.
 def run_model(model,image_arr,mean_image=None,device=None):
     #Calculate new goal
     if mean_image is None:
@@ -209,6 +269,14 @@ def run_model(model,image_arr,mean_image=None,device=None):
     #print(goal[0,:])
     return goal
 
+# Calculates the cost of a full trajectory.  
+# Based on the GCOP cost used in trajgen.
+# Args:
+#x_traj: list of quad states
+#u_traj: list of controls
+#tree: location of the tree NOTE: cylinder radius and height are hardcoded
+#orange: location of the orange
+#tf: time duration of the trajectory.
 def trajCost(x_traj,u_traj,tree,orange,tf=10):
     N = len(x_traj)-1
     dt = float(tf)/N
@@ -374,6 +442,15 @@ def trajCost(x_traj,u_traj,tree,orange,tf=10):
             cost = cost[0]
     return cost
 
+#Performs the GCOP analysis to create an expert trajectory
+#Args:
+#x: initial state
+#tree: tree location
+#orange: orange location
+#t: initial time
+#tf: final time
+#N: number of points in the trajectory
+#save_path: Optional path to save result.
 def run_gcop(x,tree,orange,t=0,tf=10,N=100,save_path=None):#TODO:Add in args to adjust more params
     epochs = 600
     stiffness = 500
@@ -425,6 +502,14 @@ def run_gcop(x,tree,orange,t=0,tf=10,N=100,save_path=None):#TODO:Add in args to 
             stiffness,stiff_mult)
     return ref_traj
 
+# Uses GCOP's waypoint cost to produce a trajectory through some goal points.
+#Args:
+#x: initial state
+#goal: list of 6-tuples corresponding to local waypoints.
+#dt: The functions returns the first dt seconds of the trajectory generated by GCOP.
+#goal_time: The time length of the GCOP trajectory.  Should correspond to the timestamp of the final waypoint.
+#hz: The number of states to simulate per second.
+#plot_flag: A flag to show a plot of the returned trajectory.  Useful for debugging.
 def sys_f_gcop(x,goal,dt,goal_time=3,hz=50,plot_flag=False):
     N = goal_time*hz
     epochs = 10
@@ -473,6 +558,13 @@ def sys_f_gcop(x,goal,dt,goal_time=3,hz=50,plot_flag=False):
         make_step_plot(goal_list,ref_traj[0:final_idx])
     return ref_traj[0:final_idx], ref_u_traj[0:final_idx]
 
+#Returns a linear interpolation between the current state and the first waypoint.
+#Args:
+#x: current state:
+#goal: waypoints. Only the first is used.
+#dt: the amount of time to simulate
+#goal_time: the time associated with the first goal point.
+#plot_flag: flag to show a plot of the resulting step.
 def sys_f_linear(x,goal,dt,goal_time=1,plot_flag=False):
     time_frac = dt/goal_time
     #goal_pt = goal[0]
@@ -518,6 +610,16 @@ def sys_f_linear(x,goal,dt,goal_time=1,plot_flag=False):
     #exit(0)
     return new_x
 
+#Runs a full simulation.  First shuffles the environment, then uses the model to generate the next location.
+#Args:
+#args: passed through from main to other arguments.  #TODO: Sid, can you explain what this does?
+#sys_f: The function to be used for taking steps.
+#env_name: The unity executable name
+#model: The torch model to use
+#eps: Unused
+#max_steps: The number of image simulations to run
+#dt: The number of time between image inferences
+#save_path: The location to save images and metadata
 def run_sim(args,sys_f,env_name,model,eps=0.3, max_steps=99,dt=0.1,save_path = None,
             plot_step_flag = False,mean_image = None,trial_num=0,device=None,exp=None):
     x_list = []
@@ -652,6 +754,8 @@ def run_sim(args,sys_f,env_name,model,eps=0.3, max_steps=99,dt=0.1,save_path = N
     os.system("python3 scripts/generate_gifs.py " + save_path + " --loc /home/gabe/ws/ros_ws/src/orange_picking/ &")
     return ret_val, trial_num
 
+# Command line entry point for closed-loop simulations.
+# argparse options specify the parameter fo the network, the hardware to use, the number of simulations, the number of steps per simulation, the rate at which images are collected within a trajectory, and several other flags.
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument('load', help='model to load')

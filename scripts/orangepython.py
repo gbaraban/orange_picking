@@ -10,16 +10,46 @@ from scipy.spatial.transform import Rotation as R
 import argparse
 from plotting.parsetrajfile import *
 
-#import tracemalloc
 
+################################
+#orangepython.py guide:
+################################
+
+# This file is used to create simulated datasets using Unity and GCOP.  It is mostly obsolete, as files such as 
+# orangesimulation.py does many of the same things with more functionality.
+#
+# When run from the command line, this script randomizes an environment and solves it with GCOP.
+#
+# If the "loop" flag is set, the process repeats infinitely, otherwise, it stops after a hardcoded number of steps.
+#
+# If the "env" flag is set, an environment is loaded in instead of the random one.  Helpful for debugging.
+#
+# Unless the "plotonly" flag is set, the environment is then created in Unity and the trajectory is used to make
+# a series of images.
+#
+#
+# This file contains the following functions:
+# gcopVecToUnity(v):
+# 
+# makeCamAct(action, brainNames, cameraPos, cameraRot):
+#
+# setUpEnv(brainNames, cameraPos, cameraRot, treePos, orangePos, treeScale = 0.125, orangeScale = 0.07):
+
+
+#Takes in a 3-vector and flips it into GCOP coordinates.
 def gcopVecToUnity(v):
   temp = np.array((v[0],v[2],v[1]))
   return temp
 
+# WARNING: uses old MLAgents format
+# Populates the "action" dictionary with a vector corresponding to the camera state.
+# Args:
+# action: the dictionary to populate
+# brainNames: the list of agent names in Unity, with the assumption that the first element is the camera name
+# cameraPos: the x-y-z position of the camera
+# cameraRot: the 3x3 matrix of the camera rotation
 def makeCamAct(action, brainNames, cameraPos, cameraRot):
   #Set up camera action
-  #TODO: convert into unity rotation space (maybe use euler??)
-  #worldoffset = R.from_dcm(np.array([[1,0,0],[0,0,1],[0,-1,0]]))
   r = R.from_dcm(cameraRot)
   euler = r.as_euler(seq = 'zxy',degrees = True) #using weird unity sequence
   unityEuler = (euler[1],-euler[0],euler[2]) 
@@ -27,7 +57,16 @@ def makeCamAct(action, brainNames, cameraPos, cameraRot):
   action[brainNames[0]] = cameraAction
   return action
 
-
+# WARNING: uses old MLAgents format
+# Creates the  "action" dictionary with vectors corresponding to the camera state.
+# Args:
+# brainNames: the list of agent names in Unity, with the assumption that the elements are [camera,tree,orange]
+# cameraPos: the x-y-z position of the camera
+# cameraRot: the 3x3 matrix of the camera rotation
+# treePos: the x-y-z position of the tree
+# orangePos: the x-y-z position of the orange
+# treeScale: the scale of the tree
+# orangeScale: the scale of the orange
 def setUpEnv(brainNames, cameraPos, cameraRot, treePos, orangePos, treeScale = 0.125, orangeScale = 0.07):
   action = makeCamAct(dict(), brainNames,cameraPos,cameraRot)
   treeScale = treeScale*np.array([1.0,1.0,1.0])
@@ -94,7 +133,6 @@ while os.path.exists(globalfolder):
   run_num += 1
   globalfolder = 'data/Run' + str(run_num) + '/'
 
-#presnap = tracemalloc.take_snapshot()
 exp = -1
 trials = 2
 while (exp < trials) or args.loop:

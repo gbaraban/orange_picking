@@ -3,10 +3,25 @@ import numpy as np
 from mlagents_envs.environment import UnityEnvironment
 from scipy.spatial.transform import Rotation as R
 
+################################
+#orangeimages.py guide:
+################################
+
+# This file is a library to handle several image-based functions used to create simulated datasets using Unity and GCOP.
+# It contains the following functions:
+#
+# gcopVecToUnity(v):
+# makeCamAct(x):
+# save_image_array(image_in,path,name):
+# unity_image(env,act,cam_name,env_name=None):
+# move_orange(env,orangeName,orangePos,orangeColor,treePos,collisionR,camName=None,spawn_orange=True):
+
+# Flips a 3-tuple of position into GCOP coordinates.
 def gcopVecToUnity(v):
     temp = np.array((v[0],v[2],v[1]))
     return temp
 
+# Turns a state x into the format used by MLAgents
 def makeCamAct(x):
     #Set up camera action
     if (len(x) is 2) or (len(x) is 4):
@@ -23,6 +38,7 @@ def makeCamAct(x):
     cameraAction = np.hstack((gcopVecToUnity(cameraPos),unityEuler,1))
     return np.array([cameraAction])
 
+# Saves an image as a file named "name" at location "path"
 def save_image_array(image_in,path,name):
   im_np = (image_in*255).astype('uint8')
   image = img.fromarray(im_np)
@@ -31,6 +47,8 @@ def save_image_array(image_in,path,name):
   else:
       image.show()
 
+#Given a UnityEnvironment object "env", an action vector "act", a camera name string "cam_name", and, optionally,
+#env_name, returns the images taken by the onboard camera and/or the external camera.
 def unity_image(env,act,cam_name,env_name=None):
     obs = None
     if cam_name is not None:
@@ -50,6 +68,16 @@ def unity_image(env,act,cam_name,env_name=None):
         return envobs
     return (obs,envobs)
 
+#Uses the collision radius to move the orange to an intersecting position
+#Args:
+#env: UnityEnvironment object
+#orangeName: The Unity name of the orange agent.
+#orangePos: The xyz position of the orange (initially)
+#orangeColor: The index of the color array to apply to the orange.
+#treePos: The xyz position of the tree
+#collsionR: The depth into the tree to move
+#camName: The name of the camera agent. If not None, calculates and returns occlusion fraction.
+#spawn_orange: The flag that can turn off the orange entirely.
 def move_orange(env,orangeName,orangePos,orangeColor,treePos,collisionR,camName=None,spawn_orange=True):
     dx = orangePos[0:3] - treePos[0:3]
     theta = np.arctan2(dx[1],dx[0])
