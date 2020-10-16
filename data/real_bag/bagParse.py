@@ -33,6 +33,23 @@ def np_from_image(image):
   )
   return data
 
+def depthnp_from_image(image):
+  #Stolen from https://github.com/eric-wieser/ros_numpy/blob/master/src/ros_numpy/image.py
+  dtype_class = np.uint16
+  channels = 1
+  dtype = np.dtype(dtype_class)
+  dtype = dtype.newbyteorder('>' if image.is_bigendian else '<')
+  shape = (image.height, image.width, channels)
+
+  data = np.fromstring(image.data, dtype=dtype).reshape(shape)
+  data.strides = (
+    image.step,
+    dtype.itemsize * channels,
+    dtype.itemsize
+  )
+  data = ((data[:,:,0].astype(np.float64)/data.max())*255).astype(np.uint8)
+  return data
+
 def logR(Rot):
 	x = logm(Rot)
 	return [x[2,1], x[0,2], x[1, 0]]
@@ -171,6 +188,7 @@ def getNextPts(pts_odom, pt_num, events_per_sec, ax):
 def main():
 	vrpn_topic = "/vrpn_client/matrice/pose"
 	img_topic = "/camera/color/image_raw"
+	depth_topic = "/camera/aligned_depth_to_color/image_raw"
 
 	parser = argparse.ArgumentParser()
 	parser.add_argument('bag_dir', help="bag dir")
@@ -206,16 +224,19 @@ def main():
 
 		data = {}
 		img_data = {}
+		depth_data = {}
 		img = None
+                depth_img = None
 		odom = None
 
 		img_t = -1
+		depth_t = -1
 		odom_t = -1
 		img_id = 0
 
 		time = []
 
-		for topic, msg, t in bag.read_messages(topics=[vrpn_topic, img_topic]):
+		for topic, msg, t in bag.read_messages(topics=[vrpn_topic, img_topic, depth_topic]):
 			#print(t)
 			if topic == vrpn_topic and (img is not None):
 				odom = msg
@@ -225,8 +246,13 @@ def main():
 				img = msg
 				img_t = t
 
-			if (img is not None) and (odom is not None):
+			if topic == depth_topic:
+				depth_img = msg
+				depth_t = t
+
+                        if (img is not None) and (odom is not None) and (depth_img is not None):
 				img_np = np_from_image(img)
+				depth_np = depthnp_from_image(depth_img)
 				#Img.fromarray(img_np).save(save_folder + "/image" + str(img_id) + ".png")
 				Rot0 = R.from_quat([
 					odom.transform.rotation.x,
@@ -244,6 +270,7 @@ def main():
 
 				data[img_id] = odom
 				img_data[img_id] = img_np
+				depth_data[img_id] = depth_np
 
 				img_id += 1
 				odom = None
@@ -299,6 +326,7 @@ def main():
 					po_data_dict[str(j) + "_index"] = indices
 					po_data_dict[str(j) + "_pos"] = po_pos0
 					Img.fromarray(img_data[i]).save(save_folder + "/image" + str(j) + ".png")
+				        Img.fromarray(depth_data[i]).save(save_folder + "/depth_image" + str(j) + ".png")
 					j += 1
 
 			#plt.show()

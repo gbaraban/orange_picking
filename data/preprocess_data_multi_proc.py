@@ -9,6 +9,7 @@ args = sys.argv
 dirs = args[1:]
 
 mean_img = np.load("mean_imgv2_data_real_world_traj_bag.npy")
+depth_mean_img = np.load("depth_mean_imgv2_data_real_world_traj_bag.npy")
 
 data_loc = "real_world_traj_bag"
 np_data_loc = data_loc.rstrip("/") + "_np"
@@ -17,7 +18,7 @@ if not os.path.exists(np_data_loc):
 
 
 w = 640
-h = 380
+h = 480
 t = time.time()
 #dirs = os.listdir(data_loc)
 for d in dirs:#files:
@@ -36,6 +37,16 @@ for d in dirs:#files:
                 temp_image = temp_image[:,:,0:3]/255.0
 
                 temp_image = np.array(temp_image) - mean_img
+
+                np.save(npdir_path + "/" + im_name + ".npy", temp_image)
+            if im.endswith(".png") and im.startswith("depth"):
+                im_name = im.rstrip(".png")
+
+                temp_image = img.open(dir_path + "/" + im).resize((w,h))
+                temp_image = np.array(temp_image.getdata()).reshape(temp_image.size[1],temp_image.size[0],1)
+                temp_image = temp_image[:,:,0]/255.0
+
+                temp_image = np.array(temp_image) - depth_mean_img
 
                 np.save(npdir_path + "/" + im_name + ".npy", temp_image)
         print("Time taken: ", time.time() - tmid)

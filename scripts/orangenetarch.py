@@ -14,6 +14,8 @@ class Block8(torch.nn.Module):
         self.bn1 = nn.BatchNorm2d(out_f)
         self.bn2 = nn.BatchNorm2d(out_f)
         self.downsample = downsample
+        self.dropout1 = nn.Dropout2d(0.5) #, inplace=True)
+        #self.dropout2 = nn.Dropout2d(0.7)
         #self.skip1 = nn.Conv2d(in_channels=in_f,out_channels=out_f,kernel_size=1,stride=4,padding=0)
 
     def forward(self,x):
@@ -30,6 +32,7 @@ class Block8(torch.nn.Module):
             iden = self.downsample(x)
         #print(y.size(),x.size())
         y += iden
+        y = self.dropout1(y)
         y = F.relu(y)
         return y
 
@@ -77,7 +80,7 @@ def make_layer8(in_size,out_size,stride_length=1):
             #Block8(out_size,out_size))
 
 class OrangeNet8(torch.nn.Module):
-    def __init__(self, capacity = 1, num_img = 1, num_pts = 3, bins = 30, mins = None, maxs = None, n_outputs = 3, real_test = False, retrain_off = "", input = 1.0):
+    def __init__(self, capacity = 1, num_img = 1, num_pts = 3, bins = 30, mins = None, maxs = None, n_outputs = 3, real_test = False, retrain_off = "", input = 1.0, num_channels = 3):
         super(OrangeNet8, self).__init__()
         #Parameters
         self.w = 640 * input #300
@@ -87,6 +90,7 @@ class OrangeNet8(torch.nn.Module):
             self.h = 380 * input #200
         self.num_points = num_pts
         self.num_images = num_img
+        self.num_channels = num_channels
         self.f = capacity#5.0#2.0#1.5#125#1#0.25
         #self.learning_fac_init=0.000001
         #self.reg = False
@@ -96,25 +100,30 @@ class OrangeNet8(torch.nn.Module):
         self.outputs = n_outputs
         #Blocks
         #TODO: Add input layer
-        self.conv1 = nn.Conv2d(in_channels=self.num_images*3,out_channels=int(32*self.f),kernel_size=5,stride=2,padding = 10)
-        self.maxpool = nn.MaxPool2d(kernel_size = 3, stride = 2)
-        self.block1 = make_layer8(int(32*self.f),int(32*self.f), stride_length=2)
-        self.block2 = make_layer8(int(32*self.f),int(64*self.f), stride_length=2)
-        self.block3 = make_layer8(int(64*self.f),int(128*self.f), stride_length=2)
+        self.conv1 = nn.Conv2d(in_channels=self.num_images*num_channels,out_channels=int(32*self.f),kernel_size=7,stride=4,padding=3)
+        self.maxpool = nn.MaxPool2d(kernel_size = 5, stride = 2)
+        self.block1 = make_layer8(int(32*self.f),int(48*self.f), stride_length=3)
+        self.block2 = make_layer8(int(48*self.f),int(72*self.f), stride_length=2)
+        self.block3 = make_layer8(int(72*self.f),int(128*self.f), stride_length=1)
         #in_size = 768*self.f#122880#temp
         if real_test:
             linear_layer_size = 43008
         else:
-            linear_layer_size = 34944
+            linear_layer_size =  38880 #69120 #55296 #61440 #30720 #34944
 
         if input == 0.5:
-            linear_layer_size = 9856
+            linear_layer_size = 7680 #30720 #34944 #17472 #9856
 
         in_size = linear_layer_size*self.f#122880#temp
-        self.fc1 = nn.Linear(int(in_size),int(4096*self.f))
-        self.fc2 = nn.Linear(int(4096*self.f),int(2048*self.f))
+        print("IN SIZE: ",in_size)
+        self.fc1 = nn.Linear(int(in_size),int(8192*self.f))
+        self.dropout1 = nn.Dropout(0.5) #, inplace=True)
+        self.fc2 = nn.Linear(int(8192*self.f),int(2048*self.f))
+        self.dropout2 = nn.Dropout(0.5) #, inplace=True)
         self.fc3 = nn.Linear(int(2048*self.f),int(1024*self.f))
+        #self.dropout3 = nn.Dropout(0.5, inplace=True)
         #self.output = nn.Linear(int(1024*self.f),3*self.num_points*self.bins)
+        #self.output = nn.Linear(int(2048*self.f),n_outputs*self.num_points*self.bins)
         self.output = nn.Linear(int(2048*self.f),n_outputs*self.num_points*self.bins)
 
         if retrain_off == "linear":
@@ -132,25 +141,28 @@ class OrangeNet8(torch.nn.Module):
     def forward(self,x):
         #x =  self.resnet(x)
         x = self.conv1(x)
-        x = self.maxpool(x)
+        #x = self.maxpool(x)
         x = self.block1(x)
+        #x = self.maxpool(x)
         x = self.block2(x)
-        x = self.block3(x)
+        #x = self.block3(x)
         x = torch.flatten(x,1)
         x = F.relu(x)
         #print(x.shape)
         x = self.fc1(x)
         #print(x.shape)
         x = F.relu(x)
+        x = self.dropout1(x)
         x = self.fc2(x)
         x = F.relu(x)
+        x = self.dropout2(x)
         #x = self.fc3(x)
         #x = F.relu(x)
         x = self.output(x)
         return x
 
 class OrangeNet18(torch.nn.Module):
-    def __init__(self, capacity = 1, num_img = 1, num_pts = 3, bins = 30, mins = None, maxs = None, n_outputs = 3, real_test = False, input = 1.0):
+    def __init__(self, capacity = 1, num_img = 1, num_pts = 3, bins = 30, mins = None, maxs = None, n_outputs = 3, real_test = False, input = 1.0, num_channels = 3):
         super(OrangeNet18, self).__init__()
         #Parameters
         self.w = 640 * input #300
@@ -160,6 +172,7 @@ class OrangeNet18(torch.nn.Module):
             self.h = 380 * input #200 
         self.num_points = num_pts
         self.num_images = num_img
+        self.num_channels = num_channels
         self.f = capacity#5.0#2.0#1.5#125#1#0.25
         #self.learning_fac_init=0.000001
         #self.reg = False
@@ -168,7 +181,7 @@ class OrangeNet18(torch.nn.Module):
         self.max = maxs
         self.outputs = n_outputs
         #Blocks
-        self.conv1 = nn.Conv2d(3,int(64*self.f),kernel_size=7, stride=2, padding=3)
+        self.conv1 = nn.Conv2d(in_channels=self.num_images*num_channels,out_channels=int(64*self.f),kernel_size=7,stride=2,padding=3)
         self.bn1 = nn.BatchNorm2d(int(64*self.f))
         self.maxpool = nn.MaxPool2d(kernel_size=3,stride=2,padding=1)
         self.layer1 = make_layer18(int(64*self.f),int(64*self.f))
@@ -193,7 +206,7 @@ class OrangeNet18(torch.nn.Module):
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
-        x = self.layer4(x)
+        #x = self.layer4(x)
         #x = self.resnet.avgpool(x)
         #print('PreFlat',x.shape)
         x = torch.flatten(x,1)

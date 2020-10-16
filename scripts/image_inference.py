@@ -1,7 +1,7 @@
 import rospy
 from sensor_msgs.msg import Image
 import torch
-from orangenetarch import *
+from architecture.orangenetarch3 import *
 import numpy as np
 import time, os
 from geometry_msgs.msg import Pose, PoseArray
@@ -20,7 +20,7 @@ if torch.cuda.is_available():
 else:
 	gpu = None
 
-load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_plain/model139.pth.tar"
+load = "/home/gabe/ws/ros_ws/src/orange_picking/test_run/real_world_data_aug_more_data/modelLast.pth.tar"
 #load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_retrained/model9.pth.tar"
 
 mins = [(0,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0,-1,-0.15,-np.pi,-np.pi/2,-np.pi),(0,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0,-2,-0.3,-np.pi,-np.pi/2,-np.pi),(0,-3,-0.5,-np.pi,-np.pi/2,-np.pi)]
@@ -63,7 +63,7 @@ pub = rospy.Publisher("/goal",PoseArray,queue_size=50)
 h = 380
 w = 640
 
-mean_image = "/home/siddharth/Desktop/asco/ws/src/orange_picking/data/mean_imgv2_data_real_world_traj_bag.npy"
+mean_image = "/home/gabe/ws/ros_ws/src/orange_picking/test_run/mean_imgv2_data_real_world_traj_bag.npy"
 
 if not (os.path.exists(mean_image)):
         print('mean image file not found', mean_image)

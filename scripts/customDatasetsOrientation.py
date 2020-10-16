@@ -39,6 +39,7 @@ class OrangeSimDataSet(Dataset):
         self.h = {}
         self.custom_dataset = custom_dataset
         self.input_size = input
+        self.pt_error = []
 
         if self.custom_dataset is None:
             if reduce_N:
@@ -130,8 +131,8 @@ class OrangeSimDataSet(Dataset):
     def getTrajLen(self):
         pass
 
-    def __getitem__(self,i):
-        idx = i
+    def __getitem__(self,i_id):
+        idx = i_id
         trial_idx = 0
         while True:
             if self.num_list[trial_idx] <= idx:
@@ -244,6 +245,7 @@ class OrangeSimDataSet(Dataset):
         #    data["img"] = image
         #    data["pts"] = points
         #    image, points = self.image_transform(data)
+        time_frac = float(idx)/float(self.num_list[trial_idx])
 
-        return {'image':image, 'points':points, "flipped": flipped}
+        return {'image':image, 'points':points, "flipped": flipped, 'time_frac': time_frac, 'idx': i_id}
 

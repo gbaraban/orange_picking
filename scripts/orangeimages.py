@@ -49,13 +49,20 @@ def save_image_array(image_in,path,name):
 
 #Given a UnityEnvironment object "env", an action vector "act", a camera name string "cam_name", and, optionally,
 #env_name, returns the images taken by the onboard camera and/or the external camera.
-def unity_image(env,act,cam_name,env_name=None):
+#depth_flag and seg_flag toggle whether to return the depth and segmented images (respectively)
+def unity_image(env,act,cam_name,env_name=None,depth_flag=False,seg_flag=False):
     obs = None
     if cam_name is not None:
         env.set_actions(cam_name,act)
         env.step()
         (ds,ts) = env.get_steps(cam_name)
         obs = ds.obs[0][0,:,:,:]
+        if ((depth_flag or seg_flag) and (len(ds.obs) < 3)):
+            print("This environment does not support the requested depth or segmented channel")
+        if depth_flag:
+            obs = tuple(obs) + tuple(ds.obs[1][0,:,:,0])
+        if seg_flag:
+            obs = tuple(obs) + tuple(ds.obs[2][0,:,:,:])
     envobs = None
     if env_name is not None:
         env.set_actions(env_name,np.zeros((1,4)))
