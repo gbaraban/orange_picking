@@ -20,8 +20,8 @@ if torch.cuda.is_available():
 else:
 	gpu = None
 
-load = "/home/gabe/ws/ros_ws/src/orange_picking/test_run/real_world_data_aug_more_data/modelLast.pth.tar"
-#load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_retrained/model9.pth.tar"
+load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_plain_more_data/modelLast.pth.tar"
+#load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_data_aug_more_data/modelLast.pth.tar"
 
 mins = [(0,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0,-1,-0.15,-np.pi,-np.pi/2,-np.pi),(0,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0,-2,-0.3,-np.pi,-np.pi/2,-np.pi),(0,-3,-0.5,-np.pi,-np.pi/2,-np.pi)]
 maxs = [(1,0.5,0.1,np.pi,np.pi/2,np.pi),(2,1,0.15,np.pi,np.pi/2,np.pi),(4,1.5,0.2,np.pi,np.pi/2,np.pi),(6,2,0.3,np.pi,np.pi/2,np.pi),(7,0.3,0.5,np.pi,np.pi/2,np.pi)]
@@ -57,7 +57,7 @@ else:
 
 bridge = CvBridge()
 
-pub = rospy.Publisher("/goal",PoseArray,queue_size=50)
+pub = rospy.Publisher("/goal_points",PoseArray,queue_size=50)
 
 
 h = 380
