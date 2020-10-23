@@ -22,7 +22,7 @@ class SubSet(Dataset):
         return self.ds[self.idx[i]]
 
 class OrangeSimDataSet(Dataset):
-    def __init__(self, root_dir, num_images, num_pts, pt_trans, img_trans, dt = 1, reduce_N = True, custom_dataset = None):
+    def __init__(self, root_dir, num_images, num_pts, pt_trans, img_trans, dt = 1, reduce_N = True, custom_dataset = None, input = 1.0, depth=False, seg=False, temp_seg=False, seg_only=False):
         self.point_transform = pt_trans
         self.image_transform = img_trans
         self.num_pts = num_pts
@@ -33,10 +33,16 @@ class OrangeSimDataSet(Dataset):
         self.run_dir = root_dir
         self.np_dir = root_dir.rstrip("/") + "_np/"
         self.trial_list = os.listdir(root_dir)
+        if seg or temp_seg or seg_only:
+            self.trial_list = os.listdir(root_dir + "../seg_mask_real_np/")
         self.num_samples = 0
         self.num_samples_dir = {}
         self.num_samples_dir_size = {}
         self.custom_dataset = custom_dataset
+        self.depth = depth
+        self.seg = seg
+        self.seg_only = seg_only
+        self.mean_seg = np.load("data/mean_imgv2_data_seg_real_world_traj_bag.npy")
 
         self.nEvents = []
         self.time_secs = []
@@ -48,7 +54,14 @@ class OrangeSimDataSet(Dataset):
             time_window = 0
         #for trial_dir in self.trial_list:
         for i, trial_dir in enumerate(self.trial_list):
-            trial_subdir = os.listdir(root_dir + "/" + trial_dir)
+            trial_subdir = None
+            if self.seg_only:
+                trial_subdir = os.listdir(root_dir + "../seg_mask_real_np/" + trial_dir)
+            else:
+                trial_subdir = os.listdir(root_dir + "/" + trial_dir)
+            #if self.seg:
+            #    trial_subdir = os.listdir(root_dir + "/../seg_mask_real/")
+            #    print(trial_subdir, root_dir)
             if self.custom_dataset is None:
                 with open(self.run_dir+'/'+trial_dir+'/orientation_data.pickle','rb') as f:
                     data = pickle.load(f,encoding='latin1')
@@ -60,7 +73,20 @@ class OrangeSimDataSet(Dataset):
 
             #with open(self.run_dir+"/"+trial_dir+"/metadata.pickle",'rb') as data_f:
             #data = pickle.load(data_f)#, encoding='latin1')
-            N = len(trial_subdir) - 3 #data['N']
+            #N = len(trial_subdir) - 3 #data['N']
+            #if self.depth:
+            #    N = N/2 #TODO: when we add new channels, this needs to get more complex.
+            N = 0
+            if trial_subdir is None:
+                print("This should not be None")
+
+            for fname in trial_subdir:
+                if not self.seg_only:
+                    if ("image" in fname) and ("depth" not in fname) and ("seg" not in fname):
+                        N += 1
+                else:
+                    N += 1
+
             tf = 1 #data['tf']
             self.h = 0 #float(N)/tf
             if reduce_N:
@@ -104,23 +130,65 @@ class OrangeSimDataSet(Dataset):
                 trial_idx += 1
             else:
                 break
+
+        time_frac = float(idx)/float(self.num_list[trial_idx])
         trial = self.trial_list[trial_idx]
         image = None
         image_idx = idx
         for ii in range(self.num_images):
             temp_idx = max(0,image_idx - ii)
-            temp_image = np.load(self.np_dir+trial+'/image'+str(temp_idx)+'.npy')
+            if not self.seg_only:
+                temp_image = np.load(self.np_dir+trial+'/image'+str(temp_idx)+'.npy')
+            else:
+                seg_dir = os.listdir(self.np_dir+"../seg_mask_real_np/"+trial)
+                seg_img = seg_dir[temp_idx][:-4]
+                temp_image = np.load(self.np_dir+trial+'/image'+ seg_img +'.npy')
+
             temp_image = np.transpose(temp_image,[2,0,1])
+            #print("Just Image", temp_image.shape)
+            if self.depth:
+                if self.seg_only:
+                    temp_depth = np.load(self.np_dir+trial+'/depth_image'+seg_img+'.npy')
+                else:
+                    temp_depth = np.load(self.np_dir+trial+'/depth_image'+str(temp_idx)+'.npy')
+                temp_depth = np.expand_dims(temp_depth,0)
+                temp_image = np.concatenate((temp_image,temp_depth),axis=0)
+            #print("with depth", temp_image.shape)
+            if self.seg and not self.seg_only:
+                if os.path.isfile(self.np_dir+"../seg_mask_real_np/"+trial+'/'+str(temp_idx)+'.npy'):
+                    temp_seg = np.load(self.np_dir+"../seg_mask_real_np/"+trial+'/'+str(temp_idx)+'.npy')
+                else:
+                    #print("zero_init", temp_image.shape)
+                    #temp_seg = np.zeros((temp_image.shape[1], temp_image.shape[2]))
+                    temp_seg = self.mean_seg.copy()
+                #print("test", temp_seg.shape)
+                temp_seg = np.expand_dims(temp_seg,0)
+                temp_image = np.concatenate((temp_image,temp_seg),axis=0)
+            elif self.seg_only:
+                if os.path.isfile(self.np_dir+"../seg_mask_real_np/"+trial+'/'+seg_img+'.npy'):
+                    temp_seg = np.load(self.np_dir+"../seg_mask_real_np/"+trial+'/'+seg_img+'.npy')
+                else:
+                    print("zero_init for seg only!!!!!", seg_img, trial)
+                    #temp_seg = np.zeros((temp_image.shape[1], temp_image.shape[2]))
+                    temp_seg = self.mean_seg.copy()
+                #print("test", temp_seg.shape)
+                temp_seg = np.expand_dims(temp_seg,0)
+                temp_image = np.concatenate((temp_image,temp_seg),axis=0)
+            #print("with seg", temp_image.shape)
             #if self.image_transform:
             #    temp_image = self.image_transform(temp_image)
             if image is None:
                 image = temp_image
             else:
-                image = np.concatenate((image,temp_image),axis=2)
+                image = np.concatenate((image,temp_image),axis=2)#NOTE: axis might be wrong.  doublecheck
         image = image.astype('float32')
+        #print("fin img", image.shape)
 
         if self.custom_dataset is None:
-            points = np.array(self.traj_list[trial_idx][idx])
+            if self.seg_only:
+                points = np.array(self.traj_list[trial_idx][int(seg_img)])
+            else:
+                points = np.array(self.traj_list[trial_idx][idx])
             #print(points)
             #p0 = np.array(self.traj_list[trial_idx][idx][0])
             #R0 = np.array(self.traj_list[trial_idx][idx][1])
@@ -141,7 +209,7 @@ class OrangeSimDataSet(Dataset):
             #    data["pts"] = points
             #    image, points = self.image_transform(data)
 
-            return {'image':image, 'points':points}
+            return {'image':image, 'points':points, "time_frac": time_frac}
 
         elif self.custom_dataset == "no_parse":
             point = np.array(self.traj_list[trial_idx][idx])
@@ -201,5 +269,5 @@ class OrangeSimDataSet(Dataset):
             #    data["pts"] = points
             #    image, points = self.image_transform(data)
 
-            return {'image':image, 'points':points, "flipped": flipped}
+            return {'image':image, 'points':points, "flipped": flipped, "time_frac": time_frac}
 

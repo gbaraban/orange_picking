@@ -15,7 +15,7 @@ import argparse
 import PIL.Image as img
 import signal
 import sys
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from customTransforms import *
 #from orangenetarch import *
 import pickle
@@ -371,12 +371,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('data', help='data folder')
     parser.add_argument('--load', help='model to load')
-    parser.add_argument('--epochs', type=int, default=10000, help='number of epochs to train for')
+    parser.add_argument('--epochs', type=int, default=150, help='number of epochs to train for')
     parser.add_argument('--seed', type=int, default=0, help='random seed')
     parser.add_argument('--resample', action='store_true', help='resample data')
     parser.add_argument('--gpu', help='gpu to use')
     parser.add_argument('--num_images', type=int, default=1, help='number of input images')
-    parser.add_argument('--batch_size', type=int, default=1024, help='batch size')
+    parser.add_argument('--batch_size', type=int, default=300, help='batch size')
+    parser.add_argument('--val_batch_size', type=int, default=300, help='batch size')
     parser.add_argument('--learning_rate', type=float, default=5e-3, help='batch size')
     parser.add_argument('--num_pts', type=int, default=3, help='number of output waypoints')
     parser.add_argument('--capacity', type=float, default=1, help='network capacity')
@@ -397,6 +398,14 @@ def main():
     parser.add_argument('--freeze',type=str,default="",help='layer to freeze while training, linear or conv')
     parser.add_argument('--plot_data',type=int,default=0,help="plot data for accuracy")
     parser.add_argument('--input_size',type=float,default=1,help='input size change')
+    parser.add_argument('--use_sampler',type=bool,default=False,help='use adaptive resampling (EXPERIMENTAL)')
+    parser.add_argument('--use_error_sampler',type=bool,default=False,help='adaptive error based sampling')
+    parser.add_argument('--custom_loss',type=bool,default=False,help='custom loss for training')
+    parser.add_argument('--depth',type=bool,default=False,help='use depth channel')
+    parser.add_argument('--seg',type=bool,default=False,help='use segmentation channel')
+    parser.add_argument('--temp_seg',type=bool,default=False,help='use segmentation channel')
+    parser.add_argument('--seg_only',type=bool,default=False,help='use segmentation channel')
+    parser.add_argument('--save_variables',type=int,default=20,help="save after every x epochs")
 
     args = parser.parse_args()
 
@@ -450,6 +459,7 @@ def main():
     else:
         img_trans = None
 
+    sampler_n_epochs = 2
     #Load Mean image
     print("Test")
     data_loc = copy.deepcopy(args.data)
@@ -466,7 +476,7 @@ def main():
     #mean_image = np.zeros((model.w, model.h, 3))
     #img_trans = None 
     #Create dataset class
-    dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, custom_dataset=args.custom, input=args.input_size)
+    dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, custom_dataset=args.custom, input=args.input_size, depth=args.depth, seg=args.seg, temp_seg=args.temp_seg, seg_only=args.seg_only)
 
     #Break up into validation and training
     #val_perc = 0.07
@@ -514,11 +524,22 @@ def main():
         pickle.dump(val_data, fopen, pickle.HIGHEST_PROTOCOL)
 
     train_data = SubSet(dataclass,train_idx)
+    #print(np.min(train_idx), np.max(train_idx))
+    error_weights = [0.0 for i in range(len(train_data))]
     val_data = SubSet(dataclass,val_idx)
+
+    train_loc = {}
+    for i, id in enumerate(train_idx):
+        train_loc[id] = i
+    #hist1 = np.histogram(train_idx, 10, range=(0, 5000))
+    #print(hist1)
+    #hist2 = np.histogram(val_idx, 10, range=(0,5000))
+    #print(hist2)
 
     #Create DataLoaders
     train_loader = DataLoader(train_data,batch_size=args.batch_size,shuffle=True,num_workers=args.j, worker_init_fn=dl_init)
-    val_loader = DataLoader(val_data,batch_size=args.batch_size,shuffle=False,num_workers=args.j)
+    weight_loader = DataLoader(train_data,batch_size=args.batch_size,shuffle=True,num_workers=args.j, worker_init_fn=dl_init)
+    val_loader = DataLoader(val_data,batch_size=args.val_batch_size,shuffle=False,num_workers=args.j)
     print ('Training Samples: ' + str(len(train_data)))
     print ('Validation Samples: ' + str(len(val_data)))
 
@@ -528,10 +549,16 @@ def main():
     else:
         n_outputs = 6
 
+    n_channels = 3
+    if args.depth:
+        n_channels += 1
+    if args.seg or args.seg_only:
+        n_channels += 1
+
     if not args.resnet18:
-        model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,retrain_off=args.freeze,input=args.input_size)
+        model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,retrain_off=args.freeze,input=args.input_size, num_channels = n_channels)
     else:
-        model = OrangeNet18(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,input=args.input_size)
+        model = OrangeNet18(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,input=args.input_size, num_channels = n_channels)
 
     if args.load:
         if os.path.isfile(args.load):
@@ -561,12 +588,14 @@ def main():
     #Create Optimizer
     learning_rate = args.learning_rate
     learn_rate_decay = np.power(1e-3,1/float(args.epochs))#0.9991#10 / args.epochs
-    optimizer = optim.Adam(model.parameters(), lr = args.learning_rate)
+    optimizer = optim.AdamW(model.parameters(), lr = args.learning_rate, weight_decay=1e-2)
+    #optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, momentum=0.9)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=learn_rate_decay)
     #ReduceLROnPlateau is an interesting idea
+    loss_mult = torch.tensor([[1.0, 1.0, 1.0,],[2.0, 2.0, 2.0]]).to(device)
 
     #Save Parameters
-    save_variables_divider = 5 #10
+    save_variables_divider = args.save_variables #5 #10
     log_path = './model/logs'
     save_path = createStampedFolder(os.path.join(log_path, 'variable_log'))
     tensorboard_path = addTimestamp(os.path.join(log_path, 'tensorboard_'))
@@ -623,85 +652,163 @@ def main():
     #    except:
     #            pass
     #model = model.to('cpu')
+
     for epoch in range(args.epochs):
         model = model.to(device)
         print('Epoch: ', epoch)
         #Train
         #gc.collect()
+        epoch_acc = [[[], []], [[], []], [[], []]]
         acc_total = [[0., 0.], [0., 0.], [0., 0.]]
         elements = 0.
-        for ctr, batch in enumerate(train_loader):
+        loader = train_loader
+        if args.use_sampler:
+            loader = weight_loader
+
+        if args.use_error_sampler:
+            if not np.sum(np.array(error_weights)) == 0:
+                loader = weight_loader
+
+        for ctr, batch in enumerate(loader):
             #print('Batch: ',ctr)
             #image_batch = batch['image'].to(device).float()
             point_batch = batch['points']#.to(device)
             optimizer.zero_grad()
             model.train()
-            #for obj in gc.get_objects():
-            #    try:
-            #        if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
-            #            print(type(obj), obj.size())
-            #    except:
-            #        pass
             with torch.set_grad_enabled(True):
                 batch_imgs = batch['image']
                 batch_imgs = batch_imgs.to(device)
                 #model = model.to(device)
                 logits = model(batch_imgs)
                 #print(logits.size())
-                del batch_imgs
-                del batch
+                #del batch_imgs
+                #del batch
                 if not args.yaw_only:
                     logits = logits.view(-1,6,model.num_points,model.bins)
                 else:
                     logits = logits.view(-1,4,model.num_points,model.bins)
-                #logits_x = logits[:,0,:,:]
-                #logits_y = logits[:,1,:,:]
-                #logits_z = logits[:,2,:,:]
-                loss_x = 0
-                loss_y = 0
-                loss_z = 0
+
+                loss_x = [0. for t in range(model.num_points)]
+                loss_y = [0. for t in range(model.num_points)]
+                loss_z = [0. for t in range(model.num_points)]
 
                 if not args.yaw_only:
-                    loss_r = 0
-                    loss_p = 0
+                    loss_r = [0. for t in range(model.num_points)]
+                    loss_p = [0. for t in range(model.num_points)]
 
-                loss_yaw = 0
+                loss_yaw = [0. for t in range(model.num_points)]
 
                 b_size = logits.shape[0]
                 point_batch = point_batch.to(device)
                 for temp in range(model.num_points):
-                    loss_x += F.cross_entropy(logits[:,0,temp,:],(point_batch)[:,temp,0])
-                    loss_y += F.cross_entropy(logits[:,1,temp,:],(point_batch)[:,temp,1])
-                    loss_z += F.cross_entropy(logits[:,2,temp,:],(point_batch)[:,temp,2])
-                    loss_yaw += F.cross_entropy(logits[:,3,temp,:],(point_batch)[:,temp,3])
+                    #print(logits[:,0,temp,:].shape)
+                    #print(((point_batch)[:,temp,0]).shape)
+                    #exit()
+                    loss_x[temp] += F.cross_entropy(logits[:,0,temp,:],(point_batch)[:,temp,0])
+                    loss_y[temp] += F.cross_entropy(logits[:,1,temp,:],(point_batch)[:,temp,1])
+                    loss_z[temp] += F.cross_entropy(logits[:,2,temp,:],(point_batch)[:,temp,2])
+                    loss_yaw[temp] += F.cross_entropy(logits[:,3,temp,:],(point_batch)[:,temp,3])
 
                     if not args.yaw_only:
-                        loss_p += F.cross_entropy(logits[:,4,temp,:],(point_batch)[:,temp,4])
-                        loss_r += F.cross_entropy(logits[:,5,temp,:],(point_batch)[:,temp,5])
+                        loss_p[temp] += F.cross_entropy(logits[:,4,temp,:],(point_batch)[:,temp,4])
+                        loss_r[temp] += F.cross_entropy(logits[:,5,temp,:],(point_batch)[:,temp,5])
 
                 point_batch = point_batch.to('cpu')
                 logits = logits.to('cpu')
+                if args.use_error_sampler:
+                    arg2 = 6
+                    if not args.yaw_only:
+                        logits = logits.view(-1,6,model.num_points,model.bins)
+                    else:
+                        arg2 = 4
+                        logits = logits.view(-1,4,model.num_points,model.bins)
+                    idx_batch = batch['idx'].to('cpu')
+                    #label_batch = batch['time_frac']
+                    #print(logits.shape)
+                    #print(idx_batch)
+                    for ii, idx in enumerate(idx_batch):
+                        temp_logits = (logits.cpu()[ii]).view(1, arg2, model.num_points,model.bins)
+                        temp_point_batch = (point_batch.cpu()[ii]).view(1, model.num_points, arg2)
+                        acc_list = acc_metric(args, temp_logits, temp_point_batch, args.yaw_only)
+                        #ele = np.where(train_idx == np.int(idx))
+                        #print(idx, ele)
+                        #print(train_idx)
+                        #if len(ele) != 1:
+                        #    print(idx, ele)
+                        #print(idx)
+                        eps = 1e-6
+                        error_weights[int(train_loc[int(idx)])] = np.sum(np.array(acc_list)) + eps
+                        #print(error_weights[batch['idx'][ii]])
+
                 acc_list = acc_metric(args,logits,point_batch,args.yaw_only)
-                del point_batch
-                del logits
+                #del point_batch
+                #del logits
 
-                if not args.yaw_only:
-                    batch_loss = loss_x + loss_y + loss_z + loss_yaw + loss_p + loss_r
-                else:
-                    batch_loss = loss_x + loss_y + loss_z + loss_yaw
+                batch_loss = None
+                for t in range(model.num_points):
+                    if args.custom_loss:
+                        if batch_loss is None:
+                            batch_loss = loss_mult[0,t]*loss_x[t]
+                        else:
+                            batch_loss += loss_mult[0,t]*loss_x[t]
+                        batch_loss += loss_mult[0,t]*loss_y[t]
+                        batch_loss += loss_mult[0,t]*loss_z[t]
+                        batch_loss += loss_mult[1,t]*loss_yaw[t]
+                        if not args.yaw_only:
+                            batch_loss += loss_mult[1,t]*loss_p[t]
+                            batch_loss += loss_mult[1,t]*loss_r[t]
 
+                    else:
+                        if batch_loss is None:
+                            batch_loss = loss_x[t]
+                        else:
+                            batch_loss += loss_x[t]
+                        batch_loss += loss_y[t]
+                        batch_loss += loss_z[t]
+                        batch_loss += loss_yaw[t]
+                        if not args.yaw_only:
+                            batch_loss += loss_p[t]
+                            batch_loss += loss_r[t]
+
+                #print(batch_loss)
+                #batch_loss.to_cpu()
+                """lamda = torch.tensor(1.).to(device)
+                l2_reg = torch.tensor(0.)
+                for param in model.parameters():
+                    l2_reg += torch.norm(param)
+                l2_reg = l2_reg.to(device)
+                batch_loss += lamda * l2_reg"""
+                batch_loss = batch_loss.to(device)
+                batch_imgs = batch_imgs.to(device)
+                #print(dir())
+                #print(optimizer)
+                logits = logits.to(device)
+                point_batch = point_batch.to(device)
+                model = model.to(device)
+                #optimizer = optimizer.to('cpu')
+                loss_mult = loss_mult.to(device)
+                for i in range(model.num_points):
+                    loss_x[i] = loss_x[i].to(device)
+                    loss_y[i] = loss_y[i].to(device)
+                    loss_z[i] = loss_z[i].to(device)
+                    loss_yaw[i] = loss_yaw[i].to(device)
+                    loss_p[i] = loss_p[i].to(device)
+                    loss_r[i] = loss_r[i].to(device)
+
+
+                #print(batch_loss.device, l2_reg.device, lamda.device, logits.device, point_batch.device)
                 batch_loss.backward()
                 optimizer.step()
                 #model = model.to('cpu')
 
-                writer.add_scalar('train_loss',batch_loss,ctr+epoch*len(train_loader))#TODO: possibly loss.item
-                writer.add_scalar('train_loss_x',loss_x,ctr+epoch*len(train_loader))#TODO: possibly loss.item
-                writer.add_scalar('train_loss_y',loss_y,ctr+epoch*len(train_loader))#TODO: possibly loss.item
-                writer.add_scalar('train_loss_z',loss_z,ctr+epoch*len(train_loader))#TODO: possibly loss.item
-                writer.add_scalar('train_loss_yaw',loss_yaw,ctr+epoch*len(train_loader))#TODO: possibly loss.item
+                writer.add_scalar('train_loss',batch_loss,ctr+epoch*len(train_loader))
+                writer.add_scalar('train_loss_x',torch.sum(torch.tensor(loss_x)),ctr+epoch*len(train_loader))
+                writer.add_scalar('train_loss_y',torch.sum(torch.tensor(loss_y)),ctr+epoch*len(train_loader))
+                writer.add_scalar('train_loss_z',torch.sum(torch.tensor(loss_z)),ctr+epoch*len(train_loader))
+                writer.add_scalar('train_loss_yaw',torch.sum(torch.tensor(loss_yaw)),ctr+epoch*len(train_loader))
                 if not args.yaw_only:
-                    writer.add_scalar('train_loss_p',loss_p,ctr+epoch*len(train_loader))#TODO: possibly loss.item
-                    writer.add_scalar('train_loss_r',loss_r,ctr+epoch*len(train_loader))#TODO: possibly loss.item
+                    writer.add_scalar('train_loss_p',torch.sum(torch.tensor(loss_p)),ctr+epoch*len(train_loader))
+                    writer.add_scalar('train_loss_r',torch.sum(torch.tensor(loss_r)),ctr+epoch*len(train_loader))
 
                 for ii, acc in enumerate(acc_list):
                     writer.add_scalar('train_acc_'+str(ii),acc[0],ctr+epoch*len(train_loader))
@@ -712,16 +819,12 @@ def main():
                 for i in range(len(acc_total)):
                     for j in range(2):
                         acc_total[i][j] = ((elements * acc_total[i][j]) + (b_size * acc_list[i][j]))/(elements + b_size)
+                        #epoch_acc[i][j].append(acc_list[i][j])
 
                 elements += b_size
 
                 #print(b_size)
 
-                #image_batch = point_batch = logits = loss_x = loss_y = loss_z = batch_loss = None
-            #del image_batch, point_batch, logits, loss_x, loss_y, loss_z, batch_loss
-            #image_batch = image_batch.cpu()
-            #point_batch = point_batch.cpu()
-            #torch.cuda.empty_cache()
         #Validation
         #print("Reach here")
         print('Training Accuracy: ',acc_total)
@@ -771,10 +874,11 @@ def main():
                 #print(logits.shape)
                 resnet_output = np.concatenate((resnet_output,logits), axis=0)
                 #print(resnet_output.shape)
-
+                b_size = logits.shape[0]
                 for ii, acc in enumerate(val_acc_list):
                     for jj, acc_j in enumerate(acc):
                         val_acc[ii][jj] += acc_j
+                        epoch_acc[ii][jj].append(acc_j)
                 del point_batch
                 model = model.to('cpu')
 
@@ -790,18 +894,91 @@ def main():
         else:
             val_loss = [val_loss[temp].item()/len(val_loader) for temp in range(4)]
         val_acc = val_acc/len(val_loader)
-        writer.add_scalar('val_loss',sum(val_loss),(epoch+1)*len(train_loader))#TODO: possibly loss.item
-        writer.add_scalar('val_loss_x',val_loss[0],(epoch+1)*len(train_loader))#TODO: possibly loss.item
-        writer.add_scalar('val_loss_y',val_loss[1],(epoch+1)*len(train_loader))#TODO: possibly loss.item
-        writer.add_scalar('val_loss_z',val_loss[2],(epoch+1)*len(train_loader))#TODO: possibly loss.item
-        writer.add_scalar('val_loss_yaw',val_loss[3],(epoch+1)*len(train_loader))#TODO: possibly loss.item
+        writer.add_scalar('val_loss',sum(val_loss),(epoch+1)*len(train_loader))
+        writer.add_scalar('val_loss_x',val_loss[0],(epoch+1)*len(train_loader))
+        writer.add_scalar('val_loss_y',val_loss[1],(epoch+1)*len(train_loader))
+        writer.add_scalar('val_loss_z',val_loss[2],(epoch+1)*len(train_loader))
+        writer.add_scalar('val_loss_yaw',val_loss[3],(epoch+1)*len(train_loader))
         if not args.yaw_only:
-            writer.add_scalar('val_loss_p',val_loss[4],(epoch+1)*len(train_loader))#TODO: possibly loss.item
-            writer.add_scalar('val_loss_r',val_loss[5],(epoch+1)*len(train_loader))#TODO: possibly loss.item
+            writer.add_scalar('val_loss_p',val_loss[4],(epoch+1)*len(train_loader))
+            writer.add_scalar('val_loss_r',val_loss[5],(epoch+1)*len(train_loader))
         for ii, acc in enumerate(val_acc):
             writer.add_scalar('val_acc_'+str(ii),acc[0],(epoch+1)*len(train_loader))
         print('Val Cross-Entropy Loss: ',sum(val_loss),val_loss)
         print('Val Accuracy: ',val_acc)
+        #NOTE: Experimental --- might be bad
+        if args.use_error_sampler and epoch % sampler_n_epochs == 0:
+            #print(type(error_weights))
+            #print(len(error_weights))
+            #print(error_weights[0])
+            temp_err = np.where(np.array(error_weights) == 0.0, 1, 0)
+            print(np.sum(temp_err))
+            print(np.sum(np.array(error_weights)))
+            #print(error_weights)
+            weight_sampler = WeightedRandomSampler(error_weights, len(train_data))
+            weight_loader = DataLoader(train_data,batch_size=args.batch_size,sampler=weight_sampler,num_workers=args.j, worker_init_fn=dl_init)
+
+        if args.use_sampler:
+            #Measure all training samples 
+            time_bin_num = 100 #Make into arg (maybe)
+            time_sample_cnt = [0 for ii in range(time_bin_num)]
+            time_sample_metric = [None for ii in range(time_bin_num)]
+            #Populate cnt and metrics from full data
+            for batch in train_loader:
+                with torch.set_grad_enabled(False):
+                    image_batch = batch['image'].to(device)
+                    model = model.to(device)
+                    model.eval()
+                    logits = model(image_batch)
+                    del image_batch
+                    arg2 = 6
+                    if not args.yaw_only:
+                        logits = logits.view(-1,6,model.num_points,model.bins)
+                    else:
+                        arg2 = 4
+                        logits = logits.view(-1,4,model.num_points,model.bins)
+                    point_batch = batch['points']
+                    label_batch = batch['time_frac']
+                    #print(logits.shape)
+                    for ii, label in enumerate(label_batch):
+                        label = int(label*time_bin_num)
+                        if label >= time_bin_num:
+                            label = time_bin_num - 1
+                        temp_logits = (logits.cpu()[ii]).view(1, arg2, model.num_points,model.bins)
+                        temp_point_batch = (point_batch.cpu()[ii]).view(1, model.num_points, arg2)
+                        acc_list = acc_metric(args, temp_logits, temp_point_batch, args.yaw_only)
+                        total_acc = np.sum(np.array(acc_list)) #TODO: This can be changed to a weighted sum later #TODO: Check
+                        time_sample_cnt[label] += 1
+                        if time_sample_metric[label] is None:
+                            time_sample_metric[label] = 0
+                        time_sample_metric[label] += total_acc
+                    logits = logits.to('cpu')
+                    del point_batch
+                    model = model.to('cpu')
+            #Normalize metric by count
+            times = []
+            avg_metric = []
+            for ii in range(time_bin_num):
+                if time_sample_metric[ii] is not None:
+                    times.append(ii*(1.0/time_bin_num))
+                    avg_metric.append(time_sample_metric[ii]/time_sample_cnt[ii])
+            print("Avg Metrics",times,avg_metric)
+            #Make weight list for sampler #TODO: once this is working, see if there's a more efficient way
+            weights = []
+            for ii in range(len(train_data)):
+                time_frac = train_data[ii]['time_frac']
+                label = int(time_frac*time_bin_num)
+                if label >= time_bin_num:
+                    label = time_bin_num - 1
+                weights.append(avg_metric[label])
+            #Create new sampler
+            #print(type(weights))
+            #print(len(weights))
+            #print(weights[0])
+            #exit(0)
+            weight_sampler = WeightedRandomSampler(weights, len(train_data))
+            weight_loader = DataLoader(train_data,batch_size=args.batch_size,sampler=weight_sampler,num_workers=args.j, worker_init_fn=dl_init)
+
         #Adjust LR
         scheduler.step()
         print('Learning Rate Set to: ',scheduler.get_lr())
@@ -809,9 +986,19 @@ def main():
         if ((epoch + 1) % save_variables_divider == 0 or (epoch == 0) or (epoch == args.epochs - 1)):
             print("Saving variables")
             save_model(epoch)
+
+        epoch_acc = np.array(epoch_acc)
+        mean_str = ""
+        var_str = ""
+        for i in range(len(epoch_acc)):
+            for j in range(len(epoch_acc[i])):
+                mean_str += (str(np.mean(epoch_acc[i][j])) + "\t")
+                var_str += (str(np.std(epoch_acc[i][j])) + "\t")
+        print(mean_str)
+        print(var_str)
     writer.close()
     print("Done")
 
 if __name__ == '__main__':
-    print("asdf")
+    #print("asdf")
     main()

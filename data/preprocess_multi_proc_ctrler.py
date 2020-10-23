@@ -25,7 +25,7 @@ print(size)
 
 pr = ""
 for i, dir in enumerate(proc_dir):
-	procs = " python3 preprocess_data_multi_proc.py "
+	procs = " python3 ../../preprocess_data_multi_proc.py "
 	for d in dir:
 		procs += (d + " ")
 	if i+1 != len(proc_dir):

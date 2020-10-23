@@ -5,7 +5,7 @@ import os
 from cv_bridge import CvBridge, CvBridgeError
 import cv2
 
-mean_image = "/home/siddharth/Desktop/asco/ws/src/orange_picking/data/mean_imgv2_data_real_world_traj_bag.npy"
+mean_image = "/home/siddharth/Desktop/asco/ws/src/orange_picking/data/mean_imgv2_data_depth_data_data_real_world_traj_bag.npy" #"mean_imgv2_data_real_world_traj_bag480.npy"
 
 if not (os.path.exists(mean_image)):
 	print('mean image file not found', mean_image)
@@ -20,7 +20,7 @@ bridge = CvBridge()
 
 pub = rospy.Publisher('/orange_picking/processed_image', Image,queue_size=50)
 
-h = 380
+h = 480 #380 
 w = 640
 
 def processing_callback(data):
@@ -30,7 +30,7 @@ def processing_callback(data):
 		print(e)
 
 	#print(cv_image.shape)
-	cv_image = cv2.resize(cv_image,(w,h))
+	#cv_image = cv2.resize(cv_image,(w,h))
 	#cv2.imwrite("test_pre.png", cv_image)
 	cv_image = cv_image/255.0
 	#print(cv_image.shape)
