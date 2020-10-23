@@ -14,6 +14,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   nav_msgs
   geometry_msgs
+  trajectory_msgs
   gcop_comm
   #GCOP
   tf2

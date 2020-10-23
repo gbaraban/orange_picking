@@ -21,6 +21,8 @@
 #include "geometry_msgs/Pose.h"
 #include "geometry_msgs/PoseStamped.h"
 #include "geometry_msgs/TransformStamped.h"
+#include "trajectory_msgs/JointTrajectory.h"
+#include "trajectory_msgs/JointTrajectoryPoint.h"
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/transform_broadcaster.h"
 #include "tf2/LinearMath/Quaternion.h"
@@ -204,7 +206,7 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   int N = (int) 50*tf;
   int epochs = 10;
   Body3dState x0;
-  //Read from TF
+  //Read x from TF
   geometry_msgs::TransformStamped temp;
   try {
     temp = tfBuffer.lookupTransform(world_name,matrice_name,ros::Time(0),ros::Duration(5.0));
@@ -214,6 +216,24 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   }
   x0.p << temp.transform.translation.x, temp.transform.translation.y, temp.transform.translation.z;
   quat2Matrix(temp.transform.rotation.x,temp.transform.rotation.y,temp.transform.rotation.z,temp.transform.rotation.w,x0.R);
+  //Filter x
+  if (first_call) {
+    last_pos.push_back(x0.p);
+    last_quat.push_back(matrix2Quat(x0.R));
+  }
+  x0.p = (1 - filter_alpha)*last_pos[0] + filter_alpha*x0.p;
+  last_quat[0] = last_quat[0].slerp(matrix2Quat(x0.R),filter_alpha);
+  quat2Matrix(last_quat[0],x0.R);
+  //Check for all zero goals
+  bool all_zeros = true;
+  for (int ii = 0; ii < 3; ++ii) {
+    if (!((msg->poses[ii].position.x == msg->poses[ii].position.y == msg->poses[ii].position.z 
+      == msg->poses[ii].orientation.x == msg->poses[ii].orientation.y 
+      == msg->poses[ii].orientation.z == 0) && (msg->poses[ii].orientation.w == 1))) {
+        all_zeros = false;
+        break;
+    }
+  }
   Body3dState goal[3];
   for (int ii = 0; ii < 3; ++ii){
     Vector3d local_p;
@@ -226,23 +246,29 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
       last_pos.push_back(new_pos);
       last_quat.push_back(matrix2Quat(new_rot));
     }
-    goal[ii].p = (1 - filter_alpha)*last_pos[ii] + filter_alpha*new_pos;
-    last_pos[ii] = goal[ii].p;
-    last_quat[ii] = last_quat[ii].slerp(matrix2Quat(new_rot),filter_alpha);
-    quat2Matrix(last_quat[ii],goal[ii].R);
+    if (!all_zeros) {
+      goal[ii].p = (1 - filter_alpha)*last_pos[ii+1] + filter_alpha*new_pos;
+      last_quat[ii+1] = last_quat[ii+1].slerp(matrix2Quat(new_rot),filter_alpha);
+      quat2Matrix(last_quat[ii+1],goal[ii].R);
+    } else {
+      goal[ii].p = new_pos;
+      last_quat[ii+1] = matrix2Quat(new_rot);
+    }
+    quat2Matrix(last_quat[ii+1],goal[ii].R);
+    last_pos[ii+1] = goal[ii].p;
     goal[ii].v << 0, 0, 0;
     goal[ii].w << 0, 0, 0;
     
     temp.header.stamp = ros::Time::now();
     temp.header.frame_id = world_name;
     temp.child_frame_id = goal_name + std::to_string(ii);
-    temp.transform.translation.x = last_pos[ii][0];
-    temp.transform.translation.y = last_pos[ii][1];
-    temp.transform.translation.z = last_pos[ii][2];
-    temp.transform.rotation.x = last_quat[ii].getX();
-    temp.transform.rotation.y = last_quat[ii].getY();
-    temp.transform.rotation.z = last_quat[ii].getZ();
-    temp.transform.rotation.w = last_quat[ii].getW();
+    temp.transform.translation.x = last_pos[ii+1][0];
+    temp.transform.translation.y = last_pos[ii+1][1];
+    temp.transform.translation.z = last_pos[ii+1][2];
+    temp.transform.rotation.x = last_quat[ii+1].getX();
+    temp.transform.rotation.y = last_quat[ii+1].getY();
+    temp.transform.rotation.z = last_quat[ii+1].getZ();
+    temp.transform.rotation.w = last_quat[ii+1].getW();
     br.sendTransform(temp);
   }
   Vector12d q;
@@ -251,16 +277,20 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   qf << 10,10,10,10,10,10,0,0,0,0,0,0;
   Vector4d r;
   r << 0.01, 0.01, 0.01, 0.001;
-  double yawgain = 0;
-  double rpgain = 0;
-  double dir_gain = 0;
   vector<Body3dState> xs(N+1);
   vector<Vector4d> us(N);
-  solver_process_goal(N, tf, epochs, x0, goal[0], goal[1], goal[2],q, qf, r, yawgain, rpgain, dir_gain, xs, us);
+  solver_process_goal(N, tf, epochs, x0, goal[0], goal[1], goal[2],q, qf, r, xs, us);
+  //Make Path Message
   nav_msgs::Path pa;
   pa.poses.clear();
   pa.header.stamp = ros::Time::now();
   pa.header.frame_id = world_name;
+  //Make Joint Message
+  trajectory_msgs::JointTrajectory joint_msg;
+  joint_msg.header.stamp = ros::Time::now();
+  joint_msg.header.frame_id = world_name;
+  joint_msg.points.clear();
+  //Iterate through the states
   for (int ii = 0; ii < N+1; ++ii) {
     geometry_msgs::PoseStamped p;
     p.header.stamp = ros::Time::now();
@@ -274,8 +304,44 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
     p.pose.orientation.z = temp_quat.getZ();
     p.pose.orientation.w = temp_quat.getW();
     pa.poses.push_back(p);
+    trajectory_msgs::JointTrajectoryPoint joint_point;
+    joint_point.positions.push_back(xs[ii].p[0]);
+    joint_point.positions.push_back(xs[ii].p[1]);
+    joint_point.positions.push_back(xs[ii].p[2]);
+    double roll = SO3::Instance().roll(xs[ii].R);
+    double pitch = SO3::Instance().pitch(xs[ii].R);
+    double yaw = SO3::Instance().yaw(xs[ii].R);
+    joint_point.positions.push_back(roll);
+    joint_point.positions.push_back(pitch);
+    joint_point.positions.push_back(yaw);
+    joint_point.velocities.push_back(xs[ii].v[0]);
+    joint_point.velocities.push_back(xs[ii].v[1]);
+    joint_point.velocities.push_back(xs[ii].v[2]);
+    double w0 = xs[ii].w[0];
+    double w1 = xs[ii].w[1];
+    double w2 = xs[ii].w[2];
+    //NOTE: if cos(pitch) is small, this will break.
+    double roll_rate = (w0*cos(yaw) + w1*sin(yaw))/cos(pitch);
+    double pitch_rate = w1*cos(yaw) - w0*sin(yaw);
+    double yaw_rate = (w2*cos(pitch) + w0*cos(yaw)*sin(pitch) + w1*sin(pitch)*sin(yaw))/cos(pitch);
+    joint_point.velocities.push_back(roll_rate);
+    joint_point.velocities.push_back(pitch_rate);
+    joint_point.velocities.push_back(yaw_rate);
+    if (ii < N) {
+      double thrust = us[ii][3];
+      Eigen:;Vector3d acc = xs[ii].R*Eigen::Vector3d(0,0,thrust);      
+      joint_point.accelerations.push_back(acc[0]);
+      joint_point.accelerations.push_back(acc[1]);
+      joint_point.accelerations.push_back(acc[2]);
+    } else {
+      joint_point.accelerations.push_back(0);
+      joint_point.accelerations.push_back(0);
+      joint_point.accelerations.push_back(0);
+    }
+    joint_msg.points.push_back(joint_point);
   }
-  pub.publish(pa);
+  path_pub.publish(pa);
+  joint_pub.publish(joint_msg);
   cout << "Callback Ended" << endl;
   first_call = false;
 }
@@ -291,9 +357,12 @@ filter_alpha: Amount of filtering to use on the goal points.  Defaults to 1, whi
 */
 TrajectoryNode(): lis(tfBuffer)
 {
-  std::string path_topic, goal_topic;
+  std::string path_topic, joint_topic, goal_topic;
   if (!(n.getParam("path_topic",path_topic))){
     path_topic = "path";
+  }
+  if (!(n.getParam("joint_path_topic",joint_topic))){
+    joint_topic = "path_joints";
   }
   if (!(n.getParam("goal_topic",goal_topic))){
     goal_topic = "goal_points";
@@ -311,12 +380,14 @@ TrajectoryNode(): lis(tfBuffer)
     filter_alpha = 1;
   }
   cout << "Publishing to " << path_topic << endl;
+  cout << "Publishing Joints to " << joint_topic << endl;
   cout << "Subscribing to " << goal_topic << endl;
   cout << "Matrice Name set to " << matrice_name << endl;
   cout << "World Name set to " << world_name << endl;
   cout << "Goal Name set to " << goal_name << endl;
   cout << "Filter Alpha set to " << filter_alpha << endl;
-  pub = n.advertise<nav_msgs::Path>(path_topic,1000);
+  path_pub = n.advertise<nav_msgs::Path>(path_topic,1000);
+  joint_pub = n.advertise<trajectory_msgs::JointTrajectory>(joint_topic,1000);
   sub = n.subscribe(goal_topic,1000,&TrajectoryNode::callback,this);
   first_call = true;
 }
@@ -325,7 +396,8 @@ tf2_ros::Buffer tfBuffer;
 tf2_ros::TransformListener lis;
 tf2_ros::TransformBroadcaster br;
 ros::NodeHandle n;
-ros::Publisher pub;
+ros::Publisher path_pub;
+ros::Publisher joint_pub;
 ros::Subscriber sub;
 std::string world_name;
 std::string matrice_name;
