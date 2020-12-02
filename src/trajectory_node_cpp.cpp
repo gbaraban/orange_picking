@@ -144,9 +144,14 @@ void solver_process_goal(int N, double tf, int epochs, Body3dState x0,
   ddp.mu = 1;
   ddp.debug = false;
 
+  double lastV = -1;
   for (int ii = 0; ii < epochs; ++ii) {
     ddp.Iterate();
     cout << " Iteration Num: " << ii << " DDP V: " << ddp.V << endl;
+    if ((lastV != -1) && (lastV - ddp.V < 0.01)){
+      break;
+    }
+    lastV = ddp.V;
   }
 }
 
@@ -201,10 +206,9 @@ message is skipped and a warning is printed.
 */
 void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
 {
-  cout << "Callback triggered" << endl;
   double tf = 3;
   int N = (int) 50*tf;
-  int epochs = 10;
+  int epochs = 4;
   Body3dState x0;
   //Read x from TF
   geometry_msgs::TransformStamped temp;
@@ -222,17 +226,50 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
     last_quat.push_back(matrix2Quat(x0.R));
   }
   x0.p = (1 - filter_alpha)*last_pos[0] + filter_alpha*x0.p;
+  last_pos[0] = x0.p;
   last_quat[0] = last_quat[0].slerp(matrix2Quat(x0.R),filter_alpha);
   quat2Matrix(last_quat[0],x0.R);
   //Check for all zero goals
   bool all_zeros = true;
   for (int ii = 0; ii < 3; ++ii) {
-    if (!((msg->poses[ii].position.x == msg->poses[ii].position.y == msg->poses[ii].position.z 
-      == msg->poses[ii].orientation.x == msg->poses[ii].orientation.y 
-      == msg->poses[ii].orientation.z == 0) && (msg->poses[ii].orientation.w == 1))) {
-        all_zeros = false;
-        break;
+    if (msg->poses[ii].position.x != 0) {
+      std::cout << "x" << ii << " is non-zero" << std::endl;
+      all_zeros = false;
+      break;
     }
+    if (msg->poses[ii].position.y != 0) {
+      std::cout << "y" << ii << " is non-zero" << std::endl;
+      all_zeros = false;
+      break;
+    }
+    if (msg->poses[ii].position.z != 0) {
+      std::cout << "z" << ii << " is non-zero" << std::endl;
+      all_zeros = false;
+      break;
+    }
+    if (msg->poses[ii].orientation.x != 0) {
+      std::cout << "Rx" << ii << " is non-zero" << std::endl;
+      all_zeros = false;
+      break;
+    }
+    if (msg->poses[ii].orientation.y != 0) {
+      std::cout << "Ry" << ii << " is non-zero" << std::endl;
+      all_zeros = false;
+      break;
+    }
+    if (msg->poses[ii].orientation.z != 0) {
+      std::cout << "Rz" << ii << " is non-zero" << std::endl;
+      all_zeros = false;
+      break;
+    }
+    if (msg->poses[ii].orientation.w != 1) {
+      std::cout << "Rw" << ii << " is non-one" << std::endl;
+      all_zeros = false;
+      break;
+    }
+  }
+  if (all_zeros) {
+    std::cout << "Saw All Zeros!!" << std::endl;
   }
   Body3dState goal[3];
   for (int ii = 0; ii < 3; ++ii){
@@ -329,10 +366,11 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
     joint_point.velocities.push_back(yaw_rate);
     if (ii < N) {
       double thrust = us[ii][3];
-      Eigen:;Vector3d acc = xs[ii].R*Eigen::Vector3d(0,0,thrust);      
+      double mass = 0.5; //Using the default
+      Eigen:;Vector3d acc = xs[ii].R*Eigen::Vector3d(0,0,thrust/mass);      
       joint_point.accelerations.push_back(acc[0]);
       joint_point.accelerations.push_back(acc[1]);
-      joint_point.accelerations.push_back(acc[2]);
+      joint_point.accelerations.push_back(acc[2]-9.81);
     } else {
       joint_point.accelerations.push_back(0);
       joint_point.accelerations.push_back(0);
@@ -342,8 +380,13 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   }
   path_pub.publish(pa);
   joint_pub.publish(joint_msg);
-  cout << "Callback Ended" << endl;
   first_call = false;
+  std::cout << "x0 Position: " << last_pos[0] << std::endl;
+  std::cout << "x0 Quaternion: " << last_quat[0] << std::endl;
+  for (int ii = 0; ii < 3; ++ii) {
+    std::cout << "goal" << ii << " Position: " << last_pos[ii + 1] << std::endl;
+    std::cout << "goal" << ii << " Quaternion: " << last_quat[ii + 1] << std::endl;
+  }
 }
 
 /*Sets up of the node subscriber and publisher
@@ -412,11 +455,8 @@ Builds an instance of TrajectoryNode and then spins.
 */
 int main(int argc, char **argv)
 {
-  cout << "Init" << endl;
   ros::init(argc,argv, "Trajectory_Node");
-  cout << "Constructor" << endl;
   TrajectoryNode tn;
-  cout << "Spin" << endl;
   ros::spin();
   return 0;
 }
