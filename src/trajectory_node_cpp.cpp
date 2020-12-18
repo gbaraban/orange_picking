@@ -74,6 +74,24 @@ typedef ConstraintCost<Body3dState, 12, 4, Dynamic, 3> DirectionConstraintCost;
 
 public:
 
+Body3dState filterX(Body3dState x0,double tdiff) {
+  if (first_call) {
+    last_pos.push_back(x0.p);
+    last_quat.push_back(matrix2Quat(x0.R));
+    x0velocity << 0,0,0;
+    x0.v << x0velocity;
+    return x0;
+  }
+  Vector3d new_vel = (last_pos[0] - x0.p)/tdiff;
+  x0.p = last_pos[0] + (x0.p - last_pos[0])*filter_alpha;
+  last_pos[0] = x0.p;
+  last_quat[0] = last_quat[0].slerp(matrix2Quat(x0.R),filter_alpha);
+  quat2Matrix(last_quat[0],x0.R);
+  x0velocity = x0velocity + (new_vel - x0velocity)*filter_alpha;
+  x0.v = x0velocity;
+  return x0;
+}
+
 /*Runs DDP on the specified goals to create an optimal trejectory
 Args:
 N: The length (in points) of the desired trajectory
@@ -221,56 +239,52 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   x0.p << temp.transform.translation.x, temp.transform.translation.y, temp.transform.translation.z;
   quat2Matrix(temp.transform.rotation.x,temp.transform.rotation.y,temp.transform.rotation.z,temp.transform.rotation.w,x0.R);
   //Filter x
-  if (first_call) {
-    last_pos.push_back(x0.p);
-    last_quat.push_back(matrix2Quat(x0.R));
-  }
-  x0.p = (1 - filter_alpha)*last_pos[0] + filter_alpha*x0.p;
-  last_pos[0] = x0.p;
-  last_quat[0] = last_quat[0].slerp(matrix2Quat(x0.R),filter_alpha);
-  quat2Matrix(last_quat[0],x0.R);
+  ros::Time curr_time = ros::Time::now();
+  double tdiff = (curr_time - last_time).toSec();
+  x0 = filterX(x0,tdiff);
+  last_time = curr_time;
   //Check for all zero goals
   bool all_zeros = true;
   for (int ii = 0; ii < 3; ++ii) {
     if (msg->poses[ii].position.x != 0) {
-      std::cout << "x" << ii << " is non-zero" << std::endl;
+      //std::cout << "x" << ii << " is non-zero" << std::endl;
       all_zeros = false;
       break;
     }
     if (msg->poses[ii].position.y != 0) {
-      std::cout << "y" << ii << " is non-zero" << std::endl;
+      //std::cout << "y" << ii << " is non-zero" << std::endl;
       all_zeros = false;
       break;
     }
     if (msg->poses[ii].position.z != 0) {
-      std::cout << "z" << ii << " is non-zero" << std::endl;
+      //std::cout << "z" << ii << " is non-zero" << std::endl;
       all_zeros = false;
       break;
     }
     if (msg->poses[ii].orientation.x != 0) {
-      std::cout << "Rx" << ii << " is non-zero" << std::endl;
+      //std::cout << "Rx" << ii << " is non-zero" << std::endl;
       all_zeros = false;
       break;
     }
     if (msg->poses[ii].orientation.y != 0) {
-      std::cout << "Ry" << ii << " is non-zero" << std::endl;
+      //std::cout << "Ry" << ii << " is non-zero" << std::endl;
       all_zeros = false;
       break;
     }
     if (msg->poses[ii].orientation.z != 0) {
-      std::cout << "Rz" << ii << " is non-zero" << std::endl;
+      //std::cout << "Rz" << ii << " is non-zero" << std::endl;
       all_zeros = false;
       break;
     }
     if (msg->poses[ii].orientation.w != 1) {
-      std::cout << "Rw" << ii << " is non-one" << std::endl;
+      //std::cout << "Rw" << ii << " is non-one" << std::endl;
       all_zeros = false;
       break;
     }
   }
-  if (all_zeros) {
-    std::cout << "Saw All Zeros!!" << std::endl;
-  }
+  /*if (all_zeros) {
+    //std::cout << "Saw All Zeros!!" << std::endl;
+  }*/
   Body3dState goal[3];
   for (int ii = 0; ii < 3; ++ii){
     Vector3d local_p;
@@ -309,7 +323,7 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
     br.sendTransform(temp);
   }
   Vector12d q;
-  q << 0,0,0,0,0,0,15,15,15,10,10,10;
+  q << 0,0,0,0,0,0,10,10,10,30,30,30;
   Vector12d qf;
   qf << 10,10,10,10,10,10,0,0,0,0,0,0;
   Vector4d r;
@@ -381,11 +395,11 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   path_pub.publish(pa);
   joint_pub.publish(joint_msg);
   first_call = false;
-  std::cout << "x0 Position: " << last_pos[0] << std::endl;
-  std::cout << "x0 Quaternion: " << last_quat[0] << std::endl;
+  ROS_INFO_STREAM("x0 Position: " << last_pos[0] << std::endl);
+  ROS_INFO_STREAM("x0 Quaternion: " << last_quat[0] << std::endl);
   for (int ii = 0; ii < 3; ++ii) {
-    std::cout << "goal" << ii << " Position: " << last_pos[ii + 1] << std::endl;
-    std::cout << "goal" << ii << " Quaternion: " << last_quat[ii + 1] << std::endl;
+    ROS_INFO_STREAM("goal" << ii << " Position: " << last_pos[ii + 1] << std::endl);
+    ROS_INFO_STREAM("goal" << ii << " Quaternion: " << last_quat[ii + 1] << std::endl);
   }
 }
 
@@ -422,13 +436,13 @@ TrajectoryNode(): lis(tfBuffer)
   if (!(n.getParam("filter_alpha",filter_alpha))){
     filter_alpha = 1;
   }
-  cout << "Publishing to " << path_topic << endl;
-  cout << "Publishing Joints to " << joint_topic << endl;
-  cout << "Subscribing to " << goal_topic << endl;
-  cout << "Matrice Name set to " << matrice_name << endl;
-  cout << "World Name set to " << world_name << endl;
-  cout << "Goal Name set to " << goal_name << endl;
-  cout << "Filter Alpha set to " << filter_alpha << endl;
+  ROS_INFO_STREAM("Publishing to " << path_topic << endl);
+  ROS_INFO_STREAM("Publishing Joints to " << joint_topic << endl);
+  ROS_INFO_STREAM("Subscribing to " << goal_topic << endl);
+  ROS_INFO_STREAM("Matrice Name set to " << matrice_name << endl);
+  ROS_INFO_STREAM("World Name set to " << world_name << endl);
+  ROS_INFO_STREAM("Goal Name set to " << goal_name << endl);
+  ROS_INFO_STREAM("Filter Alpha set to " << filter_alpha << endl);
   path_pub = n.advertise<nav_msgs::Path>(path_topic,1000);
   joint_pub = n.advertise<trajectory_msgs::JointTrajectory>(joint_topic,1000);
   sub = n.subscribe(goal_topic,1000,&TrajectoryNode::callback,this);
@@ -448,7 +462,9 @@ std::string goal_name;
 double filter_alpha;
 vector<Vector3d> last_pos;
 vector<tf2::Quaternion> last_quat;
+Vector3d x0velocity;
 bool first_call;
+ros::Time last_time;
 };
 /*The main function
 Builds an instance of TrajectoryNode and then spins.
