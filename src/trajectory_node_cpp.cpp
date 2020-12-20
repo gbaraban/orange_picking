@@ -21,6 +21,7 @@
 #include "geometry_msgs/Pose.h"
 #include "geometry_msgs/PoseStamped.h"
 #include "geometry_msgs/TransformStamped.h"
+#include "geometry_msgs/Twist.h"
 #include "trajectory_msgs/JointTrajectory.h"
 #include "trajectory_msgs/JointTrajectoryPoint.h"
 #include "tf2_ros/transform_listener.h"
@@ -74,20 +75,18 @@ typedef ConstraintCost<Body3dState, 12, 4, Dynamic, 3> DirectionConstraintCost;
 
 public:
 
-Body3dState filterX(Body3dState x0,double tdiff) {
+Body3dState filterX(Body3dState x0) {
   if (first_call) {
     last_pos.push_back(x0.p);
     last_quat.push_back(matrix2Quat(x0.R));
-    x0velocity << 0,0,0;
-    x0.v << x0velocity;
+    x0velocity = x0.v;
     return x0;
   }
-  Vector3d new_vel = (last_pos[0] - x0.p)/tdiff;
   x0.p = last_pos[0] + (x0.p - last_pos[0])*filter_alpha;
   last_pos[0] = x0.p;
   last_quat[0] = last_quat[0].slerp(matrix2Quat(x0.R),filter_alpha);
   quat2Matrix(last_quat[0],x0.R);
-  x0velocity = x0velocity + (new_vel - x0velocity)*filter_alpha;
+  x0velocity = x0velocity + (x0.v - x0velocity)*filter_alpha;
   x0.v = x0velocity;
   return x0;
 }
@@ -230,19 +229,24 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   Body3dState x0;
   //Read x from TF
   geometry_msgs::TransformStamped temp;
+  geometry_msgs::TransformStamped curr_trans;
+  geometry_msgs::TransformStamped past_trans;
   try {
-    temp = tfBuffer.lookupTransform(world_name,matrice_name,ros::Time(0),ros::Duration(5.0));
+    ros::Time now = ros::Time::now();
+    ros::Duration tdiff = ros::Duration(0.1);//Velocity averaging time
+    curr_trans = tfBuffer.lookupTransform(world_name,matrice_name,now,ros::Duration(5.0));
+    past_trans = tfBuffer.lookupTransform(world_name,matrice_name,now - tdiff);
+    x0.p << curr_trans.transform.translation.x, curr_trans.transform.translation.y, curr_trans.transform.translation.z;
+    quat2Matrix(curr_trans.transform.rotation.x,curr_trans.transform.rotation.y,curr_trans.transform.rotation.z,curr_trans.transform.rotation.w,x0.R);
+    x0.v << (curr_trans.transform.translation.x - past_trans.transform.translation.x)/tdiff.toSec(),
+            (curr_trans.transform.translation.y - past_trans.transform.translation.y)/tdiff.toSec(),
+            (curr_trans.transform.translation.z - past_trans.transform.translation.z)/tdiff.toSec();
   } catch (tf2::TransformException &ex) {
     ROS_WARN("Could not find the transform");
     return;
-  }
-  x0.p << temp.transform.translation.x, temp.transform.translation.y, temp.transform.translation.z;
-  quat2Matrix(temp.transform.rotation.x,temp.transform.rotation.y,temp.transform.rotation.z,temp.transform.rotation.w,x0.R);
+  } 
   //Filter x
-  ros::Time curr_time = ros::Time::now();
-  double tdiff = (curr_time - last_time).toSec();
-  x0 = filterX(x0,tdiff);
-  last_time = curr_time;
+  x0 = filterX(x0);
   //Check for all zero goals
   bool all_zeros = true;
   for (int ii = 0; ii < 3; ++ii) {
