@@ -141,20 +141,24 @@ void solver_process_goal(int N, double tf, int epochs, Body3dState x0,
     ts[k] = k*h;
 
   // States
-  xout.resize(N+1);
   xout[0].Clear();
   xout[0] = x0;
 
   // initial controls (e.g. hover at one place)
-  us.resize(N);
   vector<Vector4d> uds(N);
   double third_N =((double) N)/goals.size();
   for (int i = 0; i < N; ++i) {
-    us[i].head(3).setZero();
-    us[i][3] = 9.81*sys.m;
+   // us[i].head(3).setZero();
+   // us[i][3] = 9.81*sys.m;
     uds[i].head(3).setZero();
     uds[i][3] = 9.81*sys.m;
   }
+  if (first_call) {
+    for (int i = 0; i < N; ++i) {
+      us[i].head(3).setZero();
+      us[i][3] = 9.81*sys.m;
+    }
+  } 
   pathcost.SetReference(NULL,&uds);
 
   HrotorDdp ddp(sys, cost, ts, xout, us);
@@ -231,9 +235,9 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   geometry_msgs::TransformStamped temp;
   geometry_msgs::TransformStamped curr_trans;
   geometry_msgs::TransformStamped past_trans;
+  ros::Time now = ros::Time::now();
   try {
-    ros::Time now = ros::Time::now();
-    ros::Duration tdiff = ros::Duration(0.1);//Velocity averaging time
+    ros::Duration tdiff = ros::Duration(0.05);//Velocity averaging time
     curr_trans = tfBuffer.lookupTransform(world_name,matrice_name,now,ros::Duration(5.0));
     past_trans = tfBuffer.lookupTransform(world_name,matrice_name,now - tdiff);
     x0.p << curr_trans.transform.translation.x, curr_trans.transform.translation.y, curr_trans.transform.translation.z;
@@ -245,6 +249,7 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
     ROS_WARN("Could not find the transform");
     return;
   } 
+  ros::Time post_tf = ros::Time::now();
   //Filter x
   x0 = filterX(x0);
   //Check for all zero goals
@@ -314,7 +319,7 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
     goal[ii].v << 0, 0, 0;
     goal[ii].w << 0, 0, 0;
     
-    temp.header.stamp = ros::Time::now();
+    temp.header.stamp = now;
     temp.header.frame_id = world_name;
     temp.child_frame_id = goal_name + std::to_string(ii);
     temp.transform.translation.x = last_pos[ii+1][0];
@@ -327,28 +332,30 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
     br.sendTransform(temp);
   }
   Vector12d q;
-  q << 0,0,0,0,0,0,10,10,10,30,30,30;
+  q << 0,0,0,0,0,0,15,15,15,10,10,10;
   Vector12d qf;
   qf << 10,10,10,10,10,10,0,0,0,0,0,0;
   Vector4d r;
   r << 0.01, 0.01, 0.01, 0.001;
-  vector<Body3dState> xs(N+1);
-  vector<Vector4d> us(N);
+  //vector<Body3dState> xs(N+1);
+  //vector<Vector4d> us(N);
+  ros::Time pre_ddp = ros::Time::now();
   solver_process_goal(N, tf, epochs, x0, goal[0], goal[1], goal[2],q, qf, r, xs, us);
+  ros::Time post_ddp = ros::Time::now();
   //Make Path Message
   nav_msgs::Path pa;
   pa.poses.clear();
-  pa.header.stamp = ros::Time::now();
+  pa.header.stamp = now;
   pa.header.frame_id = world_name;
   //Make Joint Message
   trajectory_msgs::JointTrajectory joint_msg;
-  joint_msg.header.stamp = ros::Time::now();
+  joint_msg.header.stamp = now;
   joint_msg.header.frame_id = world_name;
   joint_msg.points.clear();
   //Iterate through the states
   for (int ii = 0; ii < N+1; ++ii) {
     geometry_msgs::PoseStamped p;
-    p.header.stamp = ros::Time::now();
+    p.header.stamp = now;
     p.header.frame_id = "path"+std::to_string(ii);
     p.pose.position.x = xs[ii].p[0];
     p.pose.position.y = xs[ii].p[1];
@@ -400,11 +407,16 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   joint_pub.publish(joint_msg);
   first_call = false;
   ROS_INFO_STREAM("x0 Position: " << last_pos[0] << std::endl);
-  ROS_INFO_STREAM("x0 Quaternion: " << last_quat[0] << std::endl);
-  for (int ii = 0; ii < 3; ++ii) {
+  ROS_INFO_STREAM("x0 Velocity: " << x0velocity << std::endl);
+  /*for (int ii = 0; ii < 3; ++ii) {
     ROS_INFO_STREAM("goal" << ii << " Position: " << last_pos[ii + 1] << std::endl);
     ROS_INFO_STREAM("goal" << ii << " Quaternion: " << last_quat[ii + 1] << std::endl);
-  }
+  }*/
+  ROS_INFO_STREAM("TF Time Taken: " << (post_tf-now).toSec() << std::endl);
+  ROS_INFO_STREAM("PreDDP Time Taken: " << (pre_ddp-post_tf).toSec() << std::endl);
+  ROS_INFO_STREAM("DDP Time Taken: " << (post_ddp - pre_ddp).toSec() << std::endl);
+  ROS_INFO_STREAM("PostDDP Time Taken: " << (ros::Time::now()-post_ddp).toSec() << std::endl);
+  ROS_INFO_STREAM("Total Time Taken: " << (ros::Time::now()-now).toSec() << std::endl);
 }
 
 /*Sets up of the node subscriber and publisher
@@ -450,6 +462,11 @@ TrajectoryNode(): lis(tfBuffer)
   path_pub = n.advertise<nav_msgs::Path>(path_topic,1000);
   joint_pub = n.advertise<trajectory_msgs::JointTrajectory>(joint_topic,1000);
   sub = n.subscribe(goal_topic,1000,&TrajectoryNode::callback,this);
+  int N = 150;
+  xs = vector<Body3dState>(N+1);
+  us = vector<Vector4d>(N);
+  //xs.resize(N+1);
+  //us.resize(N);
   first_call = true;
 }
 
@@ -463,6 +480,8 @@ ros::Subscriber sub;
 std::string world_name;
 std::string matrice_name;
 std::string goal_name;
+vector<Body3dState> xs;
+vector<Vector4d> us;
 double filter_alpha;
 vector<Vector3d> last_pos;
 vector<tf2::Quaternion> last_quat;
