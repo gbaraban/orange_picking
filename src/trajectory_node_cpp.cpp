@@ -17,6 +17,7 @@
 #include <vector>
 #include "ros/ros.h"
 #include "nav_msgs/Path.h"
+#include "nav_msgs/Odometry.h"
 #include "geometry_msgs/PoseArray.h"
 #include "geometry_msgs/Pose.h"
 #include "geometry_msgs/PoseStamped.h"
@@ -74,22 +75,6 @@ typedef Ddp<Body3dState, 12, 4> HrotorDdp;
 typedef ConstraintCost<Body3dState, 12, 4, Dynamic, 3> DirectionConstraintCost;
 
 public:
-
-Body3dState filterX(Body3dState x0) {
-  if (first_call) {
-    last_pos.push_back(x0.p);
-    last_quat.push_back(matrix2Quat(x0.R));
-    x0velocity = x0.v;
-    return x0;
-  }
-  x0.p = last_pos[0] + (x0.p - last_pos[0])*filter_alpha;
-  last_pos[0] = x0.p;
-  last_quat[0] = last_quat[0].slerp(matrix2Quat(x0.R),filter_alpha);
-  quat2Matrix(last_quat[0],x0.R);
-  x0velocity = x0velocity + (x0.v - x0velocity)*filter_alpha;
-  x0.v = x0velocity;
-  return x0;
-}
 
 /*Runs DDP on the specified goals to create an optimal trejectory
 Args:
@@ -168,7 +153,7 @@ void solver_process_goal(int N, double tf, int epochs, Body3dState x0,
   double lastV = -1;
   for (int ii = 0; ii < epochs; ++ii) {
     ddp.Iterate();
-    cout << " Iteration Num: " << ii << " DDP V: " << ddp.V << endl;
+    ROS_INFO_STREAM("Iteration Num: " << ii << " DDP V: " << ddp.V << endl);
     if ((lastV != -1) && (lastV - ddp.V < 0.01)){
       break;
     }
@@ -217,6 +202,60 @@ tf2::Quaternion matrix2Quat(Matrix3d& R) {
   temp_mat.getRotation(temp_quat);
   return temp_quat;
 }
+/*
+void tf_update() {
+  ros::Time begin_time = ros::Time::now();
+  geometry_msgs::TransformStamped curr_trans;
+  try {
+    curr_trans = tfBuffer.lookupTransform(world_name,matrice_name,ros::Time(0),ros::Duration(1.0));
+  } catch (tf2::TransformException &ex) {
+    ROS_WARN("Could not find the transform");
+    return;
+  }
+//  try { 
+//    past_trans = tfBuffer.lookupTransform(world_name,matrice_name,now - tdiff,ros::Duration(1.0));
+//    post_tf = ros::Time::now();
+//  } catch (tf2::TransformException &ex) {
+//    ROS_WARN("Could not find the second transform");
+//    return;
+//  } 
+  //Filter x
+  double tdiff = (curr_trans.header.stamp - last_time).toSec();
+  if (tdiff < 1e-4){
+    ROS_WARN("tf_update too soon");
+    return;
+  }
+  //ctr++;
+  Body3dState new_x0;
+  new_x0.p << curr_trans.transform.translation.x,
+          curr_trans.transform.translation.y,
+          curr_trans.transform.translation.z;
+  quat2Matrix(curr_trans.transform.rotation.x,
+              curr_trans.transform.rotation.y,
+              curr_trans.transform.rotation.z,
+              curr_trans.transform.rotation.w,
+              new_x0.R);
+  last_time = ros::Time::now();//curr_trans.header.stamp;
+  new_x0.v << (curr_trans.transform.translation.x - x0.p[0])/tdiff,
+              (curr_trans.transform.translation.y - x0.p[1])/tdiff,
+              (curr_trans.transform.translation.z - x0.p[2])/tdiff;
+  filterX(new_x0);
+  //ROS_INFO_STREAM("UPDATE Time Taken: " << (ros::Time::now()-begin_time).toSec() << std::endl);
+ 
+}*/
+
+void odom_callback(const nav_msgs::Odometry::ConstPtr& msg)
+{
+  odom_update = true;
+  x0.p << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z; 
+  quat2Matrix(msg->pose.pose.orientation.x,
+              msg->pose.pose.orientation.y,
+              msg->pose.pose.orientation.z,
+              msg->pose.pose.orientation.w,x0.R);
+  x0.v << msg->twist.twist.linear.x, msg->twist.twist.linear.y, msg->twist.twist.linear.z; 
+  ROS_INFO_STREAM("ODOMETRY UPDATE");
+  last_time = msg->header.stamp;
+}
  
 /*Handles messages of containing goal points
 Args:
@@ -227,31 +266,51 @@ message is skipped and a warning is printed.
 */
 void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
 {
+//  ROS_INFO_STREAM("CALLBACK: " << ctr);
+  if (!odom_update) {
+    ROS_INFO_STREAM("Stale odometry value, retrying");
+    return;
+  }
+  odom_update = false;
+  ros::Time begin_time = ros::Time::now();
+  //return;
   double tf = 3;
   int N = (int) 50*tf;
   int epochs = 4;
-  Body3dState x0;
+  //Body3dState x0;
   //Read x from TF
-  geometry_msgs::TransformStamped temp;
-  geometry_msgs::TransformStamped curr_trans;
-  geometry_msgs::TransformStamped past_trans;
-  ros::Time now = ros::Time::now();
-  try {
-    ros::Duration tdiff = ros::Duration(0.05);//Velocity averaging time
-    curr_trans = tfBuffer.lookupTransform(world_name,matrice_name,now,ros::Duration(5.0));
-    past_trans = tfBuffer.lookupTransform(world_name,matrice_name,now - tdiff);
-    x0.p << curr_trans.transform.translation.x, curr_trans.transform.translation.y, curr_trans.transform.translation.z;
-    quat2Matrix(curr_trans.transform.rotation.x,curr_trans.transform.rotation.y,curr_trans.transform.rotation.z,curr_trans.transform.rotation.w,x0.R);
-    x0.v << (curr_trans.transform.translation.x - past_trans.transform.translation.x)/tdiff.toSec(),
-            (curr_trans.transform.translation.y - past_trans.transform.translation.y)/tdiff.toSec(),
-            (curr_trans.transform.translation.z - past_trans.transform.translation.z)/tdiff.toSec();
+  //geometry_msgs::TransformStamped temp;
+  //geometry_msgs::TransformStamped curr_trans;
+  //geometry_msgs::TransformStamped past_trans;
+  //ros::Time now = ros::Time::now();
+  //ros::Time mid_tf;// = ros::Time::now();
+  //ros::Time post_tf;// = ros::Time::now();
+  /*try {
+    curr_trans = tfBuffer.lookupTransform(world_name,matrice_name,ros::Time(0),ros::Duration(5.0));
+    mid_tf = ros::Time::now();
   } catch (tf2::TransformException &ex) {
-    ROS_WARN("Could not find the transform");
+    ROS_WARN("Could not find the first transform");
+    return;
+  }
+  try { 
+    past_trans = tfBuffer.lookupTransform(world_name,matrice_name,now - tdiff,ros::Duration(1.0));
+    post_tf = ros::Time::now();
+  } catch (tf2::TransformException &ex) {
+    ROS_WARN("Could not find the second transform");
     return;
   } 
-  ros::Time post_tf = ros::Time::now();
   //Filter x
-  x0 = filterX(x0);
+  x0.p << curr_trans.transform.translation.x,
+          curr_trans.transform.translation.y,
+          curr_trans.transform.translation.z;
+  quat2Matrix(curr_trans.transform.rotation.x,
+              curr_trans.transform.rotation.y,
+              curr_trans.transform.rotation.z,
+              curr_trans.transform.rotation.w,x0.R);
+  x0.v << (curr_trans.transform.translation.x - past_trans.transform.translation.x)/tdiff.toSec(),
+          (curr_trans.transform.translation.y - past_trans.transform.translation.y)/tdiff.toSec(),
+          (curr_trans.transform.translation.z - past_trans.transform.translation.z)/tdiff.toSec();
+  x0 = filterX(x0);*/
   //Check for all zero goals
   bool all_zeros = true;
   for (int ii = 0; ii < 3; ++ii) {
@@ -307,28 +366,28 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
       last_quat.push_back(matrix2Quat(new_rot));
     }
     if (!all_zeros) {
-      goal[ii].p = (1 - filter_alpha)*last_pos[ii+1] + filter_alpha*new_pos;
-      last_quat[ii+1] = last_quat[ii+1].slerp(matrix2Quat(new_rot),filter_alpha);
-      quat2Matrix(last_quat[ii+1],goal[ii].R);
+      goal[ii].p = (1 - filter_alpha)*last_pos[ii] + filter_alpha*new_pos;
+      last_quat[ii] = last_quat[ii].slerp(matrix2Quat(new_rot),filter_alpha);
+      quat2Matrix(last_quat[ii],goal[ii].R);
     } else {
       goal[ii].p = new_pos;
-      last_quat[ii+1] = matrix2Quat(new_rot);
+      last_quat[ii] = matrix2Quat(new_rot);
     }
-    quat2Matrix(last_quat[ii+1],goal[ii].R);
-    last_pos[ii+1] = goal[ii].p;
+    quat2Matrix(last_quat[ii],goal[ii].R);
+    last_pos[ii] = goal[ii].p;
     goal[ii].v << 0, 0, 0;
     goal[ii].w << 0, 0, 0;
-    
-    temp.header.stamp = now;
+    geometry_msgs::TransformStamped temp;
+    temp.header.stamp = last_time;
     temp.header.frame_id = world_name;
     temp.child_frame_id = goal_name + std::to_string(ii);
-    temp.transform.translation.x = last_pos[ii+1][0];
-    temp.transform.translation.y = last_pos[ii+1][1];
-    temp.transform.translation.z = last_pos[ii+1][2];
-    temp.transform.rotation.x = last_quat[ii+1].getX();
-    temp.transform.rotation.y = last_quat[ii+1].getY();
-    temp.transform.rotation.z = last_quat[ii+1].getZ();
-    temp.transform.rotation.w = last_quat[ii+1].getW();
+    temp.transform.translation.x = last_pos[ii][0];
+    temp.transform.translation.y = last_pos[ii][1];
+    temp.transform.translation.z = last_pos[ii][2];
+    temp.transform.rotation.x = last_quat[ii].getX();
+    temp.transform.rotation.y = last_quat[ii].getY();
+    temp.transform.rotation.z = last_quat[ii].getZ();
+    temp.transform.rotation.w = last_quat[ii].getW();
     br.sendTransform(temp);
   }
   Vector12d q;
@@ -345,17 +404,17 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   //Make Path Message
   nav_msgs::Path pa;
   pa.poses.clear();
-  pa.header.stamp = now;
+  pa.header.stamp = last_time;
   pa.header.frame_id = world_name;
   //Make Joint Message
   trajectory_msgs::JointTrajectory joint_msg;
-  joint_msg.header.stamp = now;
+  joint_msg.header.stamp = last_time;
   joint_msg.header.frame_id = world_name;
   joint_msg.points.clear();
   //Iterate through the states
   for (int ii = 0; ii < N+1; ++ii) {
     geometry_msgs::PoseStamped p;
-    p.header.stamp = now;
+    p.header.stamp = last_time;
     p.header.frame_id = "path"+std::to_string(ii);
     p.pose.position.x = xs[ii].p[0];
     p.pose.position.y = xs[ii].p[1];
@@ -412,11 +471,10 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
     ROS_INFO_STREAM("goal" << ii << " Position: " << last_pos[ii + 1] << std::endl);
     ROS_INFO_STREAM("goal" << ii << " Quaternion: " << last_quat[ii + 1] << std::endl);
   }*/
-  ROS_INFO_STREAM("TF Time Taken: " << (post_tf-now).toSec() << std::endl);
-  ROS_INFO_STREAM("PreDDP Time Taken: " << (pre_ddp-post_tf).toSec() << std::endl);
+  ROS_INFO_STREAM("PreDDP Time Taken: " << (pre_ddp-begin_time).toSec() << std::endl);
   ROS_INFO_STREAM("DDP Time Taken: " << (post_ddp - pre_ddp).toSec() << std::endl);
   ROS_INFO_STREAM("PostDDP Time Taken: " << (ros::Time::now()-post_ddp).toSec() << std::endl);
-  ROS_INFO_STREAM("Total Time Taken: " << (ros::Time::now()-now).toSec() << std::endl);
+  ROS_INFO_STREAM("Total Time Taken: " << (ros::Time::now()-begin_time).toSec() << std::endl);
 }
 
 /*Sets up of the node subscriber and publisher
@@ -440,6 +498,9 @@ TrajectoryNode(): lis(tfBuffer)
   if (!(n.getParam("goal_topic",goal_topic))){
     goal_topic = "goal_points";
   }
+  if (!(n.getParam("odom_topic",odom_topic))){
+    odom_topic = "gcop_odom";
+  }
   if (!(n.getParam("matrice_name",matrice_name))){
     matrice_name = "matrice";
   }
@@ -455,6 +516,7 @@ TrajectoryNode(): lis(tfBuffer)
   ROS_INFO_STREAM("Publishing to " << path_topic << endl);
   ROS_INFO_STREAM("Publishing Joints to " << joint_topic << endl);
   ROS_INFO_STREAM("Subscribing to " << goal_topic << endl);
+  ROS_INFO_STREAM("Subscribing to " << odom_topic << endl);
   ROS_INFO_STREAM("Matrice Name set to " << matrice_name << endl);
   ROS_INFO_STREAM("World Name set to " << world_name << endl);
   ROS_INFO_STREAM("Goal Name set to " << goal_name << endl);
@@ -462,12 +524,29 @@ TrajectoryNode(): lis(tfBuffer)
   path_pub = n.advertise<nav_msgs::Path>(path_topic,1000);
   joint_pub = n.advertise<trajectory_msgs::JointTrajectory>(joint_topic,1000);
   sub = n.subscribe(goal_topic,1000,&TrajectoryNode::callback,this);
+  odom_sub = n.subscribe(odom_topic,1000,&TrajectoryNode::odom_callback,this);
   int N = 150;
+  x0.p << 0, 0, 0;
+  x0.R << 1, 0, 0,
+          0, 1, 0,
+          0, 0, 1;
+  x0.v << 0, 0, 0;
   xs = vector<Body3dState>(N+1);
   us = vector<Vector4d>(N);
+  last_time = ros::Time::now();
   //xs.resize(N+1);
   //us.resize(N);
   first_call = true;
+  odom_update = false;
+/*  ros::Rate loop_rate(200);
+  ctr = 0;
+  ROS_INFO_STREAM("Loop Start: " << ctr);
+  while (ros::ok())
+  {
+    tf_update();
+    ros::spinOnce();
+    loop_rate.sleep();
+  }*/
 }
 
 tf2_ros::Buffer tfBuffer;
@@ -477,17 +556,21 @@ ros::NodeHandle n;
 ros::Publisher path_pub;
 ros::Publisher joint_pub;
 ros::Subscriber sub;
+ros::Subscriber odom_sub;
 std::string world_name;
 std::string matrice_name;
 std::string goal_name;
+std::string odom_topic;
 vector<Body3dState> xs;
 vector<Vector4d> us;
 double filter_alpha;
+Body3dState x0;
 vector<Vector3d> last_pos;
 vector<tf2::Quaternion> last_quat;
 Vector3d x0velocity;
 bool first_call;
 ros::Time last_time;
+bool odom_update;
 };
 /*The main function
 Builds an instance of TrajectoryNode and then spins.

@@ -165,7 +165,9 @@ include_directories(
 message("HELLO WORLD")
 message(${GCOP_LIBRARIES})
 add_executable(trajectory_node_cpp src/trajectory_node_cpp.cpp)
+add_executable(odometry_node src/odometry_node.cpp)
 target_link_libraries(trajectory_node_cpp ${GCOP_LIBRARIES} ${catkin_LIBRARIES})
+target_link_libraries(odometry_node ${GCOP_LIBRARIES} ${catkin_LIBRARIES})
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the
