@@ -471,10 +471,10 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
     ROS_INFO_STREAM("goal" << ii << " Position: " << last_pos[ii + 1] << std::endl);
     ROS_INFO_STREAM("goal" << ii << " Quaternion: " << last_quat[ii + 1] << std::endl);
   }*/
-  ROS_INFO_STREAM("PreDDP Time Taken: " << (pre_ddp-begin_time).toSec() << std::endl);
+  ROS_INFO_STREAM("PreDDP Time Taken: " << (pre_ddp-last_time).toSec() << std::endl);
   ROS_INFO_STREAM("DDP Time Taken: " << (post_ddp - pre_ddp).toSec() << std::endl);
   ROS_INFO_STREAM("PostDDP Time Taken: " << (ros::Time::now()-post_ddp).toSec() << std::endl);
-  ROS_INFO_STREAM("Total Time Taken: " << (ros::Time::now()-begin_time).toSec() << std::endl);
+  ROS_INFO_STREAM("Total Time Taken: " << (ros::Time::now()-last_time).toSec() << std::endl);
 }
 
 /*Sets up of the node subscriber and publisher
