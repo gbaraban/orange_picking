@@ -94,7 +94,8 @@ void tf_update() {
 //    return;
 //  } 
   //Filter x
-  double tdiff = (curr_trans.header.stamp - last_time).toSec();
+  ros::Time now = ros::Time::now();
+  double tdiff = (now - last_time).toSec();
   if (tdiff < 1e-4){
     ROS_WARN_STREAM("tf_update too soon: " << ctr << " " << tdiff);
     return;
@@ -109,13 +110,13 @@ void tf_update() {
               curr_trans.transform.rotation.z,
               curr_trans.transform.rotation.w,
               new_x0.R);
-  last_time = curr_trans.header.stamp;
+  last_time = now;
   new_x0.v << (curr_trans.transform.translation.x - x0.p[0])/tdiff,
               (curr_trans.transform.translation.y - x0.p[1])/tdiff,
               (curr_trans.transform.translation.z - x0.p[2])/tdiff;
   filterX(new_x0);
   nav_msgs::Odometry temp;
-  temp.header.stamp = last_time;
+  temp.header.stamp = now;
   temp.pose.pose.position.x = x0.p[0];
   temp.pose.pose.position.y = x0.p[1];
   temp.pose.pose.position.z = x0.p[2];

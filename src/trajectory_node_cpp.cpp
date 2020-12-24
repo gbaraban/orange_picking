@@ -253,8 +253,9 @@ void odom_callback(const nav_msgs::Odometry::ConstPtr& msg)
               msg->pose.pose.orientation.z,
               msg->pose.pose.orientation.w,x0.R);
   x0.v << msg->twist.twist.linear.x, msg->twist.twist.linear.y, msg->twist.twist.linear.z; 
-  ROS_INFO_STREAM("ODOMETRY UPDATE");
-  last_time = msg->header.stamp;
+  ros::Time new_last_time = msg->header.stamp;
+  ROS_INFO_STREAM("ODOMETRY UPDATE: " << (new_last_time - last_time).toSec());
+  last_time = new_last_time;
 }
  
 /*Handles messages of containing goal points
@@ -475,6 +476,7 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   ROS_INFO_STREAM("DDP Time Taken: " << (post_ddp - pre_ddp).toSec() << std::endl);
   ROS_INFO_STREAM("PostDDP Time Taken: " << (ros::Time::now()-post_ddp).toSec() << std::endl);
   ROS_INFO_STREAM("Total Time Taken: " << (ros::Time::now()-last_time).toSec() << std::endl);
+  ROS_INFO_STREAM("INIT Time Diff: " << (last_time-init_time).toSec() << std::endl);
 }
 
 /*Sets up of the node subscriber and publisher
@@ -533,6 +535,7 @@ TrajectoryNode(): lis(tfBuffer)
   x0.v << 0, 0, 0;
   xs = vector<Body3dState>(N+1);
   us = vector<Vector4d>(N);
+  init_time = ros::Time::now();
   last_time = ros::Time::now();
   //xs.resize(N+1);
   //us.resize(N);
@@ -570,6 +573,7 @@ vector<tf2::Quaternion> last_quat;
 Vector3d x0velocity;
 bool first_call;
 ros::Time last_time;
+ros::Time init_time;
 bool odom_update;
 };
 /*The main function
