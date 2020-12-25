@@ -153,7 +153,7 @@ void solver_process_goal(int N, double tf, int epochs, Body3dState x0,
   double lastV = -1;
   for (int ii = 0; ii < epochs; ++ii) {
     ddp.Iterate();
-    ROS_INFO_STREAM("Iteration Num: " << ii << " DDP V: " << ddp.V << endl);
+    //ROS_INFO_STREAM("Iteration Num: " << ii << " DDP V: " << ddp.V << endl);
     if ((lastV != -1) && (lastV - ddp.V < 0.01)){
       break;
     }
@@ -254,7 +254,7 @@ void odom_callback(const nav_msgs::Odometry::ConstPtr& msg)
               msg->pose.pose.orientation.w,x0.R);
   x0.v << msg->twist.twist.linear.x, msg->twist.twist.linear.y, msg->twist.twist.linear.z; 
   ros::Time new_last_time = msg->header.stamp;
-  ROS_INFO_STREAM("ODOMETRY UPDATE: " << (new_last_time - last_time).toSec());
+  //ROS_INFO_STREAM("ODOMETRY UPDATE: " << (new_last_time - last_time).toSec());
   last_time = new_last_time;
 }
  
@@ -466,17 +466,19 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   path_pub.publish(pa);
   joint_pub.publish(joint_msg);
   first_call = false;
-  ROS_INFO_STREAM("x0 Position: " << last_pos[0] << std::endl);
-  ROS_INFO_STREAM("x0 Velocity: " << x0velocity << std::endl);
+  //ROS_INFO_STREAM("x0 Position: " << last_pos[0] << std::endl);
+  //ROS_INFO_STREAM("x0 Velocity: " << x0velocity << std::endl);
   /*for (int ii = 0; ii < 3; ++ii) {
     ROS_INFO_STREAM("goal" << ii << " Position: " << last_pos[ii + 1] << std::endl);
     ROS_INFO_STREAM("goal" << ii << " Quaternion: " << last_quat[ii + 1] << std::endl);
   }*/
-  ROS_INFO_STREAM("PreDDP Time Taken: " << (pre_ddp-last_time).toSec() << std::endl);
-  ROS_INFO_STREAM("DDP Time Taken: " << (post_ddp - pre_ddp).toSec() << std::endl);
-  ROS_INFO_STREAM("PostDDP Time Taken: " << (ros::Time::now()-post_ddp).toSec() << std::endl);
-  ROS_INFO_STREAM("Total Time Taken: " << (ros::Time::now()-last_time).toSec() << std::endl);
-  ROS_INFO_STREAM("INIT Time Diff: " << (last_time-init_time).toSec() << std::endl);
+  //ROS_INFO_STREAM("PreCallback Time Taken: " << (begin_time - last_time).toSec() << std::endl);
+  //ROS_INFO_STREAM("PreDDP Time Taken: " << (pre_ddp-last_time).toSec() << std::endl);
+  //ROS_INFO_STREAM("DDP Time Taken: " << (post_ddp - pre_ddp).toSec() << std::endl);
+  //ROS_INFO_STREAM("PostDDP Time Taken: " << (ros::Time::now()-post_ddp).toSec() << std::endl);
+  //ROS_INFO_STREAM("Total Time Taken: " << (ros::Time::now()-last_time).toSec() << std::endl);
+  //ROS_INFO_STREAM("INIT Time Diff: " << (last_time-init_time).toSec() << std::endl);
+  //ROS_INFO_STREAM("Begin - init Time Diff: " << (begin_time-init_time).toSec() << std::endl);
 }
 
 /*Sets up of the node subscriber and publisher
@@ -515,17 +517,17 @@ TrajectoryNode(): lis(tfBuffer)
   if (!(n.getParam("filter_alpha",filter_alpha))){
     filter_alpha = 1;
   }
-  ROS_INFO_STREAM("Publishing to " << path_topic << endl);
-  ROS_INFO_STREAM("Publishing Joints to " << joint_topic << endl);
-  ROS_INFO_STREAM("Subscribing to " << goal_topic << endl);
-  ROS_INFO_STREAM("Subscribing to " << odom_topic << endl);
-  ROS_INFO_STREAM("Matrice Name set to " << matrice_name << endl);
-  ROS_INFO_STREAM("World Name set to " << world_name << endl);
-  ROS_INFO_STREAM("Goal Name set to " << goal_name << endl);
-  ROS_INFO_STREAM("Filter Alpha set to " << filter_alpha << endl);
-  path_pub = n.advertise<nav_msgs::Path>(path_topic,1000);
-  joint_pub = n.advertise<trajectory_msgs::JointTrajectory>(joint_topic,1000);
-  sub = n.subscribe(goal_topic,1000,&TrajectoryNode::callback,this);
+  //ROS_INFO_STREAM("Publishing to " << path_topic << endl);
+  //ROS_INFO_STREAM("Publishing Joints to " << joint_topic << endl);
+  //ROS_INFO_STREAM("Subscribing to " << goal_topic << endl);
+  //ROS_INFO_STREAM("Subscribing to " << odom_topic << endl);
+  //ROS_INFO_STREAM("Matrice Name set to " << matrice_name << endl);
+  //ROS_INFO_STREAM("World Name set to " << world_name << endl);
+  //ROS_INFO_STREAM("Goal Name set to " << goal_name << endl);
+  //ROS_INFO_STREAM("Filter Alpha set to " << filter_alpha << endl);
+  path_pub = n.advertise<nav_msgs::Path>(path_topic,1);
+  joint_pub = n.advertise<trajectory_msgs::JointTrajectory>(joint_topic,1);
+  sub = n.subscribe(goal_topic,1,&TrajectoryNode::callback,this);
   odom_sub = n.subscribe(odom_topic,1000,&TrajectoryNode::odom_callback,this);
   int N = 150;
   x0.p << 0, 0, 0;

@@ -27,10 +27,12 @@ void filterX(Body3dState new_x0) {
     x0velocity = x0.v;
     return x0;
   }*/
-  x0.p = x0.p + (new_x0.p - new_x0.p)*filter_alpha;
-  tf2::Quaternion temp_quat = matrix2Quat(x0.R);
-  temp_quat.slerp(matrix2Quat(new_x0.R),filter_alpha);
-  quat2Matrix(temp_quat,x0.R);
+  x0.p = x0.p + (new_x0.p - x0.p)*filter_alpha;
+  tf2::Quaternion x0_quat = matrix2Quat(x0.R);
+  tf2::Quaternion new_x0_quat = matrix2Quat(new_x0.R);
+  x0_quat = x0_quat.slerp(new_x0_quat,filter_alpha);
+  quat2Matrix(x0_quat,x0.R);
+  //x0.R = new_x0.R;
   x0.v = x0.v + (new_x0.v - x0.v)*filter_alpha;
 }
 
@@ -111,9 +113,13 @@ void tf_update() {
               curr_trans.transform.rotation.w,
               new_x0.R);
   last_time = now;
-  new_x0.v << (curr_trans.transform.translation.x - x0.p[0])/tdiff,
-              (curr_trans.transform.translation.y - x0.p[1])/tdiff,
-              (curr_trans.transform.translation.z - x0.p[2])/tdiff;
+  double dx = (curr_trans.transform.translation.x - x0.p[0]);
+  if ((dx < 1e-5) && (dx > -1e-5)) {dx = 0;}
+  double dy = (curr_trans.transform.translation.y - x0.p[1]);
+  if ((dy < 1e-5) && (dy > -1e-5)) {dy = 0;}
+  double dz = (curr_trans.transform.translation.z - x0.p[2]);
+  if ((dz < 1e-5) && (dz > -1e-5)) {dz = 0;}
+  new_x0.v << dx/tdiff,dy/tdiff,dz/tdiff;
   filterX(new_x0);
   nav_msgs::Odometry temp;
   temp.header.stamp = now;
@@ -129,7 +135,7 @@ void tf_update() {
   temp.twist.twist.linear.y = x0.v[1];
   temp.twist.twist.linear.z = x0.v[2];
   odom_pub.publish(temp);
-  ROS_INFO_STREAM("Sending Odometry: " << tdiff);
+  //ROS_INFO_STREAM("Sending Odometry: " << tdiff);
 }
 
 OdometryNode(): lis(tfBuffer)
@@ -147,8 +153,11 @@ OdometryNode(): lis(tfBuffer)
     odom_topic = "gcop_odom";
   }
   ctr = 0;
-  odom_pub = n.advertise<nav_msgs::Odometry>(odom_topic,1000);
-  ros::Rate loop_rate(100);
+  x0.p << 0,0,0;
+  x0.R << 1,0,0,0,1,0,0,0,1;
+  x0.v << 0,0,0;
+  odom_pub = n.advertise<nav_msgs::Odometry>(odom_topic,1);
+  ros::Rate loop_rate(50);
   while (ros::ok())
   {
     tf_update();
