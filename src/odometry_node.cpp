@@ -5,6 +5,7 @@
 #include "gcop/body3dcost.h"
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/transform_broadcaster.h"
+#include "geometry_msgs/TransformStamped.h"
 #include "tf2/LinearMath/Quaternion.h"
 #include "tf2/LinearMath/Matrix3x3.h"
 #include <string>
@@ -34,6 +35,7 @@ void filterX(Body3dState new_x0) {
   quat2Matrix(x0_quat,x0.R);
   //x0.R = new_x0.R;
   x0.v = x0.v + (new_x0.v - x0.v)*filter_alpha;
+  x0.w = x0.w + (new_x0.w - x0.w)*filter_alpha;
 }
 
 /*Constructs a matrix out of a quaternion, using 4 doubles as inputs
@@ -120,6 +122,11 @@ void tf_update() {
   double dz = (curr_trans.transform.translation.z - x0.p[2]);
   if ((dz < 1e-5) && (dz > -1e-5)) {dz = 0;}
   new_x0.v << dx/tdiff,dy/tdiff,dz/tdiff;
+  SO3::Instance().log(new_x0.w, x0.R.transpose()*new_x0.R);
+  for (int ii = 0; ii < 3; ++ii) {
+    if ((new_x0.w[ii] < 1e-5) && (new_x0.w[ii] > -1e-5)) { new_x0.w[ii] = 0;}
+    else {new_x0.w[ii] = new_x0.w[ii]/tdiff;}
+  }
   filterX(new_x0);
   nav_msgs::Odometry temp;
   temp.header.stamp = now;
@@ -134,8 +141,23 @@ void tf_update() {
   temp.twist.twist.linear.x = x0.v[0];
   temp.twist.twist.linear.y = x0.v[1];
   temp.twist.twist.linear.z = x0.v[2];
+  temp.twist.twist.angular.x = x0.w[0];
+  temp.twist.twist.angular.y = x0.w[1];
+  temp.twist.twist.angular.z = x0.w[2];
   odom_pub.publish(temp);
   //ROS_INFO_STREAM("Sending Odometry: " << tdiff);
+  geometry_msgs::TransformStamped temp_tf;
+  temp_tf.header.stamp = now;
+  temp_tf.header.frame_id = world_name;
+  temp_tf.child_frame_id = "x0";
+  temp_tf.transform.translation.x = x0.p[0];
+  temp_tf.transform.translation.y = x0.p[1];
+  temp_tf.transform.translation.z = x0.p[2];
+  temp_tf.transform.rotation.x = temp_quat.getX();
+  temp_tf.transform.rotation.y = temp_quat.getY();
+  temp_tf.transform.rotation.z = temp_quat.getZ();
+  temp_tf.transform.rotation.w = temp_quat.getW();
+  br.sendTransform(temp_tf);
 }
 
 OdometryNode(): lis(tfBuffer)
@@ -170,6 +192,7 @@ OdometryNode(): lis(tfBuffer)
 ros::NodeHandle n;
 tf2_ros::Buffer tfBuffer;
 tf2_ros::TransformListener lis;
+tf2_ros::TransformBroadcaster br;
 Body3dState x0;
 ros::Time last_time;
 ros::Publisher odom_pub;
