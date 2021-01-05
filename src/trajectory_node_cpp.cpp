@@ -556,7 +556,7 @@ TrajectoryNode(): lis(tfBuffer)
   path_pub = n.advertise<nav_msgs::Path>(path_topic,1);
   joint_pub = n.advertise<trajectory_msgs::JointTrajectory>(joint_topic,1);
   sub = n.subscribe(goal_topic,1,&TrajectoryNode::callback,this);
-  odom_sub = n.subscribe(odom_topic,1000,&TrajectoryNode::odom_callback,this);
+  odom_sub = n.subscribe(odom_topic,1,&TrajectoryNode::odom_callback,this);
   int hz = 20;
   int tf = 3;
   N = hz*tf;
