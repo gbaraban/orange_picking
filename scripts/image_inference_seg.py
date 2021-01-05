@@ -89,7 +89,7 @@ pub_seg = rospy.Publisher('/orange_picking/seg_image', Image,queue_size=50)
 h = 480
 w = 640
 
-stop_thresh = 0.3
+stop_thresh = 0.025
 k = 0
 mean_image = "/home/gabe/ws/ros_ws/src/orange_picking/test_run/mean_imgv2_data_real_world_traj_bag.npy"
 mean_image = "/home/siddharth/Desktop/asco/ws/src/orange_picking/data/mean_imgv2_data_depth_data_data_real_world_traj_bag.npy" #"mean_imgv2_data_real_world_traj_bag480.npy"
@@ -112,9 +112,11 @@ def inference_node_callback(data):
 	except CvBridgeError as e:
 		print(e)
 
+	#np.save("test/test"+str(k) + ".npy", image_arr)
 	#image_arr2 = ((image_arr + mean_image)*255.0).astype(int)
 	#cv2.imwrite('test/test' +str(k) + '.png', image_arr2)
 	#k += 1
+	#image_arr = np.load("data/depth_test/image350.npy")
 	image_arr = image_arr.transpose(2,0,1)
 	#print(image_arr.shape)
 	image_arr2 = image_arr.reshape((1,3,h,w))
@@ -123,7 +125,7 @@ def inference_node_callback(data):
 	#	mean_subtracted = (image_arr)
 	#else:
 	#	mean_subtracted = (image_arr-mean_image)
-	print(np.all(image_arr == image_arr2[0,:,:,:]))
+	#print(np.all(image_arr == image_arr2[0,:,:,:]))
 	image_tensor = torch.tensor(image_arr2)
 
 	image_tensor = image_tensor.to(device,dtype=torch.float)
@@ -139,16 +141,17 @@ def inference_node_callback(data):
 	pub_np = (255 * seg_np).astype(np.uint8).reshape((h, w))
 	print(pub_np.shape)
 	pub_seg.publish(bridge.cv2_to_imgmsg(pub_np,"passthrough"))
-	print(np.sum(seg_np), w*h, np.sum(seg_np)/(w * h))
+	print(np.sum(seg_np), w*h, float(np.sum(seg_np))/(float(w) * float(h)))
         segimages = segimages.type(torch.FloatTensor).to(device)
 	if np.sum(seg_np) >= (stop_thresh * w * h):
 		msg = PoseArray()
 		msg_stop = Bool()
+
 		for pt in range(model.num_points):
                 	point = [0, 0, 0, 0, 0, 0]
 			point = np.array(point)
 			#print(point)
-			goal.append(point)
+			#goal.append(point)
 			pt_pose = Pose()
 			pt_pose.position.x = point[0]
 			pt_pose.position.y = point[1]
@@ -164,7 +167,7 @@ def inference_node_callback(data):
 		msg_stop.data = True
 		pub.publish(msg)
 		pub_stop.publish(msg_stop)
-		goal = np.array(goal)
+		#goal = np.array(goal)
 		return
 
 

@@ -25,7 +25,7 @@ w = 640
 
 def processing_callback(data):
 	try:
-		cv_image = bridge.imgmsg_to_cv2(data, "bgr8")
+		cv_image = bridge.imgmsg_to_cv2(data, "rgb8")
 	except CvBridgeError as e:
 		print(e)
 
@@ -36,6 +36,7 @@ def processing_callback(data):
 	#print(cv_image.shape)
 	if mean_image is None:
 		mean_subtracted = (cv_image)
+		print("ISSUEE: NO MEAN!!! ")
 	else:
 		mean_subtracted = (cv_image-mean_image)
 	#print(mean_subtracted)
@@ -51,7 +52,9 @@ def processing_callback(data):
 
 def image_processor():
 	rospy.init_node('image_processor')
-	rospy.Subscriber("/camera/color/image_raw", Image, processing_callback)
+	rospy.Subscriber("/camera/color/image_raw/uncompressed", Image, processing_callback)
+        #rospy.Subscriber("/camera/color/image_raw", Image, processing_callback)
+
 	rospy.spin()
 
 
