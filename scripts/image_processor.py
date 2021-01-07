@@ -32,7 +32,7 @@ queue_full = False
 def get_queued_imgs(img):
   retVal = (img,queue[(queue_ptr + queue_N/2)%queue_N],queue[queue_ptr])
   queue[queue_ptr] = img
-  queue_ptr += 1
+  queue_ptr = (queue_ptr + 1)%queue_N
   return torch.cat(retVal,1)#change to numpy h/v stack depending on image object type
 
 def processing_callback(data):
