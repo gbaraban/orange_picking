@@ -1,3 +1,4 @@
+import PIL.Image as Image
 from torch.utils.tensorboard import SummaryWriter
 import torch
 import torch.nn as nn
@@ -408,6 +409,7 @@ def main():
     parser.add_argument('--save_variables',type=int,default=20,help="save after every x epochs")
     parser.add_argument('--mean_seg',type=str,default='data/depth_data/data/mean_seg.npy',help='mean segmentation image')
     parser.add_argument('--segload', help='segment model to load')
+    parser.add_argument('--retrain_off_seg',type=bool,default=False,help='retrain segmentation off')
 
     args = parser.parse_args()
 
@@ -445,7 +447,7 @@ def main():
         OrangeNet18 = i.OrangeNet18
 
     from segmentation.segmentnetarch import SegmentationNet
-    segmodel = SegmentationNet()
+    segmodel = SegmentationNet(retrain_off_seg=args.retrain_off_seg)
 
     if args.real_test == 0:
         args.real_test = False
@@ -611,7 +613,7 @@ def main():
     #optimizer = optim.SGD(list(model.parameters()) + list(segmodel.parameters()), lr=args.learning_rate, momentum=0.9)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=learn_rate_decay)
     #ReduceLROnPlateau is an interesting idea
-    loss_mult = torch.tensor([[0.9, 0.6, 0.4],[0.9, 0.6, 0.4]]).to(device)
+    loss_mult = torch.tensor([[0.8, 0.5, 0.3],[0.8, 0.5, 0.3]]).to(device)
 
     #Save Parameters
     save_variables_divider = args.save_variables #5 #10
@@ -703,6 +705,18 @@ def main():
                 seglogits = segmodel(batch_imgs)
                 seglogits = seglogits.view(-1,2,segmodel.h,segmodel.w)
                 segimages = (torch.max(seglogits, 1).indices).type(torch.FloatTensor).to(device)
+                #k = 0
+                #floc = "test_segs"
+                #os.makedirs(floc)
+                #for i in range(segimages.shape[0]):
+                #    img = segimages[i, :, :]
+
+                #    img = (np.array(img) * 255).astype(np.uint8)
+                #    #print(img.shape, np.max(img), np.min(img), np.sum(np.where(img==255, 1, 0)))
+                #    im = Image.fromarray(img.astype(np.uint8))
+                #    im.save(floc + "/output" + str(k + i) + ".png")
+
+                #exit(0)
                 segimages -= seg_mean_image
                 segimages = torch.reshape(segimages, (segimages.shape[0], 1, segimages.shape[1], segimages.shape[2]))
                 batch_images = torch.cat((batch_imgs, segimages), 1)

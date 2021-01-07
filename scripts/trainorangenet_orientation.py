@@ -592,7 +592,7 @@ def main():
     #optimizer = optim.SGD(model.parameters(), lr=args.learning_rate, momentum=0.9)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=learn_rate_decay)
     #ReduceLROnPlateau is an interesting idea
-    loss_mult = torch.tensor([[1.0, 1.0, 1.0,],[2.0, 2.0, 2.0]]).to(device)
+    loss_mult = torch.tensor([[1.0, 1.0, 1.0,],[30.0, 20.0, 10.0]]).to(device)
 
     #Save Parameters
     save_variables_divider = args.save_variables #5 #10

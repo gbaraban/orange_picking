@@ -33,7 +33,7 @@ class OrangeSimDataSet(Dataset):
         self.run_dir = root_dir
         self.np_dir = root_dir.rstrip("/") + "_np/"
         self.trial_list = os.listdir(root_dir)
-        if seg or temp_seg or seg_only:
+        if seg or seg_only: #temp_seg
             self.trial_list = os.listdir(root_dir + "../seg_mask_real_np/")
         self.num_samples = 0
         self.num_samples_dir = {}

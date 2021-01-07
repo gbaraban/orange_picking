@@ -12,3 +12,7 @@ data/Run*
 *.swp
 *.save.*
 *.save
+
+#Folders
+*animation/*
+data/multi_mean_finder/*

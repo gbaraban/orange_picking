@@ -6,7 +6,7 @@ from torchvision import datasets, models, transforms
 import numpy as np
 
 class SegmentationNet(torch.nn.Module):
-    def __init__(self, capacity = 1):
+    def __init__(self, capacity = 1, retrain_off_seg = False):
         super(SegmentationNet,self).__init__()
         self.w = 640
         self.h = 480
@@ -24,7 +24,6 @@ class SegmentationNet(torch.nn.Module):
         self.relu3 = nn.ReLU()
         self.conv4 = nn.Conv2d(in_channels=512, out_channels=512, kernel_size=1, stride=1)
 
-
         self.conv_transpose1 = nn.ConvTranspose2d(in_channels=512, out_channels=256, kernel_size=4, stride=2, padding=1)
         self.bn4 = nn.BatchNorm2d(256)
         self.relu4 = nn.ReLU()
@@ -39,6 +38,58 @@ class SegmentationNet(torch.nn.Module):
         self.conv_bridge2 = nn.Conv2d(in_channels=256, out_channels=256, kernel_size=1, stride=1)
 
         self.output = nn.Conv2d(in_channels=2, out_channels=2, kernel_size=1, stride=1)
+        if retrain_off_seg:
+            print("Seg layers frozen")
+            self.conv1.weight.requires_grad = False
+            self.conv1.bias.requires_grad = False
+            self.bn1.weight.requires_grad = False
+            self.bn1.bias.requires_grad = False
+            #self.relu1.weight.requires_grad = False
+            #self.relu1.bias.requires_grad = False
+
+            self.conv2.weight.requires_grad = False
+            self.conv2.bias.requires_grad = False
+            self.bn2.weight.requires_grad = False
+            self.bn2.bias.requires_grad = False
+            #self.relu2.weight.requires_grad = False
+            #self.relu2.bias.requires_grad = False
+
+            self.conv3.weight.requires_grad = False
+            self.conv3.bias.requires_grad = False
+            self.bn3.weight.requires_grad = False
+            self.bn3.bias.requires_grad = False
+            #self.relu3.weight.requires_grad = False
+            #self.relu3.bias.requires_grad = False
+
+            self.conv4.weight.requires_grad = False
+            self.conv4.bias.requires_grad = False
+
+            self.conv_transpose1.weight.requires_grad = False
+            self.conv_transpose1.bias.requires_grad = False
+            self.bn4.weight.requires_grad = False
+            self.bn4.bias.requires_grad = False
+            #self.relu4.weight.requires_grad = False
+            #self.relu4.bias.requires_grad = False
+
+            self.conv_transpose2.weight.requires_grad = False
+            self.conv_transpose2.bias.requires_grad = False
+            self.bn5.weight.requires_grad = False
+            self.bn5.bias.requires_grad = False
+            #self.relu5.weight.requires_grad = False
+            #self.relu5.bias.requires_grad = False
+
+            self.conv_transpose3.weight.requires_grad = False
+            self.conv_transpose3.bias.requires_grad = False
+
+            self.conv_bridge.weight.requires_grad = False
+            self.conv_bridge.bias.requires_grad = False
+
+            self.conv_bridge2.weight.requires_grad = False
+            self.conv_bridge2.bias.requires_grad = False
+
+            self.output.weight.requires_grad = False
+            self.output.bias.requires_grad = False
+
 
     def forward(self,x):
         #print(x.shape)

@@ -4,8 +4,8 @@ import shutil
 
 
 if __name__ == "__main__":
-	fr = "seg_mask_np"
-	to = "seg_mask_real_np"
+	fr = "seg_mask"
+	to = "seg_mask_real"
 	#lambda_dict = pickle.load(open("bag_order_lambda.pickle", "rb"))
 	#sid_dict = pickle.load(open("bag_order_sid.pickle", "rb"))
 	match_dict = pickle.load(open("match.pkl", "rb"))
