@@ -23,6 +23,18 @@ pub = rospy.Publisher('/orange_picking/processed_image', Image,queue_size=50)
 h = 480 #380 
 w = 640
 
+img_hz = 30
+queue_time = 2
+queue_N = img_hz*queue_time;
+queue = [-1] * queue_N
+queue_ptr = 0
+queue_full = False
+def get_queued_imgs(img):
+  retVal = (img,queue[(queue_ptr + queue_N/2)%queue_N],queue[queue_ptr])
+  queue[queue_ptr] = img
+  queue_ptr = (queue_ptr + 1)%queue_N
+  return torch.cat(retVal,1)#change to numpy h/v stack depending on image object type
+
 def processing_callback(data):
 	try:
 		cv_image = bridge.imgmsg_to_cv2(data, "rgb8")
