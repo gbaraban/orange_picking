@@ -13,6 +13,48 @@ from segmentation.segmentnetarch import *
 from sensor_msgs.msg import Image
 
 
+
+img_hz = 30
+queue_time = 2
+queue_N = img_hz*queue_time;
+queue = [-1] * queue_N
+queue_ptr = 0
+queue_empty = True
+
+def set_queued_imgs(curr):
+        global queue_ptr, queue
+	#retVal = (img,queue[(queue_ptr + queue_N/2)%queue_N],queue[queue_ptr])
+	queue[queue_ptr] = curr #cat
+	queue_ptr = (queue_ptr + 1)%queue_N
+	#torch.cat(retVal,1)#change to numpy h/v stack depending on image object type
+
+def get_queued_imgs(seg_image, image, num_imgs=3):
+	global queue_empty
+	#print("getting")
+	#img = image.cpu().detach().numpy().reshape(3,h,w)
+	seg_img = seg_image.cpu().detach().numpy()
+	#print(image.shape, seg_img.shape)
+	curr = np.concatenate((image, seg_img))
+
+	msg = curr.copy()
+	#print(msg.shape)
+
+	for i in range(num_imgs-2, -1, -1):
+		if queue_empty:
+			msg = np.concatenate((msg, curr))
+
+		else:
+			loc = (queue_ptr - (img_hz * i))%queue_N
+			while queue[loc] is -1:
+				loc -= 1
+			#print("loc:", loc)
+			msg = np.concatenate((msg, queue[loc]))
+
+	set_queued_imgs(curr)
+	queue_empty = False
+
+	return msg
+
 capacity = 1.0
 num_images = 1
 num_pts = 3
@@ -31,6 +73,7 @@ stop_thresh = 0.025
 k = 0
 
 segload = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model_seg99.pth.tar"
+seg_mean_image = torch.tensor(np.load('data/depth_data/data/mean_seg.npy')).to('cuda')
 
 segmodel = SegmentationNet()
 
@@ -65,11 +108,11 @@ def seg_node_callback(data):
 	except CvBridgeError as e:
 		print(e)
 
-    image_arr = image_arr.transpose(2,0,1)
-	
-    image_arr2 = image_arr.reshape((1,3,h,w))
+	image_arr = image_arr.transpose(2,0,1)
 
-    image_tensor = torch.tensor(image_arr2)
+	image_arr2 = image_arr.reshape((1,3,h,w))
+
+	image_tensor = torch.tensor(image_arr2)
 
 	image_tensor = image_tensor.to(device,dtype=torch.float)
 
@@ -115,9 +158,17 @@ def seg_node_callback(data):
 
 
 	segimages -= seg_mean_image
-	segimages = torch.reshape(segimages, (segimages.shape[0], 1, segimages.shape[1], segimages.shape[2]))
+	#segimages = torch.reshape(segimages, (segimages.shape[0], 1, segimages.shape[1], segimages.shape[2]))
+	msg = get_queued_imgs(segimages, image_arr, 3)
+	#print(msg.shape)
+	try:
+		print("pub_seg")
+		pub_seg.publish(bridge.cv2_to_imgmsg(msg,"passthrough"))
+	except CvBridgeError as e:
+		print(e)
+		exit(0)
 
-	seg_tensor_image = torch.cat((image_tensor, segimages), 1)
+	#seg_tensor_image = torch.cat((image_tensor, segimages), 1)
 
 
 def seg_node():

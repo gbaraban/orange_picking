@@ -28,10 +28,13 @@ else:
 load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model79.pth.tar"
 load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/10_19_seg/modelLast.pth.tar" #seg retrain
 load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/10_19_seg_off/modelLast.pth.tar" #seg retrain off
+load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_fixed_aug/model14.pth.tar"
+load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_fixed_aug_retrain_off/model14.pth.tar"
+
 
 segload = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model_seg99.pth.tar"
-mins = [(0,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0,-1,-0.15,-np.pi,-np.pi/2,-np.pi),(0,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0,-2,-0.3,-np.pi,-np.pi/2,-np.pi),(0,-3,-0.5,-np.pi,-np.pi/2,-np.pi)]
-maxs = [(1,0.5,0.1,np.pi,np.pi/2,np.pi),(2,1,0.15,np.pi,np.pi/2,np.pi),(4,1.5,0.2,np.pi,np.pi/2,np.pi),(6,2,0.3,np.pi,np.pi/2,np.pi),(7,0.3,0.5,np.pi,np.pi/2,np.pi)]
+mins = [(0.0,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.0,-1,-0.15,-np.pi,-np.pi/2,-np.pi),(0.0,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.0,-2.0,-0.3,-np.pi,-np.pi/2,-np.pi),(0.0,-3.0,-0.5,-np.pi,-np.pi/2,-np.pi)]
+maxs = [(1.0,0.5,0.1,np.pi,np.pi/2,np.pi),(2.0,1.0,0.15,np.pi,np.pi/2,np.pi),(4.0,1.5,0.2,np.pi,np.pi/2,np.pi),(6.0,2.0,0.3,np.pi,np.pi/2,np.pi),(7.0,0.3,0.5,np.pi,np.pi/2,np.pi)]
 
 
 if not resnet18:
