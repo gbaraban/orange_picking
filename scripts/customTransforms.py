@@ -46,8 +46,8 @@ class RandomHorizontalTrajFlip(object):
 	def __init__(self, p=0.5, n_inputs = 6):
 		self.p = p
 		self.reflect = np.zeros((4,4))
-		self.reflect[0,0] = -1
-		self.reflect[1,1] = 1
+		self.reflect[0,0] = 1
+		self.reflect[1,1] = -1
 		self.reflect[2,2] = 1
 		self.reflect[3,3] = 1
 		self.n_inputs = n_inputs
@@ -90,6 +90,13 @@ class RandomHorizontalTrajFlip(object):
 					E[0:3,3] = np.array(points[i,:])
 					E[0:3,0:3] = rot_list[i,:,:]
 					E = np.matmul(self.reflect, E)
+					E = np.matmul(E, self.reflect)
+					R_2 = R.from_euler('zyx', [-np.pi/2, 0, 0])
+					R_m2 = R_2.as_dcm()
+					E_m2 = np.zeros((4,4))
+					E_m2[3,3] = 1
+					E_m2[0:3,0:3] = R_m2
+					E = np.matmul(E, E_m2)
 
 					points[i,:] = list(E[0:3,3])
 					rot_list[i,:,:] = E[0:3,0:3]
@@ -99,6 +106,14 @@ class RandomHorizontalTrajFlip(object):
 					E[0:3] = np.array(points[i,:])
 					E[3] = 1
 					E = np.matmul(self.reflect, E)
+					E = np.matmul(E, self.reflect)
+					R_2 = R.from_euler('zyx', [-np.pi/2, 0, 0])
+					R_m2 = R_2.as_dcm()
+					E_m2 = np.zeros((4,4))
+					E_m2[3,3] = 1
+					E_m2[0:3,0:3] = R_m2
+
+					E = np.matmul(E, E_m2)
 
 					points[i,:] = list(E[0:3])
 

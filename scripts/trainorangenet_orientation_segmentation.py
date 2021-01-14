@@ -558,7 +558,9 @@ def main():
     else:
         n_outputs = 6
 
-    n_channels = 3
+    base_n_channels = 3
+    n_channels = base_n_channels
+
     if args.depth:
         n_channels += 1
     if args.seg or args.seg_only or args.temp_seg:
@@ -702,25 +704,31 @@ def main():
                 batch_imgs = batch['image']
                 batch_imgs = batch_imgs.to(device)
                 #model = model.to(device)
-                seglogits = segmodel(batch_imgs)
-                seglogits = seglogits.view(-1,2,segmodel.h,segmodel.w)
-                segimages = (torch.max(seglogits, 1).indices).type(torch.FloatTensor).to(device)
-                #k = 0
-                #floc = "test_segs"
-                #os.makedirs(floc)
-                #for i in range(segimages.shape[0]):
-                #    img = segimages[i, :, :]
+                batch_images = None
+                for img_num in range(args.num_images):
+                    seglogits = segmodel(batch_imgs[:, img_num*base_n_channels:(img_num+1)*base_n_channels, :, :])
+                    seglogits = seglogits.view(-1,2,segmodel.h,segmodel.w)
+                    segimages = (torch.max(seglogits, 1).indices).type(torch.FloatTensor).to(device)
+                    #k = 0
+                    #floc = "test_segs"
+                    #os.makedirs(floc)
+                    #for i in range(segimages.shape[0]):
+                    #    img = segimages[i, :, :]
 
-                #    img = (np.array(img) * 255).astype(np.uint8)
-                #    #print(img.shape, np.max(img), np.min(img), np.sum(np.where(img==255, 1, 0)))
-                #    im = Image.fromarray(img.astype(np.uint8))
-                #    im.save(floc + "/output" + str(k + i) + ".png")
+                    #    img = (np.array(img) * 255).astype(np.uint8)
+                    #    #print(img.shape, np.max(img), np.min(img), np.sum(np.where(img==255, 1, 0)))
+                    #    im = Image.fromarray(img.astype(np.uint8))
+                    #    im.save(floc + "/output" + str(k + i) + ".png")
 
-                #exit(0)
-                segimages -= seg_mean_image
-                segimages = torch.reshape(segimages, (segimages.shape[0], 1, segimages.shape[1], segimages.shape[2]))
-                batch_images = torch.cat((batch_imgs, segimages), 1)
-                #print(segimages.shape, batch_imgs.shape)
+                    #exit(0)
+                    segimages -= seg_mean_image
+                    segimages = torch.reshape(segimages, (segimages.shape[0], 1, segimages.shape[1], segimages.shape[2]))
+                    t_batch_imgs =  torch.cat((batch_imgs[:, img_num*base_n_channels:(img_num+1)*base_n_channels, :, :], segimages), 1)
+                    if batch_images is None:
+                        batch_images = t_batch_imgs
+                    else:
+                        batch_images = torch.cat((batch_images, t_batch_imgs), 1)
+                    
                 logits = model(batch_images)
                 #print(logits.shape)
                 #exit(0)
@@ -889,12 +897,30 @@ def main():
             with torch.set_grad_enabled(False):
                 image_batch = batch['image'].to(device)
                 #model = model.to(device)
-                seglogits = segmodel(image_batch)
-                seglogits = seglogits.view(-1,2,segmodel.h,segmodel.w)
-                segimages = (torch.max(seglogits, 1).indices).type(torch.FloatTensor).to(device)
-                segimages -= seg_mean_image
-                segimages = torch.reshape(segimages, (segimages.shape[0], 1, segimages.shape[1], segimages.shape[2]))
-                batch_images = torch.cat((image_batch, segimages), 1)
+                batch_images = None
+                for img_num in range(args.num_images):
+                    seglogits = segmodel(image_batch[:, img_num*base_n_channels:(img_num+1)*base_n_channels, :, :])
+                    seglogits = seglogits.view(-1,2,segmodel.h,segmodel.w)
+                    segimages = (torch.max(seglogits, 1).indices).type(torch.FloatTensor).to(device)
+                    #k = 0
+                    #floc = "test_segs"
+                    #os.makedirs(floc)
+                    #for i in range(segimages.shape[0]):
+                    #    img = segimages[i, :, :]
+
+                    #    img = (np.array(img) * 255).astype(np.uint8)
+                    #    #print(img.shape, np.max(img), np.min(img), np.sum(np.where(img==255, 1, 0)))
+                    #    im = Image.fromarray(img.astype(np.uint8))
+                    #    im.save(floc + "/output" + str(k + i) + ".png")
+
+                    #exit(0)
+                    segimages -= seg_mean_image
+                    segimages = torch.reshape(segimages, (segimages.shape[0], 1, segimages.shape[1], segimages.shape[2]))
+                    t_batch_imgs =  torch.cat((image_batch[:, img_num*base_n_channels:(img_num+1)*base_n_channels, :, :], segimages), 1)
+                    if batch_images is None:
+                        batch_images = t_batch_imgs
+                    else:
+                        batch_images = torch.cat((batch_images, t_batch_imgs), 1)
                 #print(segimages.shape, batch_imgs.shape)
                 model = model.to(device)
                 model.eval()
