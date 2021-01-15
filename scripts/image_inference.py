@@ -10,7 +10,7 @@ import cv2
 from scipy.spatial.transform import Rotation as R
 
 capacity = 1.0
-num_images = 1
+num_images = 3
 num_pts = 3
 bins = 30
 outputs = 6
@@ -23,8 +23,8 @@ else:
 load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_plain_more_data/modelLast.pth.tar"
 #load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_data_aug_more_data/modelLast.pth.tar"
 
-mins = [(0,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0,-1,-0.15,-np.pi,-np.pi/2,-np.pi),(0,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0,-2,-0.3,-np.pi,-np.pi/2,-np.pi),(0,-3,-0.5,-np.pi,-np.pi/2,-np.pi)]
-maxs = [(1,0.5,0.1,np.pi,np.pi/2,np.pi),(2,1,0.15,np.pi,np.pi/2,np.pi),(4,1.5,0.2,np.pi,np.pi/2,np.pi),(6,2,0.3,np.pi,np.pi/2,np.pi),(7,0.3,0.5,np.pi,np.pi/2,np.pi)]
+mins = [(0.0,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.0,-1.0,-0.15,-np.pi,-np.pi/2,-np.pi),(0.0,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.0,-2.0,-0.3,-np.pi,-np.pi/2,-np.pi),(0.0,-3.0,-0.5,-np.pi,-np.pi/2,-np.pi)]
+maxs = [(1.0,0.5,0.1,np.pi,np.pi/2,np.pi),(2.0,1.0,0.15,np.pi,np.pi/2,np.pi),(4.0,1.5,0.2,np.pi,np.pi/2,np.pi),(6.0,2.0,0.3,np.pi,np.pi/2,np.pi),(7.0,0.3,0.5,np.pi,np.pi/2,np.pi)]
 
 
 if not resnet18:
@@ -83,9 +83,9 @@ def inference_node_callback(data):
 	#image_arr2 = ((image_arr + mean_image)*255.0).astype(int)
 	#cv2.imwrite('test.png', image_arr2)
 
-	image_arr = image_arr.transpose(2,0,1)
-	print(image_arr.shape)
-	image_arr = image_arr.reshape((1,3,h,w))
+	#image_arr = image_arr.transpose(2,0,1)
+	#print(image_arr.shape)
+	image_arr = image_arr.reshape((1,12,h,w))
 	print(image_arr.shape)
 	#if mean_image is None:
 	#	mean_subtracted = (image_arr)
@@ -135,7 +135,7 @@ def inference_node_callback(data):
 
 def inference_node():
 	rospy.init_node('image_inference')
-	rospy.Subscriber("/orange_picking/processed_image", Image, inference_node_callback)
+	rospy.Subscriber("/orange_picking/seg_image", Image, inference_node_callback)
 	rospy.spin()
 
 if __name__ == "__main__":

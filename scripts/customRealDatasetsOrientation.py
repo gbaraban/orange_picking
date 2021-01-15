@@ -47,6 +47,7 @@ class OrangeSimDataSet(Dataset):
         self.nEvents = []
         self.time_secs = []
         self.time_nsecs = []
+        self.hz = []
 
         if reduce_N:
             time_window = num_pts*dt
@@ -110,6 +111,7 @@ class OrangeSimDataSet(Dataset):
 
             self.num_samples_dir[i]['end'] = self.num_samples
             self.num_samples_dir[i]['size'] = self.num_samples_dir[i]['end'] - self.num_samples_dir[i]['start']
+            self.hz.append(self.num_samples_dir[i]['size']/data["time_secs"])
             self.num_samples_dir[i]['data'] = data
             self.num_samples_dir[i]['dir'] = trial_dir
             self.num_samples_dir_size[i] = self.num_samples_dir[i]['size']
@@ -136,7 +138,7 @@ class OrangeSimDataSet(Dataset):
         image = None
         image_idx = idx
         for ii in range(self.num_images):
-            temp_idx = max(0,image_idx - ii)
+            temp_idx = max(0,image_idx - int(ii*self.dt*self.hz[trial_idx]))
             if not self.seg_only:
                 temp_image = np.load(self.np_dir+trial+'/image'+str(temp_idx)+'.npy')
             else:
@@ -180,7 +182,8 @@ class OrangeSimDataSet(Dataset):
             if image is None:
                 image = temp_image
             else:
-                image = np.concatenate((image,temp_image),axis=2)#NOTE: axis might be wrong.  doublecheck
+                image = np.concatenate((image,temp_image),axis=0)#NOTE: axis might be wrong.  doublecheck
+            #print(image.shape)
         image = image.astype('float32')
         #print("fin img", image.shape)
 
