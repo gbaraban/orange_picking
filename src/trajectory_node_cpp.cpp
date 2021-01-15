@@ -383,8 +383,18 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
       ROS_INFO_STREAM("BAD LOCAL PITCH FOUND... SKIPPING: " << local_pitch);
       return;
     }
-    Vector3d new_pos = x0.R*local_p + x0.p;
-    Matrix3d new_rot = x0.R*local_R;
+    Vector3d new_pos;
+    Matrix3d new_rot;
+    if ((ii == 0) || (!relative_pose))
+    {
+      new_pos = x0.R*local_p + x0.p;
+      new_rot = x0.R*local_R;
+    } else {
+      Matrix3d prev_R;
+      quat2matrix(last_quat[ii-1],prev_R);
+      new_pos = prev_R*local_p + last_pos[ii-1];
+      new_rot = prev_R*local_R;
+    }
     if (first_call) {
       last_pos.push_back(new_pos);
       last_quat.push_back(matrix2Quat(new_rot));
@@ -545,6 +555,9 @@ TrajectoryNode(): lis(tfBuffer)
   if (!(n.getParam("filter_alpha",filter_alpha))){
     filter_alpha = 0.5;
   }
+  if (!(n.getParam("relative_pose",relative_pose))){
+    relative_pose = false;
+  }
   //ROS_INFO_STREAM("Publishing to " << path_topic << endl);
   //ROS_INFO_STREAM("Publishing Joints to " << joint_topic << endl);
   //ROS_INFO_STREAM("Subscribing to " << goal_topic << endl);
@@ -609,6 +622,7 @@ bool first_call;
 ros::Time last_time;
 ros::Time init_time;
 bool odom_update;
+bool relative_pose;
 };
 /*The main function
 Builds an instance of TrajectoryNode and then spins.
