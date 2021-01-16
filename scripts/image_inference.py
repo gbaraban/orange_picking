@@ -1,7 +1,8 @@
 import rospy
 from sensor_msgs.msg import Image
 import torch
-from architecture.orangenetarch3 import *
+#from architecture.orangenetarch3 import *
+from orangenetarch import *
 import numpy as np
 import time, os
 from geometry_msgs.msg import Pose, PoseArray
@@ -22,13 +23,14 @@ else:
 
 load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_plain_more_data/modelLast.pth.tar"
 #load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_data_aug_more_data/modelLast.pth.tar"
+load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model0.pth.tar" 
 
 mins = [(0.0,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.0,-1.0,-0.15,-np.pi,-np.pi/2,-np.pi),(0.0,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.0,-2.0,-0.3,-np.pi,-np.pi/2,-np.pi),(0.0,-3.0,-0.5,-np.pi,-np.pi/2,-np.pi)]
 maxs = [(1.0,0.5,0.1,np.pi,np.pi/2,np.pi),(2.0,1.0,0.15,np.pi,np.pi/2,np.pi),(4.0,1.5,0.2,np.pi,np.pi/2,np.pi),(6.0,2.0,0.3,np.pi,np.pi/2,np.pi),(7.0,0.3,0.5,np.pi,np.pi/2,np.pi)]
 
 
 if not resnet18:
-	model = OrangeNet8(capacity,num_images,num_pts,bins,mins,maxs,n_outputs=outputs)
+	model = OrangeNet8(capacity,num_images,num_pts,bins,mins,maxs,n_outputs=outputs,num_channels=4)
 else:
 	model = OrangeNet18(capacity,num_images,num_pts,bins,mins,maxs,n_outputs=outputs)
 
@@ -60,9 +62,9 @@ bridge = CvBridge()
 pub = rospy.Publisher("/goal_points",PoseArray,queue_size=50)
 
 
-h = 380
+h = 480 #380
 w = 640
-
+"""
 mean_image = "/home/gabe/ws/ros_ws/src/orange_picking/test_run/mean_imgv2_data_real_world_traj_bag.npy"
 
 if not (os.path.exists(mean_image)):
@@ -72,7 +74,7 @@ else:
         print('mean image file found')
         mean_image = np.load(mean_image)
 
-
+"""
 def inference_node_callback(data):
 	t_out1 = time.time()
 	try:
@@ -82,9 +84,9 @@ def inference_node_callback(data):
 
 	#image_arr2 = ((image_arr + mean_image)*255.0).astype(int)
 	#cv2.imwrite('test.png', image_arr2)
-
-	#image_arr = image_arr.transpose(2,0,1)
-	#print(image_arr.shape)
+	print(image_arr.shape)
+	image_arr = np.transpose(image_arr, (2,0,1))
+	print(image_arr.shape)
 	image_arr = image_arr.reshape((1,12,h,w))
 	print(image_arr.shape)
 	#if mean_image is None:

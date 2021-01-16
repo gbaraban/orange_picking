@@ -126,7 +126,7 @@ def seg_node_callback(data):
 	seg_np = np.array(segimages[0,:,:]) #+ mean_image
 	pub_np = (255 * seg_np).astype(np.uint8).reshape((h, w))
 	print(pub_np.shape)
-	pub_seg.publish(bridge.cv2_to_imgmsg(pub_np,"passthrough"))
+	#pub_seg.publish(bridge.cv2_to_imgmsg(pub_np,"passthrough"))
 	print(np.sum(seg_np), w*h, float(np.sum(seg_np))/(float(w) * float(h)))
         segimages = segimages.type(torch.FloatTensor).to(device)
 	if np.sum(seg_np) >= (stop_thresh * w * h):
@@ -161,6 +161,7 @@ def seg_node_callback(data):
 	#segimages = torch.reshape(segimages, (segimages.shape[0], 1, segimages.shape[1], segimages.shape[2]))
 	msg = get_queued_imgs(segimages, image_arr, 3)
 	#print(msg.shape)
+	msg = np.transpose(msg, (1, 2, 0))
 	try:
 		print("pub_seg")
 		pub_seg.publish(bridge.cv2_to_imgmsg(msg,"passthrough"))
