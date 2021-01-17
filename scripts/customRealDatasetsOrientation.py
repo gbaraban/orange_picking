@@ -22,7 +22,7 @@ class SubSet(Dataset):
         return self.ds[self.idx[i]]
 
 class OrangeSimDataSet(Dataset):
-    def __init__(self, root_dir, num_images, num_pts, pt_trans, img_trans, dt = 1, reduce_N = True, custom_dataset = None, input = 1.0, depth=False, seg=False, temp_seg=False, seg_only=False):
+    def __init__(self, root_dir, num_images, num_pts, pt_trans, img_trans, dt = 1, reduce_N = True, custom_dataset = None, input = 1.0, depth=False, seg=False, temp_seg=False, seg_only=False, rel_pose=None):
         self.point_transform = pt_trans
         self.image_transform = img_trans
         self.num_pts = num_pts
@@ -43,6 +43,7 @@ class OrangeSimDataSet(Dataset):
         self.seg = seg
         self.seg_only = seg_only
         self.mean_seg = np.load("data/mean_imgv2_data_seg_real_world_traj_bag.npy")
+        self.relative_pose = rel_pose
 
         self.nEvents = []
         self.time_secs = []
@@ -249,14 +250,20 @@ class OrangeSimDataSet(Dataset):
                 data["rots"] = rot_list
                 image, point_list, rot_list, flipped = self.image_transform(data)
 
-            p0 = np.array(point_list[0])
+            p0 = np.array(point_list[0])#seems unnecessary
             R0 = np.array(rot_list[0])
 
             for ii in range(1,len(point_list)):
+                if (self.relative_pose is not None):
+                  prev_p = np.array(point_list[ii-1])
+                  prev_R = np.array(rot_list[ii-1])
+                else:
+                  prev_p = p0
+                  prev_R = R0
                 p = np.array(point_list[ii])
                 Ri = np.array(rot_list[ii])
-                p = list(np.matmul(R0.T,p-p0))
-                Ri = np.matmul(R0.T,Ri)
+                p = list(np.matmul(prev_R.T,p-prev_p))
+                Ri = np.matmul(prev_R.T,Ri)
                 Ri_zyx = list(R.from_dcm(Ri).as_euler('zyx'))
                 p.extend(Ri_zyx)
                 points.append(p)
