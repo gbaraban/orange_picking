@@ -454,8 +454,13 @@ def main():
     else:
         args.real_test = True
 
-    args.min = [(0.,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.,-1.,-0.15,-np.pi,-np.pi/2,-np.pi),(0.,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.,-2.,-0.3,-np.pi,-np.pi/2,-np.pi),(0.,-3,-0.5,-np.pi,-np.pi/2,-np.pi)]
-    args.max = [(1.,0.5,0.1,np.pi,np.pi/2,np.pi),(2.,1.,0.15,np.pi,np.pi/2,np.pi),(4.,1.5,0.2,np.pi,np.pi/2,np.pi),(6.,2.,0.3,np.pi,np.pi/2,np.pi),(7.,0.3,0.5,np.pi,np.pi/2,np.pi)]
+    if args.relative_pose:
+      #Change these
+      args.min = [(0.,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.,-1.,-0.15,-np.pi,-np.pi/2,-np.pi),(0.,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.,-2.,-0.3,-np.pi,-np.pi/2,-np.pi),(0.,-3,-0.5,-np.pi,-np.pi/2,-np.pi)]
+      args.max = [(1.,0.5,0.1,np.pi,np.pi/2,np.pi),(2.,1.,0.15,np.pi,np.pi/2,np.pi),(4.,1.5,0.2,np.pi,np.pi/2,np.pi),(6.,2.,0.3,np.pi,np.pi/2,np.pi),(7.,0.3,0.5,np.pi,np.pi/2,np.pi)]
+    else: 
+      args.min = [(0.,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.,-1.,-0.15,-np.pi,-np.pi/2,-np.pi),(0.,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.,-2.,-0.3,-np.pi,-np.pi/2,-np.pi),(0.,-3,-0.5,-np.pi,-np.pi/2,-np.pi)]
+      args.max = [(1.,0.5,0.1,np.pi,np.pi/2,np.pi),(2.,1.,0.15,np.pi,np.pi/2,np.pi),(4.,1.5,0.2,np.pi,np.pi/2,np.pi),(6.,2.,0.3,np.pi,np.pi/2,np.pi),(7.,0.3,0.5,np.pi,np.pi/2,np.pi)]
     #args.traj = False
     #Data Transforms
     pt_trans = transforms.Compose([pointToBins(args.min,args.max,args.bins)])#,GaussLabels(1,1e-10,args.bins)])
@@ -485,7 +490,7 @@ def main():
     #Create dataset class
     seg_mean_image = torch.tensor(np.load(args.mean_seg))
 
-    dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, custom_dataset=args.custom, input=args.input_size, depth=args.depth, seg=args.seg, temp_seg=args.temp_seg, seg_only=args.seg_only)
+    dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, custom_dataset=args.custom, input=args.input_size, depth=args.depth, seg=args.seg, temp_seg=args.temp_seg, seg_only=args.seg_only, rel_pose=args.relative_pose)
 
     #Break up into validation and training
     #val_perc = 0.07
