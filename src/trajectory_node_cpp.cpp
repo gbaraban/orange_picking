@@ -264,13 +264,15 @@ tf2::Quaternion matrix2Quat(Matrix3d& R) {
 void odom_callback(const nav_msgs::Odometry::ConstPtr& msg)
 {
   odom_update = true;
-  x0.p << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z; 
-  quat2Matrix(msg->pose.pose.orientation.x,
-              msg->pose.pose.orientation.y,
-              msg->pose.pose.orientation.z,
-              msg->pose.pose.orientation.w,x0.R);
-  x0.v << msg->twist.twist.linear.x, msg->twist.twist.linear.y, msg->twist.twist.linear.z; 
-  x0.w << msg->twist.twist.angular.x, msg->twist.twist.angular.y, msg->twist.twist.angular.z;
+  if (all_zeros) {
+    x0.p << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z; 
+    quat2Matrix(msg->pose.pose.orientation.x,
+                msg->pose.pose.orientation.y,
+                msg->pose.pose.orientation.z,
+                msg->pose.pose.orientation.w,x0.R);
+    x0.v << msg->twist.twist.linear.x, msg->twist.twist.linear.y, msg->twist.twist.linear.z; 
+    x0.w << msg->twist.twist.angular.x, msg->twist.twist.angular.y, msg->twist.twist.angular.z;
+  }
   ros::Time new_last_time = msg->header.stamp;
   //ROS_INFO_STREAM("ODOMETRY UPDATE: " << (new_last_time - last_time).toSec());
   last_time = new_last_time;
@@ -296,7 +298,7 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   //int N = (int) 25*tf;
   int epochs = 4;
   //Check for all zero goals
-  bool all_zeros = true;
+  all_zeros = true;
   for (int ii = 0; ii < 3; ++ii) {
     if (msg->poses[ii].position.x != 0) {
       //std::cout << "x" << ii << " is non-zero" << std::endl;
@@ -573,6 +575,7 @@ TrajectoryNode(): lis(tfBuffer)
   //us.resize(N);
   first_call = true;
   odom_update = false;
+  all_zeros = false;
 /*  ros::Rate loop_rate(200);
   ctr = 0;
   ROS_INFO_STREAM("Loop Start: " << ctr);
@@ -609,6 +612,7 @@ ros::Time last_time;
 ros::Time init_time;
 bool odom_update;
 bool relative_pose;
+bool all_zeros;
 };
 /*The main function
 Builds an instance of TrajectoryNode and then spins.
