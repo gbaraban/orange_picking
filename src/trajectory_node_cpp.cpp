@@ -412,8 +412,16 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   //vector<Body3dState> xs(N+1);
   //vector<Vector4d> us(N);
   ros::Time pre_ddp = ros::Time::now();
-  Body3dState gcop_x0 = closest_state(x0);
-  solver_process_goal(N, tf, epochs, gcop_x0, goal[0], goal[1], goal[2],q, qf, r, xs, us);
+  if (!all_zeros) {
+    Body3dState gcop_x0 = closest_state(x0);
+    solver_process_goal(N, tf, epochs, gcop_x0, goal[0], goal[1], goal[2],q, qf, r, xs, us);
+  } else {
+    for (int ii = 0; ii < N+1; ++ii) {
+      xs[ii] = x0;
+      us[ii].head(3).setZero();
+      us[i][3] = 9.81*0.5;
+    }
+  }
   ros::Time post_ddp = ros::Time::now();
   //Make Path Message
   nav_msgs::Path pa;
