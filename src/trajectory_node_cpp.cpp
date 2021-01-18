@@ -365,7 +365,7 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
       new_rot = x0.R*local_R;
     } else {
       Matrix3d prev_R;
-      quat2matrix(last_quat[ii-1],prev_R);
+      quat2Matrix(last_quat[ii-1],prev_R);
       new_pos = prev_R*local_p + last_pos[ii-1];
       new_rot = prev_R*local_R;
     }
@@ -418,8 +418,10 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   } else {
     for (int ii = 0; ii < N+1; ++ii) {
       xs[ii] = x0;
+      xs[ii].v.setZero();
+      xs[ii].w.setZero();
       us[ii].head(3).setZero();
-      us[i][3] = 9.81*0.5;
+      us[ii][3] = 9.81*0.5;
     }
   }
   ros::Time post_ddp = ros::Time::now();
