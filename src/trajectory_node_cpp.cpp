@@ -264,7 +264,7 @@ tf2::Quaternion matrix2Quat(Matrix3d& R) {
 void odom_callback(const nav_msgs::Odometry::ConstPtr& msg)
 {
   odom_update = true;
-  if (all_zeros) {
+  if (!all_zeros) {
     x0.p << msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z; 
     quat2Matrix(msg->pose.pose.orientation.x,
                 msg->pose.pose.orientation.y,
@@ -414,7 +414,7 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   //vector<Body3dState> xs(N+1);
   //vector<Vector4d> us(N);
   ros::Time pre_ddp = ros::Time::now();
-  if (!all_zeros) {
+  if ( true ) { //!all_zeros) {
     Body3dState gcop_x0 = closest_state(x0);
     solver_process_goal(N, tf, epochs, gcop_x0, goal[0], goal[1], goal[2],q, qf, r, xs, us);
   } else {

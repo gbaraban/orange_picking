@@ -6,9 +6,9 @@
   <param name="world_name" type="string" value="world" />
   <param name="goal_name" type="string" value="goal" />
   <param name="filter_alpha" type="double" value="0.5" />
-  <param name="relative_pose" type="bool" value="false" />
-  <node pkg="orange_picking" type="trajectory_node_cpp" name="trajectory"/>
-  <node pkg="orange_picking" type="odometry_node" name="odometry"/>
+  <param name="relative_pose" type="bool" value="true" />
+  <node pkg="orange_picking" type="trajectory_node_cpp" name="trajectory" output="screen"/>
+  <node pkg="orange_picking" type="odometry_node" name="odometry" output="screen"/>
   <node pkg="tf" type="static_transform_publisher" name="world_broadcaster" args="0 0 0 0 0 0 1 world optitrak 10"/>
   <node pkg="tf" type="static_transform_publisher" name="camera_broadcaster" args="0 0 0 0 0 0 1 matrice camera_link 10"/>
   <!--node pkg="rviz" type="rviz" name="rviz" args="-d $(find orange_picking)/rviz/v1.rviz"/-->
