@@ -69,10 +69,12 @@ else:
 h = 480
 w = 640
 
-stop_thresh = 0.025
+stop_thresh = 0.0045
 k = 0
 
-segload = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model_seg99.pth.tar"
+#segload = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model_seg99.pth.tar"
+segload = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model_seg145.pth.tar"
+
 seg_mean_image = torch.tensor(np.load('data/depth_data/data/mean_seg.npy')).to('cuda')
 
 segmodel = SegmentationNet()
@@ -98,6 +100,7 @@ else:
 
 bridge = CvBridge()
 
+pub = rospy.Publisher("/goal_points",PoseArray,queue_size=50)
 pub_stop = rospy.Publisher("/stop_node", Bool, queue_size=10)
 pub_seg = rospy.Publisher('/orange_picking/seg_image', Image,queue_size=50)
 
@@ -110,7 +113,9 @@ def seg_node_callback(data):
 
 	image_arr = image_arr.transpose(2,0,1)
 
-	image_arr2 = image_arr.reshape((1,3,h,w))
+        image_arr3 = image_arr[::-1, :, :].copy()
+
+	image_arr2 = image_arr3.reshape((1,3,h,w))
 
 	image_tensor = torch.tensor(image_arr2)
 
@@ -125,6 +130,8 @@ def seg_node_callback(data):
 	#seg_cpu = segimages.to('cpu')
 	seg_np = np.array(segimages[0,:,:]) #+ mean_image
 	pub_np = (255 * seg_np).astype(np.uint8).reshape((h, w))
+        cv2.imwrite('test.png', pub_np)
+
 	print(pub_np.shape)
 	#pub_seg.publish(bridge.cv2_to_imgmsg(pub_np,"passthrough"))
 	print(np.sum(seg_np), w*h, float(np.sum(seg_np))/(float(w) * float(h)))
@@ -133,7 +140,7 @@ def seg_node_callback(data):
 		msg = PoseArray()
 		msg_stop = Bool()
 
-		for pt in range(model.num_points):
+		for pt in range(num_pts):
                 	point = [0, 0, 0, 0, 0, 0]
 			point = np.array(point)
 			#print(point)
@@ -153,6 +160,7 @@ def seg_node_callback(data):
 		msg_stop.data = True
 		pub.publish(msg)
 		pub_stop.publish(msg_stop)
+		print("STOP STOP STOP")
 		#goal = np.array(goal)
 		return
 

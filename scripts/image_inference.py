@@ -1,8 +1,8 @@
 import rospy
 from sensor_msgs.msg import Image
 import torch
-#from architecture.orangenetarch3 import *
-from orangenetarch import *
+from architecture.orangenetarch7 import *
+#from orangenetarch import *
 import numpy as np
 import time, os
 from geometry_msgs.msg import Pose, PoseArray
@@ -13,7 +13,7 @@ from scipy.spatial.transform import Rotation as R
 capacity = 1.0
 num_images = 3
 num_pts = 3
-bins = 30
+bins = 100
 outputs = 6
 resnet18 = False
 if torch.cuda.is_available():
@@ -24,9 +24,23 @@ else:
 load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_plain_more_data/modelLast.pth.tar"
 #load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_data_aug_more_data/modelLast.pth.tar"
 load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model0.pth.tar" 
+load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model5.pth.tar"
+load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model3.pth.tar"
+load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model6.pth.tar"
 
-mins = [(0.0,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.0,-1.0,-0.15,-np.pi,-np.pi/2,-np.pi),(0.0,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.0,-2.0,-0.3,-np.pi,-np.pi/2,-np.pi),(0.0,-3.0,-0.5,-np.pi,-np.pi/2,-np.pi)]
-maxs = [(1.0,0.5,0.1,np.pi,np.pi/2,np.pi),(2.0,1.0,0.15,np.pi,np.pi/2,np.pi),(4.0,1.5,0.2,np.pi,np.pi/2,np.pi),(6.0,2.0,0.3,np.pi,np.pi/2,np.pi),(7.0,0.3,0.5,np.pi,np.pi/2,np.pi)]
+load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/jan2021_inference_rel/model8.pth.tar"
+load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/head_on/model26.pth.tar"
+#mins = [(0.0,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.0,-1.0,-0.15,-np.pi,-np.pi/2,-np.pi),(0.0,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.0,-2.0,-0.3,-np.pi,-np.pi/2,-np.pi),(0.0,-3.0,-0.5,-np.pi,-np.pi/2,-np.pi)]
+#maxs = [(1.0,0.5,0.1,np.pi,np.pi/2,np.pi),(2.0,1.0,0.15,np.pi,np.pi/2,np.pi),(4.0,1.5,0.2,np.pi,np.pi/2,np.pi),(6.0,2.0,0.3,np.pi,np.pi/2,np.pi),(7.0,0.3,0.5,np.pi,np.pi/2,np.pi)]
+
+
+
+mins = [(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.75,-0.75,-0.5,-np.pi,-np.pi,-np.pi),(-1.0,-1.0,-0.75,-np.pi,-np.pi,-np.pi)]
+maxs = [(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.5,1.0,0.5,np.pi,np.pi,np.pi),(2.0,1.0,0.75,np.pi,np.pi,np.pi)]
+
+
+mins = [(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi)]
+maxs = [(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi)]
 
 
 if not resnet18:
@@ -64,8 +78,9 @@ pub = rospy.Publisher("/goal_points",PoseArray,queue_size=50)
 
 h = 480 #380
 w = 640
-"""
-mean_image = "/home/gabe/ws/ros_ws/src/orange_picking/test_run/mean_imgv2_data_real_world_traj_bag.npy"
+
+mean_image = "data/mean_imgv2_data_real_world_traj_bag.npy"
+mean_image = "data/mean_imgv2_data_depth_data_data_real_world_traj_bag.npy"
 
 if not (os.path.exists(mean_image)):
         print('mean image file not found', mean_image)
@@ -74,7 +89,7 @@ else:
         print('mean image file found')
         mean_image = np.load(mean_image)
 
-"""
+
 def inference_node_callback(data):
 	t_out1 = time.time()
 	try:
@@ -82,13 +97,18 @@ def inference_node_callback(data):
 	except CvBridgeError as e:
 		print(e)
 
-	#image_arr2 = ((image_arr + mean_image)*255.0).astype(int)
-	#cv2.imwrite('test.png', image_arr2)
-	print(image_arr.shape)
+	image_arr2 = ((image_arr[:,:,:3] + mean_image)*255.0).astype(int)
+	cv2.imwrite('test_post.png', image_arr2)
+        image_arr2 = ((image_arr[:,:,4:7] + mean_image)*255.0).astype(int)
+        cv2.imwrite('test_post2.png', image_arr2)
+        image_arr2 = ((image_arr[:,:,8:11] + mean_image)*255.0).astype(int)
+        cv2.imwrite('test_post3.png', image_arr2)
+
+	#print(image_arr.shape)
 	image_arr = np.transpose(image_arr, (2,0,1))
-	print(image_arr.shape)
+	#print(image_arr.shape)
 	image_arr = image_arr.reshape((1,12,h,w))
-	print(image_arr.shape)
+	#print(image_arr.shape)
 	#if mean_image is None:
 	#	mean_subtracted = (image_arr)
 	#else:
@@ -104,7 +124,7 @@ def inference_node_callback(data):
 	logits = logits.view(1,model.outputs,model.num_points,model.bins).detach().numpy()
 	t_in2 = time.time()
 	predict = np.argmax(logits,axis=3)
-	print("Predict: ", predict)
+	#print("Predict: ", predict)
 	goal = []
 	msg = PoseArray()
 	for pt in range(model.num_points):
@@ -132,7 +152,7 @@ def inference_node_callback(data):
 	time_proc = t_out2 - t_out1
 	time_infer = t_in2 - t_in1
 	print(goal)
-	print(time_proc)
+	#print(time_proc)
 	#Publish
 
 def inference_node():
