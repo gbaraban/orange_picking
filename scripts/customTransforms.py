@@ -4,6 +4,43 @@ from scipy.spatial.transform import Rotation as R
 
 #TODO: Add custom image transformations here
 
+class sphereToXYZ(object):
+    def __call__(self,points):
+        local_pts = []
+        for point in points:
+            point = np.array(point).astype(float)
+            r = point[0]
+            theta = point[1]
+            phi = point[2]
+            x = r*np.cos(theta)*np.cos(phi)
+            y = r*np.sin(theta)*np.cos(phi)
+            z = r*np.sin(phi)
+            xyz_pt = np.hstack((x,y,z,point[3:6]))
+            local_pts.append(xyz_pt)
+        return local_pts
+
+class xyzToSphere(object):
+    def __init__(self,r_theshold = 1e-5):
+        self.r_thesh = r_theshold
+
+    def __call__(self,points):
+        local_pts = []
+        for point in points:
+            point = np.array(point).astype(float)
+            x = point[0]
+            y = point[1]
+            z = point[2]
+            r = np.linalg.norm(point[0:3])
+            if r < self.r_thesh:
+                theta = 0
+                phi = 0
+            else:
+                theta = np.arctan2(y,x)
+                phi = np.arctan2(z,r)
+            sphere_pt = np.hstack((r,theta,phi,point[3:6]))
+            local_pts.append(sphere_pt)
+        return local_pts
+
 class pointToBins(object):
     def __init__(self,min_list,max_list, bins):
         self.min_list = min_list
