@@ -37,13 +37,13 @@ def get_queued_imgs(img):
 
 def processing_callback(data):
 	try:
-		cv_image = bridge.imgmsg_to_cv2(data, "rgb8")
+		cv_image = bridge.imgmsg_to_cv2(data, "bgr8")
 	except CvBridgeError as e:
 		print(e)
 
 	#print(cv_image.shape)
-	#cv_image = cv2.resize(cv_image,(w,h))
-	#cv2.imwrite("test_pre.png", cv_image)
+	cv_image = cv2.resize(cv_image,(w,h))
+	cv2.imwrite("test_pre.png", cv_image)
 	cv_image = cv_image/255.0
 	#print(cv_image.shape)
 	if mean_image is None:
