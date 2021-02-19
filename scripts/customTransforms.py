@@ -4,42 +4,55 @@ from scipy.spatial.transform import Rotation as R
 
 #TODO: Add custom image transformations here
 
-class sphereToXYZ(object):
+class sphericalToXYZ(object):
+    def transformFunc(self, v):
+        r = v[0]
+        theta = v[1]
+        phi = v[2]
+        x = r*np.cos(theta)*np.cos(phi)
+        y = r*np.sin(theta)*np.cos(phi)
+        z = r*np.sin(phi)
+        if len(v) == 3:
+            return np.array([x,y,z])
+        return np.hstack((x,y,z,v[3:6]))
+
     def __call__(self,points):
         local_pts = []
         for point in points:
-            point = np.array(point).astype(float)
-            r = point[0]
-            theta = point[1]
-            phi = point[2]
-            x = r*np.cos(theta)*np.cos(phi)
-            y = r*np.sin(theta)*np.cos(phi)
-            z = r*np.sin(phi)
-            xyz_pt = np.hstack((x,y,z,point[3:6]))
-            local_pts.append(xyz_pt)
-        return local_pts
+            if (point[0].shape == ()):
+                local_pts.append(self.transformFunc(point))
+            else:
+                local_pts.append(self.__call__(self,point))
+        return np.array(local_pts)
 
-class xyzToSphere(object):
+class xyzToSpherical(object):
+    def transformFunc(self, v):
+        x = v[0]
+        y = v[1]
+        z = v[2]
+        r = np.linalg.norm(v[0:3])
+        if r < self.r_thesh:
+            theta = 0
+            phi = 0
+        else:
+            theta = np.arctan2(y,x)
+            phi = np.arctan2(z,r)
+        if len(v) == 3:
+            return np.array((r,theta,phi))
+        return np.hstack((r,theta,phi,v[3:6]))
+ 
     def __init__(self,r_theshold = 1e-5):
         self.r_thesh = r_theshold
 
     def __call__(self,points):
         local_pts = []
         for point in points:
-            point = np.array(point).astype(float)
-            x = point[0]
-            y = point[1]
-            z = point[2]
-            r = np.linalg.norm(point[0:3])
-            if r < self.r_thesh:
-                theta = 0
-                phi = 0
+            #print(len(point), len(points))
+            if (point[0].shape == ()):
+                local_pts.append(self.transformFunc(point))
             else:
-                theta = np.arctan2(y,x)
-                phi = np.arctan2(z,r)
-            sphere_pt = np.hstack((r,theta,phi,point[3:6]))
-            local_pts.append(sphere_pt)
-        return local_pts
+                local_pts.append(self.__call__(self,point))
+        return np.array(local_pts)
 
 class pointToBins(object):
     def __init__(self,min_list,max_list, bins):
@@ -51,6 +64,7 @@ class pointToBins(object):
         local_pts = []
         for ctr, point in enumerate(points):
             #Convert into bins
+            #print(len(point), len(points))
             min_i = np.array(self.min_list[ctr]).astype(float)
             max_i = np.array(self.max_list[ctr]).astype(float)
             point = np.array(point).astype(float)
