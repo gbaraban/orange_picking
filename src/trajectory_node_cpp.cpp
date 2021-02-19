@@ -87,16 +87,16 @@ q, r: The weights of the quadratic running cost
 qf: The weights of the waypoint cost
 xout, us: The vectors to populate with the resulting trajectory
 */
-void solver_process_goal(int N, double tf, int epochs, Body3dState gcop_x0,
+void solver_process_goal(int N, double gcop_tf, int epochs, Body3dState gcop_x0,
      Body3dState goal1, Body3dState goal2, Body3dState goal3,
      Vector12d q, Vector12d qf, Vector4d r, vector<Body3dState> &xout, vector<Vector4d> &us)
 {
   //Parameters
-  double h = tf/N;
+  double h = gcop_tf/N;
   //System
   Hrotor sys;
   //Costs
-  MultiCost<Body3dState, 12, 4> cost(sys, tf);
+  MultiCost<Body3dState, 12, 4> cost(sys, gcop_tf);
   //Quadratic Cost
   vector<Body3dState> goals(3);
   goals[0] = goal1;
@@ -105,8 +105,8 @@ void solver_process_goal(int N, double tf, int epochs, Body3dState gcop_x0,
   Matrix<double,12,12> Q;
   Matrix<double,12,12> Qf;
   Matrix<double,4,4> R;
-  vector<double> time_list = {tf};//Use equal spacing
-  Body3dCost<4> pathcost(sys, tf, goal3);
+  vector<double> time_list = {gcop_tf};//Use equal spacing
+  Body3dCost<4> pathcost(sys, gcop_tf, goal3);
   Body3dWaypointCost waypointcost(sys, time_list, goals);
     for (int j = 0; j < 12; ++j)
     {
@@ -294,7 +294,6 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   }
   odom_update = false;
   ros::Time begin_time = ros::Time::now();
-  double tf = 3;
   //int N = (int) 25*tf;
   int epochs = 4;
   //Check for all zero goals
@@ -545,6 +544,9 @@ TrajectoryNode(): lis(tfBuffer)
   if (!(n.getParam("relative_pose",relative_pose))){
     relative_pose = false;
   }
+  if (!(n.getParam("point_tf",tf))){
+    tf = 3;
+  }
   //ROS_INFO_STREAM("Publishing to " << path_topic << endl);
   //ROS_INFO_STREAM("Publishing Joints to " << joint_topic << endl);
   //ROS_INFO_STREAM("Subscribing to " << goal_topic << endl);
@@ -558,8 +560,7 @@ TrajectoryNode(): lis(tfBuffer)
   sub = n.subscribe(goal_topic,1,&TrajectoryNode::callback,this);
   odom_sub = n.subscribe(odom_topic,1,&TrajectoryNode::odom_callback,this);
   int hz = 20;
-  int tf = 3;
-  N = hz*tf;
+  N = (int) hz*tf;
   x0.p << 0, 0, 0;
   x0.R << 1, 0, 0,
           0, 1, 0,
@@ -613,6 +614,7 @@ ros::Time init_time;
 bool odom_update;
 bool relative_pose;
 bool all_zeros;
+double tf;
 };
 /*The main function
 Builds an instance of TrajectoryNode and then spins.
