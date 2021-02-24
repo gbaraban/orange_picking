@@ -171,15 +171,13 @@ void solver_process_goal(int N, double gcop_tf, int epochs, Body3dState gcop_x0,
 
 Body3dState closest_state(Body3dState odom)
 {
-  ROS_INFO_STREAM("Closest State Called");
-  ROS_INFO_STREAM("input state: x.p: " << odom.p);
-  ROS_INFO_STREAM("x.R: " << odom.R);
-  ROS_INFO_STREAM("x.v: " << odom.v);
-  ROS_INFO_STREAM("x.w: " << odom.w);
-  double smallest_dist = -1;
+  double max_dist = 0.3;
+  double smallest_dist = max_dist;
   Body3dState best_state;
+  int best_idx = -1;
   int ii = 0;
   double interp_frac = 0;
+  double best_interp_frac = 0;
   for (ii = 0; ii < N - 1; ++ii) 
   {
     Vector3d line = xs[ii+1].p - xs[ii].p;
@@ -188,11 +186,12 @@ Body3dState closest_state(Body3dState odom)
       continue;
     }
     Vector3d line_v = line/line.norm();
-    Vector3d projection = ((odom.p - xs[ii].p).dot(line_v))*line_v;
-    interp_frac = projection.norm()/line.norm();
+    double projection_distance = (odom.p - xs[ii].p).dot(line_v);
+    //Vector3d projection = ((odom.p - xs[ii].p).dot(line_v))*line_v;
+    interp_frac = projection_distance/line.norm();//projection.norm()/line.norm();
     if (interp_frac < 0) { interp_frac = 0; }
     if (interp_frac > 1) { interp_frac = 1; }
-    projection = interp_frac*line + xs[ii].p;
+    Vector3d projection = interp_frac*line + xs[ii].p;
     double dist = (odom.p - projection).norm();
     if ((smallest_dist == -1) || (dist < smallest_dist)) {
       smallest_dist = dist;
@@ -204,18 +203,16 @@ Body3dState closest_state(Body3dState odom)
       best_state.w = odom.w;*/
       best_state.v = xs[ii].v + interp_frac*(xs[ii+1].v - xs[ii].v);
       best_state.w = xs[ii].w + interp_frac*(xs[ii+1].w - xs[ii].w);
+      best_idx = ii;
+      best_interp_frac = interp_frac;
     }
   }
-  if (smallest_dist == -1)
+  if (smallest_dist >= max_dist)
   {
     ROS_ERROR_STREAM("closest state not found, something is wrong");
     return odom;
   }
-  ROS_INFO_STREAM("interp index: " << (ii + interp_frac));
-  ROS_INFO_STREAM("closest state: x.p: " << best_state.p);
-  ROS_INFO_STREAM("x.R: " << best_state.R);
-  ROS_INFO_STREAM("x.v: " << best_state.v);
-  ROS_INFO_STREAM("x.w: " << best_state.w);
+  ROS_INFO_STREAM("Final distance: " << smallest_dist << " at idx: " << best_idx << " with frac: " << best_interp_frac);
   return best_state;
 }
 
