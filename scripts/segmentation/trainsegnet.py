@@ -124,7 +124,7 @@ def main():
     parser.add_argument('--train',type=bool, default=False, help='add train aug') #TODO AUGMENTATION A LOT
     parser.add_argument('--val', type=float, default=0.10, help='validation percentage')
     parser.add_argument('-j', type=int, default=4, help='number of loader workers')
-    parser.add_argument('--save_variables',type=int,default=20,help="save after every x epochs")
+    parser.add_argument('--save_variables',type=int,default=2,help="save after every x epochs")
     parser.add_argument('--save_outputs',type=int,default=5,help="save after every x epochs")
     args = parser.parse_args()
 

@@ -22,26 +22,31 @@ while trial_num < 0:
     #Filenames
     #foldername = "trial" + str(trial_num) + "/"
     #os.makedirs(globalfolder + foldername)
-    env_name = 'unity/env_v7'
+    env_name = None#'unity/env_v9'
     env = UnityEnvironment(file_name=env_name,worker_id=trial_num,seed=0)
     x = np.array([-1.5,0,1,0,0,0])
     tree = np.array([0,0,0,0])
-    tree[3] = 360*np.random.random_sample()
+    #tree[3] = 360*np.random.random_sample()
     orange = np.array([-1,0,1])
-    for ii in range(6):
-        cR = 2 #1e-1*ii
-        print("CollisionR: ",cR)
-        (camName,envName,orange,occ_frac) = setUpEnv(env,x,tree,orange,collisionR = cR)
-        print("Occlusion: ",occ_frac)
-    #cR = 1e-1*trial_num
-    #(camName,envName) = setUpEnv(env,x,tree,orange,collisionR = cR)
+    #for ii in range(6):
+    #    cR = 2 #1e-1*ii
+    #    print("CollisionR: ",cR)
+    #    (camName,envName,orange,occ_frac,dummy) = setUpEnv(env,x,tree,orange,collisionR = cR)
+    #    print("Occlusion: ",occ_frac)
+    cR = 2e-1
+    (camName,envName,orange,occ_frac,dummy) = setUpEnv(env,x,tree,orange,collisionR = cR)
     #(env,x,camName,envName, orange, tree) = shuffleEnv(env_name,trial_num=trial_num,cR = -0.01*trial_num)#setUpEnv(env,x0_i,treePos_i,orangePos_i)
     #x = np.array([0,0,0,0,0,0])
-    #camAct = makeCamAct(x)
-    #(im_arr,ext_arr) = unity_image(env,camAct,camName,envName)
+    camAct = makeCamAct(x)
+    (im_arr,ext_arr) = unity_image(env,camAct,camName,envName,depth_flag=True,seg_flag=True)
+    seg_arr = im_arr[2]
+    depth_arr = im_arr[1]
+    im_arr = im_arr[0]
     #ext_arr = unity_image(env,camAct,None,envName)
     #print("saving to folder: ", globalfolder)
-    #save_image_array(im_arr,globalfolder+"/images/","sim_image"+str(trial_num))
+    save_image_array(im_arr,globalfolder+"/images/","sim_image"+str(trial_num))
+    save_image_array(depth_arr,globalfolder+"/images/","depth_image"+str(trial_num))
+    save_image_array(seg_arr,globalfolder+"/images/","seg_image"+str(trial_num))
     #save_image_array(ext_arr,None,None)#globalfolder+"/external/","ext_image"+str(trial_num))
     #print("Close Env")
     env.close()

@@ -2,8 +2,8 @@ import os
 import PIL.Image as Image
 import numpy as np
 
-floc = "seg_mask_real/"
-tloc = "seg_mask_real_png/"
+floc = "seg_mask/"
+tloc = "seg_mask_png/"
 
 for bag in os.listdir(floc):
 	os.makedirs(tloc + "/" +  bag)

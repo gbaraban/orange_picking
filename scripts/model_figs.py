@@ -9,6 +9,18 @@ import PIL.Image as img
 from orangenetarch import *
 from orangeimages import *
 
+def init_angle(tree,orange,x0):
+    tree = np.array(tree)
+    orange = np.array(orange)
+    x0 = np.array(x0)
+    vec_o = np.array(orange[0:2]-tree[0:2])
+    vec_o = vec_o/np.linalg.norm(vec_o)
+    vec_q = np.array(x0[0:2]-tree[0:2])
+    vec_q = vec_q/np.linalg.norm(vec_q)
+    cos_angle = np.dot(vec_o,vec_q)
+    return np.degrees(np.arccos(cos_angle))
+
+
 def run_trajectory(x0,N,steps,dt,physics_hz,model,image_spacing,env,camName,save_path,mean_image,device):
   #Generate a trajectory
   trajectory = [x0 for i in range(N+1)]
@@ -51,21 +63,34 @@ def main():
   #parser.add_argument('--iters', type=int, default=30, help='number of simulations')
   parser.add_argument('--steps', type=int, default=100, help='Steps per simulation')
   parser.add_argument('--hz', type=float, default=5, help='Recalculation rate')
-  parser.add_argument('--physics', type=float, default=5, help='Recalculation rate')
+  #parser.add_argument('--physics', type=float, default=5, help='Recalculation rate')
   parser.add_argument('--env', type=str, default="unity/env_v7", help='unity filename')
   parser.add_argument('--plot_step', type=bool, default=False, help='PLot each step')
   parser.add_argument('--mean_image', type=str, default='data/mean_imgv2_data_Run23.npy', help='Mean Image')
   parser.add_argument('--worker_id', type=int, default=0, help='Worker ID for Unity')
+  parser.add_argument('--mean_image', type=str, default='data/mean_imgv2_data_Run24.npy', help='Mean Image')
+  parser.add_argument('--seg', type=bool, default=False, help='Mean Image')
+  parser.add_argument('--seg_mean_image', type=str, default='data/mean_imgv2_data_seg_Run24.npy', help='Mean Image')
+  parser.add_argument('--relative_pose', type=bool, default=False, help='Relative Position')
+  parser.add_argument('--name', type=int, default=0, help="model name")
   #Training Options
   args = parser.parse_args()
-  args.min = [(0.,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.,-1.,-0.15,-np.pi,-np.pi/2,-np.pi),(0.,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.,-2.,-0.3,-np.pi,-np.pi/2,-np.pi),(0.,-3.,-0.5,-np.pi,-np.pi/2,-np.pi)]
-  args.max = [(1.,0.5,0.1,np.pi,np.pi/2,np.pi),(2.,1.,0.15,np.pi,np.pi/2,np.pi),(4.,1.5,0.2,np.pi,np.pi/2,np.pi),(6.,2.,0.3,np.pi,np.pi/2,np.pi),(7.,0.3,0.5,np.pi,np.pi/2,np.pi)]
-  np.random.seed(args.seed)
-  #Load model
-  if not args.resnet18:
-      model = OrangeNet8(capacity=args.capacity,num_img=args.num_images,num_pts=args.num_pts,bins=args.bins,mins=args.min,maxs=args.max,n_outputs=args.outputs)
+  if not args.relative_pose:
+    args.min = [(-0.1, -0.5, -0.25, -0.5, -0.1, -0.1), (-0.1, -1.0, -0.4, -np.pi/4, -0.1, -0.1), (-0.1, -1.25, -0.6, -np.pi/2, -0.1, -0.1)]
+    args.max = [(1.0, 0.5, 0.25, 0.5, 0.1, 0.1), (1.75, 1.0, 0.4, np.pi/4, 0.1, 0.1), (2.5, 1.25, 0.6, np.pi/2, 0.1, 0.1)]
   else:
-      model = OrangeNet18(capacity=args.capacity,num_img=args.num_images,num_pts=args.num_pts,bins=args.bins,mins=args.min,maxs=args.max,n_outputs=args.outputs)
+    args.min = [(-0.1, -0.5, -0.25, -0.5, -0.1, -0.1), (-0.1, -0.5, -0.25, -0.5, -0.1, -0.1), (-0.1, -0.5, -0.25, -0.5, -0.1, -0.1)]
+    args.max = [(1.0, 0.5, 0.25, 0.5, 0.1, 0.1), (1.0, 0.5, 0.25, 0.5, 0.1, 0.1), (1.0, 0.5, 0.25, 0.5, 0.1, 0.1)]np.random.seed(args.seed)
+  #Load model
+  if args.seg:
+    n_channels = 5
+  else:
+    n_channels = 3
+
+  if not args.resnet18:
+      model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=args.outputs,num_channels=n_channels,real=False)
+  else:
+      model = OrangeNet18(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=args.outputs)
 
   model.min = args.min
   model.max = args.max
@@ -88,7 +113,10 @@ def main():
   else:
       print('mean image file found')
       mean_image = np.load(args.mean_image)
-
+      if args.seg:
+          seg_mean = np.load(args.seg_mean_image)
+          mean_image = np.concatenate((mean_image,seg_mean),axis=2)
+  
   import copy
   temp_image = copy.deepcopy(mean_image)
   if args.num_images != 1:
@@ -110,76 +138,125 @@ def main():
   else:
       device = torch.device('cpu')
   #Make Run Folder
-  run_num = 0
-  globalfolder = 'data/dagger/Fig' + str(run_num) + '_' + str(args.steps) + '_' + str(args.hz) + '_' + str(args.physics) + '/'
+  run_num = args.name
+  globalfolder = 'data/dagger/Fig' + str(run_num) + '_' + str(args.steps) + '_' + str(args.hz) + '/' #+ str(args.physics) + '/'
   while os.path.exists(globalfolder):
       run_num += 1
-      globalfolder = 'data/dagger/Fig' + str(run_num) +  '_' + str(args.steps) + '_' + str(args.hz) + '_' + str(args.physics) + '/'
-  num_trials_each = 100
+      globalfolder = 'data/dagger/Fig' + str(run_num) +  '_' + str(args.steps) + '_' + str(args.hz) + '/' #+ str(args.physics) + '/'
+  
+  num_trials_each = 50
+  num_trials_each_occ = 10
+  
   trajectories = []
   final_error = []
   head_ons = []
+  head_on_data = []
   sides = []
+  side_data = []
   backs = []
   dt = 1/args.hz
   orange_offset = (0,0,0) #TODO: change this
   pos_threshold = 0.02
   tf = args.steps*dt
   N = int(tf*physics_hz)
+  
+  occlusion_bins = 7
+  occlusion_nums = [[] for _ in range(occlusion_bins)]
+  num_trials_each = 10
+  min_occ = 0#min(occlusions)
+  max_occ = 0.7#max(occlusions)
+  occlusion_trajectories = []
+  occlusions = []
+  occlusion_final_error = []
+
   trial_num = -1
-  while (len(head_ons) < num_trials_each) and (len(sides) < num_trials_each) and (len(backs) < num_trials_each):
+  exp = -1
+
+  flag1 = True
+  flag2 = True
+  occ_flag = True
+  main_flag = True
+  while main_flag:
     trial_num += 1
-    foldername = "trial" + str(trial_num) + "/"
+    exp += 1
+    foldername = "trial" + str(exp) + "/"
     os.makedirs(globalfolder+foldername)
     save_path = globalfolder+foldername
     flag = True
     #Generate an environment
     while flag:
-      (env,x0,camName,envName,orange,tree,occ,orangePosTrue) = shuffleEnv(args.env_name,trial_num=exp,include_occlusion=True,args=args)
-      angle = ...#TODO: fill in
-      angle = abs(angle)
+      occ = 1.0
+      setup_data = None
+      while occ > 0.7:      
+        #(env,x0,camName,envName,orange,tree,occ,orangePosTrue)
+        setup_data = shuffleEnv(args.env_name,trial_num=trial_num,include_occlusion=True,args=args,exp=exp)
+        occ = setup_data[6]
+        env = setup_data[0]
+        tree = setup_data[5]
+        orange = setup_data[4]
+        x0 = setup_data[1]
+        if occ > 0.7:
+          trial_num += 1
+          env.close()
+          time.sleep(5)
+      #ret_val = 1
+      angle = init_angle(tree,orange,x0)
       if angle <  45:
-        if len(head_ons) >= num_trials_each:
-          continue
+        occ_bin = int((occ-min_occ)*occlusion_bins/(max_occ-min_occ))
+        if len(occlusion_bins[occ_bin]) >= num_trials_each_occ:
+          occ_bin_flag = False
         else:
-          head_ons.append(trial_num)
+          occ_bin_flag = True
+
+        if len(head_ons) >= num_trials_each:
+          flag1 = False
+        
+        if flag1 or occ_bin_flag:
+          ret_val = 1
+
+          if flag1:
+            head_ons.append(exp)
+            head_on_data.append(setup_data)
+            head_on_suc.append(ret_val)
+
+          if occ_bin_flag:
+            occlusion_nums.append()
           flag = False
-      elif angle < 135:
+      else:
         if len(sides) >= num_trials_each:
           continue
         else:
-          sides.append(trial_num)
+          sides.append(exp)
+          side_data.append(setup_data)
+          side_data_suc.append(ret_val)
           flag = False
-      else:
-        if len(backs) >= num_trials_each:
-          continue
-        else:
-          backs.append(trial_num)
-          flag = False
+    
+
+    if not flag1 and not flag2 and not occ_flag:
+      main_flag = False
+      
+    '''
     #Generate a trajectory
-    trajectory = run_trajectory(x0,N,steps,dt,physics_hz,model,image_spacing,env,camName,save_path,mean_image,device):
+    trajectory = run_trajectory(x0,N,steps,dt,physics_hz,model,image_spacing,env,camName,save_path,mean_image,device)
     #Post Process
     trajectories.append(trajectory)
     final_x = trajectory[len(trajectory)-1]
     ee_pos = final_x[0:3] + R.from_euler('zyx',final_x[3:6]).apply(orange_offset)
     final_error.append(np.linalg.norm(ee_pos-orange))
+    '''
   #Calculate success rates
+  '''
   head_on_sucessess = sum([1 if (pos_threshold > final_error[ii]) else 0 for ii in head_ons])
   side_sucessess = sum([1 if (pos_threshold > final_error[ii]) else 0 for ii in sides])
   back_sucessess = sum([1 if (pos_threshold > final_error[ii]) else 0 for ii in backs])
+  '''
   print("Total Success Rate: ",head_on_successes+side_successes+back_successes," out of ",len(head_ons)+len(sides)+len(backs))
   print("Head On Success Rate: ",head_on_success," out of ",len(head_ons))
   print("Side Success Rate: ",side_success," out of ",len(sides))
   print("Back Success Rate: ",back_success," out of ",len(backs))
   #Occlusion Tests
-  occlusion_bins = 10
-  occlusion_nums = [[] for _ in range(occlusion_bins)]
-  min_occ = 0#min(occlusions)
-  max_occ = 0.7#max(occlusions)
-  trial_num = -1
-  occlusion_trajectories = []
-  occlusions = []
-  occlusion_final_error = []
+  
+  
   while min([len(occlusion_nums[ii]) for ii in range(occlusion_bins)]) < num_trials_each:
     trial_num += 1
     foldername = "occ_trial" + str(trial_num) + "/"
@@ -189,19 +266,17 @@ def main():
     #Generate an environment
     while flag:
       (env,x0,camName,envName,orange,tree,occ,orangePosTrue) = shuffleEnv(args.env_name,trial_num=exp,include_occlusion=True,args=args)
-      angle = ...#TODO: fill in
-      angle = abs(angle)
+      angle = init_angle(tree,orange,x0)
       if angle >  45:
         continue
       else:
-        occ_bin = int((occ-min_occ)*occlusion_bins/(max_occ-min_occ))
         if len(occlusion_nums[occ_bin]) >= num_trials_each:
           continue
         else:
           occlusions.append(occ)
           occlusion_nums.append(trial_num)
           flag = False
-    trajectory = run_trajectory(x0,N,steps,dt,physics_hz,model,image_spacing,env,camName,save_path,mean_image,device):
+    trajectory = run_trajectory(x0,N,steps,dt,physics_hz,model,image_spacing,env,camName,save_path,mean_image,device)
     #Post Process
     occlusion_trajectories.append(trajectory)
     final_x = trajectory[len(trajectory)-1]

@@ -76,15 +76,16 @@ def get_variety():
 	return labels, variety
 
 def get_selective_variety():
-	variety = [[10, 6, 100, 3], [10, 6, 150, 3], [10, 6, 100, 5], [10, 6, 150, 5], [10, 6, 100, 10], [10, 6, 150, 10], [10, 6, 250, 10], [10, 6, 250, 12],  [10, 6, 350, 12], [10, 6, 250, 15], [10, 6, 350, 15], [10, 6, 250, 20], [10, 6, 350, 20], [10, 6, 500, 15], [10, 6, 500, 20], [10, 6, 500, 25], [10, 6, 600, 15], [10, 6, 600, 20], [10, 6, 600, 25], [10, 6, 750, 20], [10, 6, 750, 15], [10, 6, 1000, 20], [10, 6, 1000, 15]]
+	#variety = [[10, 6, 100, 3], [10, 6, 150, 3], [10, 6, 150, 5], [10, 6, 250, 10], [10, 6, 250, 12],  [10, 6, 350, 12], [10, 6, 350, 15], [10, 6, 500, 15], [10, 6, 350, 20], [10, 6, 500, 20], [10, 6, 500, 25], [10, 6, 600, 20], [10, 6, 600, 25], [10, 6, 750, 20], [10, 6, 1000, 20], [10, 6, 1000, 30]]
+	variety = [[10, 6, 1000, 15], [10, 6, 1000, 20], [10, 6, 1500, 20], [10, 6, 500, 15], [10, 6, 350, 12], [10, 6, 150, 3], [10, 6, 500, 12], [10, 6, 250, 10], [10, 6, 400, 10], [10, 6, 100, 3], [10, 6, 150, 5],[10, 6, 250, 5]]
 	print(len(variety))
 	labels = ["iters", "outputs", "steps", "hz"]
 	return labels, variety
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--loc', type=str, default="/home/gabe/ws/ros_ws/src/orange_picking/useful_models.csv", help='random seed')
-    parser.add_argument('--j', type=int, default=12, help='approx number of unity threads running')
+    parser.add_argument('--loc', type=str, default="/home/gabe/ws/ros_ws/src/orange_picking/useful_models_sim3.csv", help='random seed')
+    parser.add_argument('--j', type=int, default=16, help='approx number of unity threads running')
     parser.add_argument('--explore', type=int, default=0, help="selective variety or explorative")
     args = parser.parse_args()
 
@@ -96,7 +97,7 @@ def main():
     else:
         labels, vars = get_selective_variety()
     print(data)
-    gpu = [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1]
+    gpu = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1]
     print(len(gpu))
     #exit()
     for k in data.keys():
@@ -104,7 +105,7 @@ def main():
         print(d)
         #print(k)
         #continue
-        proc = "python3 scripts/orangesimulation.py  " + str(d["model_loc"]) + str(d["model"]) + " --name " + str(k) + " --num_images " + str(d["num_images"]) + "  "
+        proc = "python3 scripts/orangesimulation.py  --bins 100 --relative_pose 1 --seg 1 " + str(d["model_loc"]) + str(d["model"]) + " --name " + str(k) + " --num_images " + str(d["num_images"]) + "  "
         if d["resnet"] == "18":
             proc +=  " --resnet18 1 "
 

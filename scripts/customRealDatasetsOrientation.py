@@ -22,7 +22,8 @@ class SubSet(Dataset):
         return self.ds[self.idx[i]]
 
 class OrangeSimDataSet(Dataset):
-    def __init__(self, root_dir, num_images, num_pts, pt_trans, img_trans, dt = 1, reduce_N = True, custom_dataset = None, input = 1.0, depth=False, seg=False, temp_seg=False, seg_only=False, rel_pose=None):
+    def __init__(self, root_dir, num_images, num_pts, pt_trans, img_trans, dt = 1.0, reduce_N = True, custom_dataset = None, input = 1.0, depth=False, seg=False, temp_seg=False,
+	seg_only=False, rel_pose=False, gaussian_pts=False, pred_dt=1.0):
         self.point_transform = pt_trans
         self.image_transform = img_trans
         self.num_pts = num_pts
@@ -44,11 +45,17 @@ class OrangeSimDataSet(Dataset):
         self.seg_only = seg_only
         self.mean_seg = np.load("data/mean_imgv2_data_seg_real_world_traj_bag.npy")
         self.relative_pose = rel_pose
+        self.pred_dt = pred_dt
 
         self.nEvents = []
         self.time_secs = []
         self.time_nsecs = []
         self.hz = []
+        self.time_multiplier = []
+
+        self.gaussian_pts = gaussian_pts
+        self.gaussian_var = [0.012, 0.012, 0.012, 0.04, 0.02, 0.02]
+        self.gaussian_limit = [0.025, 0.025, 0.025, 0.08, 0.04, 0.04]
 
         if reduce_N:
             time_window = num_pts*dt
@@ -107,12 +114,13 @@ class OrangeSimDataSet(Dataset):
 
             if self.custom_dataset == "no_parse":
                 self.nEvents.append(data["nEvents"])
+                self.time_multiplier.append(data["time_multiplier"])
                 self.time_secs.append(data["time_secs"])
                 self.time_nsecs.append(data["time_nsecs"])
 
             self.num_samples_dir[i]['end'] = self.num_samples
             self.num_samples_dir[i]['size'] = self.num_samples_dir[i]['end'] - self.num_samples_dir[i]['start']
-            self.hz.append(self.num_samples_dir[i]['size']/data["time_secs"])
+            self.hz.append(self.num_samples_dir[i]['size']/(data["time_secs"]*data["time_multiplier"]))
             self.num_samples_dir[i]['data'] = data
             self.num_samples_dir[i]['dir'] = trial_dir
             self.num_samples_dir_size[i] = self.num_samples_dir[i]['size']
@@ -206,6 +214,8 @@ class OrangeSimDataSet(Dataset):
 
             if self.point_transform:
                 points = self.point_transform(points)
+            else:
+                points = np.array(points)
 
             #if self.image_transform:
             #    data = {}
@@ -220,8 +230,8 @@ class OrangeSimDataSet(Dataset):
             p0 = np.array(point[0:3])
             R0 = R.from_euler('zyx', point[3:6]).as_dcm()
             points = []
-            h = (float(self.nEvents[trial_idx])/self.time_secs[trial_idx])
-            indices = np.floor(np.add(np.array([1, 2, 3]) * h, idx)).astype(int)
+            h = (float(self.nEvents[trial_idx])/(self.time_secs[trial_idx]*self.time_multiplier[trial_idx]))
+            indices = np.floor(np.add(np.array([1*self.pred_dt, 2*self.pred_dt, 3*self.pred_dt]) * h, idx)).astype(int)
 
             for i in range(len(indices)):
                 if (indices[i] >= self.num_list[trial_idx]):
@@ -254,7 +264,7 @@ class OrangeSimDataSet(Dataset):
             R0 = np.array(rot_list[0])
 
             for ii in range(1,len(point_list)):
-                if (self.relative_pose is not None):
+                if (self.relative_pose):
                   prev_p = np.array(point_list[ii-1])
                   prev_R = np.array(rot_list[ii-1])
                 else:
@@ -270,8 +280,18 @@ class OrangeSimDataSet(Dataset):
 
             #points = np.matmul(np.array(R0).T, (np.array(points) - np.array(p0)).T).T
 
+            if self.gaussian_pts:
+                #print("Gaussian Noise added")
+                for pt_num in range(len(points)):
+                    for dof in range(len(points[pt_num])):
+                        err = np.min((np.max((-np.random.normal(0.0, self.gaussian_var[dof]), -self.gaussian_limit[dof])), self.gaussian_limit[dof]))
+                        #print(err)
+                        points[pt_num][dof] += err
+
             if self.point_transform:
                 points = self.point_transform(points)
+            else:
+                points = np.array(points)
 
             #if self.image_transform:
             #    data = {}

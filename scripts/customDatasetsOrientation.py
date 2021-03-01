@@ -11,6 +11,7 @@ from customTransforms import *
 import pickle
 from scipy.spatial.transform import Rotation as R
 import cv2
+import gzip
 
 class SubSet(Dataset):
     def __init__(self,dataset,idx):
@@ -22,7 +23,8 @@ class SubSet(Dataset):
         return self.ds[self.idx[i]]
 
 class OrangeSimDataSet(Dataset):
-    def __init__(self, root_dir, num_images, num_pts, pt_trans, img_trans, dt = 1, reduce_N = True, custom_dataset = None, input = 1.0):
+    def __init__(self, root_dir, num_images, num_pts, pt_trans, img_trans, dt = 1.0, reduce_N = True, custom_dataset = None, input = 1.0, depth=False, seg=False, temp_seg=False,
+	seg_only=False, rel_pose=False, gaussian_pts=False, pred_dt=1.0):
         self.point_transform = pt_trans
         self.image_transform = img_trans
         self.num_pts = num_pts
@@ -33,6 +35,8 @@ class OrangeSimDataSet(Dataset):
         self.run_dir = root_dir
         self.np_dir = root_dir.rstrip("/") + "_np/"
         self.trial_list = os.listdir(root_dir)
+        if seg:
+            self.trial_list = os.listdir(root_dir.rstrip("/") + "_seg/")
         self.num_samples = 0
         self.num_samples_dir = {}
         self.num_samples_dir_size = {}
@@ -40,6 +44,12 @@ class OrangeSimDataSet(Dataset):
         self.custom_dataset = custom_dataset
         self.input_size = input
         self.pt_error = []
+        self.depth = depth
+        self.seg = seg
+        self.seg_only = seg_only
+        self.mean_seg = np.load("data/mean_imgv2_data_seg_Run24.npy")
+        self.relative_pose = rel_pose
+        self.pred_dt = pred_dt
 
         if self.custom_dataset is None:
             if reduce_N:
@@ -152,6 +162,19 @@ class OrangeSimDataSet(Dataset):
                 w *= self.input_size
                 temp_image = cv2.resize(temp_image, dsize=(int(h), int(w)), interpolation=cv2.INTER_CUBIC)
             temp_image = np.transpose(temp_image,[2,0,1])
+
+            if self.seg:
+                if os.path.isfile(self.run_dir.rstrip("/") + "_seg/"+trial+'/image'+str(temp_idx)+'.npy.gz'):
+                    f = gzip.GzipFile(self.run_dir.rstrip("/") + "_seg/"+trial+'/image'+str(temp_idx)+'.npy.gz', 'r')
+                    temp_seg = np.load(f) - self.mean_seg
+                else:
+                    print("zero_init", temp_image.shape)
+                    #temp_seg = np.zeros((temp_image.shape[1], temp_image.shape[2]))
+                    temp_seg = -self.mean_seg.copy()
+                temp_seg = np.transpose(temp_seg, [2,0,1])
+                #print("test", temp_seg.shape, temp_image.shape)
+                #temp_seg = np.expand_dims(temp_seg,0)
+                temp_image = np.concatenate((temp_image,temp_seg),axis=0)
             #if self.image_transform:
             #    temp_image = self.image_transform(temp_image)
             if image is None:
@@ -227,16 +250,22 @@ class OrangeSimDataSet(Dataset):
             R0 = np.array(rot_list[0])
 
             for ii in range(1,len(point_list)):
+                if (self.relative_pose):
+                  prev_p = np.array(point_list[ii-1])
+                  prev_R = np.array(rot_list[ii-1])
+                else:
+                  prev_p = p0
+                  prev_R = R0
                 p = np.array(point_list[ii])
                 Ri = np.array(rot_list[ii])
-                p = list(np.matmul(R0.T,p-p0))
-                Ri = np.matmul(R0.T,Ri)
+                p = list(np.matmul(prev_R.T,p-prev_p))
+                Ri = np.matmul(prev_R.T,Ri)
                 Ri_zyx = list(R.from_dcm(Ri).as_euler('zyx'))
                 p.extend(Ri_zyx)
                 points.append(p)
 
             #points = np.matmul(np.array(R0).T, (np.array(points) - np.array(p0)).T).T
-
+        points = np.array(points)
         if self.point_transform:
             points = self.point_transform(points)
 

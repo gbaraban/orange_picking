@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 from torchvision import datasets, models, transforms
+import numpy as np
 
 class Block8(torch.nn.Module):
     def __init__(self, in_f, out_f, stride = 1, downsample=None):
@@ -80,7 +81,7 @@ def make_layer8(in_size,out_size,stride_length=1):
             #Block8(out_size,out_size))
 
 class OrangeNet8(torch.nn.Module):
-    def __init__(self, capacity = 1, num_img = 1, num_pts = 3, bins = 30, mins = None, maxs = None, n_outputs = 3, real_test = False, retrain_off = "", input = 1.0, num_channels = 3):
+    def __init__(self, capacity = 1, num_img = 1, num_pts = 3, bins = 30, mins = None, maxs = None, n_outputs = 3, real_test = False, retrain_off = "", input = 1.0, num_channels = 3, real=True):
         super(OrangeNet8, self).__init__()
         #Parameters
         self.w = 640 * input #300
@@ -109,7 +110,10 @@ class OrangeNet8(torch.nn.Module):
         if real_test:
             linear_layer_size = 43008
         else:
-            linear_layer_size =  38880 #69120 #55296 #61440 #30720 #34944
+            if real:
+                linear_layer_size =  38880 #69120 #55296 #61440 #30720 #34944
+            else:
+                linear_layer_size = 31104
 
         if input == 0.5:
             linear_layer_size = 7680 #30720 #34944 #17472 #9856
@@ -140,25 +144,32 @@ class OrangeNet8(torch.nn.Module):
 
     def forward(self,x):
         #x =  self.resnet(x)
+        #print(x.shape)
         x = self.conv1(x)
+        #print(x.shape)
         #x = self.maxpool(x)
         x = self.block1(x)
+        #print(x.shape)
         #x = self.maxpool(x)
         x = self.block2(x)
+        #print(x.shape)
         #x = self.block3(x)
         x = torch.flatten(x,1)
         x = F.relu(x)
         #print(x.shape)
         x = self.fc1(x)
         #print(x.shape)
+        #print(x.shape)
         x = F.relu(x)
         x = self.dropout1(x)
         x = self.fc2(x)
+        #print(x.shape)
         x = F.relu(x)
         x = self.dropout2(x)
         #x = self.fc3(x)
         #x = F.relu(x)
         x = self.output(x)
+        #print(x.shape)
         return x
 
 class OrangeNet18(torch.nn.Module):
@@ -202,10 +213,15 @@ class OrangeNet18(torch.nn.Module):
         x = self.conv1(x)
         x = self.bn1(x)
         x = F.relu(x)
+        print(x.shape)
         x = self.maxpool(x)
+        print(x.shape)
         x = self.layer1(x)
+        print(x.shape)
         x = self.layer2(x)
+        print(x.shape)
         x = self.layer3(x)
+        print(x.shape)
         #x = self.layer4(x)
         #x = self.resnet.avgpool(x)
         #print('PreFlat',x.shape)
@@ -214,10 +230,28 @@ class OrangeNet18(torch.nn.Module):
         #x = self.resnet.fc(x)
         x = F.relu(x)#Possible work here
         x = self.fc1(x)
+        print(x.shape)
         x = F.relu(x)
         x = self.fc2(x)
+        print(x.shape)
         x = F.relu(x)
         x = self.fc3(x)
+        print(x.shape)
         x = F.relu(x)
         x = self.output(x)
+        print(x.shape)
         return x
+
+
+if __name__ == "__main__":
+    mins = [(-0.1, -0.5, -0.25, -0.5, -0.1, -0.1), (-0.1, -0.5, -0.25, -0.5, -0.1, -0.1), (-0.1, -0.5, -0.25, -0.5, -0.1, -0.1)]
+    maxs = [(1.0, 0.5, 0.25, 0.5, 0.1, 0.1), (1.0, 0.5, 0.25, 0.5, 0.1, 0.1), (1.0, 0.5, 0.25, 0.5, 0.1, 0.1)]
+
+    orangeNet = OrangeNet8(1.0,1,3,100,mins,maxs,n_outputs=6,real_test=False,retrain_off="",input=1.0, num_channels=4, real=True)
+    #img = np.load("/home/gabe/ws/ros_ws/src/orange_picking/data/depth_data/data/real_world_traj_bag_np/bag0/image0.npy").astype(np.float32)
+    img = np.zeros((480,640,4)).astype(np.float32)
+    img = np.transpose(img, [2,0,1])
+    img = img.reshape([1, 4, 480, 640])
+    img = torch.tensor(img)
+    orangeNet.forward(img)
+

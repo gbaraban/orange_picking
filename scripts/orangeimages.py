@@ -56,13 +56,15 @@ def unity_image(env,act,cam_name,env_name=None,depth_flag=False,seg_flag=False):
         env.set_actions(cam_name,act)
         env.step()
         (ds,ts) = env.get_steps(cam_name)
-        obs = ds.obs[0][0,:,:,:]
+        obs = [ds.obs[0][0,:,:,:]]
         if ((depth_flag or seg_flag) and (len(ds.obs) < 3)):
             print("This environment does not support the requested depth or segmented channel")
         if depth_flag:
-            obs = tuple(obs) + tuple(ds.obs[1][0,:,:,0])
+            obs.append(ds.obs[1][0,:,:,0])
         if seg_flag:
-            obs = tuple(obs) + tuple(ds.obs[2][0,:,:,:])
+            obs.append(ds.obs[2][0,:,:,:])
+        if len(obs) == 1:
+            obs = obs[0]
     envobs = None
     if env_name is not None:
         env.set_actions(env_name,np.zeros((1,4)))

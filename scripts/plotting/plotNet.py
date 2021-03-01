@@ -56,45 +56,39 @@ def xyzfrombins(state,pt,data):
     out_list.append(o[1])
     out_list.append(o[2])
   return np.array(out_list)
-    
+
+def plotOrigin(fig,ax):
+    ax.plot3d((0,1),(0,0),(0,0),color="red")
+    ax.plot3d((0,0),(0,1),(0,0),color="green")
+    ax.plot3d((0,0),(0,0),(0,1),color="blue")
+
 if __name__ == "__main__":
   prob_threshold = 1e-3
   parser = argparse.ArgumentParser()
-  parser.add_argument('fname', help='pickle file')
+  parser.add_argument('fname', help='input file')
   #parser.add_argument('--coord_type', help='pickle file')
   parser.add_argument('--bin', default=1, help='use classification')
-  parser.add_argument('--last', help='only show the last epoch')
+  parser.add_argument('--last', default=True,help='only show the last epoch')
   args = parser.parse_args()
-  with open(args.fname,'rb') as f:
-    data = pickle.load(f)
-  fig_list = []
-  ax_list = []
-  #fig_list = plt.figure()
-  #ax_list = plt.axes(projection='3d')
+  #TODO: load in file pair here
+  image_fn = ...
+  image_data = np.load(image_fn)
+  truth_fn = ...
+  truth_data = np.load(truth_fn)
+  min_points = ...
+  max_points = ...
+  #TODO: load in model or pre-run results here
+  model = ...
+  results = model(image_data)
+  if args.bin is not None:
+    results = results.view(-1,6,3,100)
+  else:
+    results = results.view(-1,3,6)
+  #Plot truth and probabilities
+  fig = plt.figure()
+  ax = plt.axes(projection='3d')
   color_list = [(1,0,0),(0,1,0),(0,0,1),(1,1,0),(1,0,1),(0,1,1)]
-  for ii in data['idx']:#Iterate over each example
-    if args.bin is not None:
-      #truth = xyzfrombins(np.array(data['truth'])[:,ii,:], data)
-      truth = np.array(data['truth'])[:,ii,:,:]
-    else:
-      truth = data['truth'][ii]
-    #if args.coord_type is not None:
-    #  truth = backProject(truth,args.coord_type, data['foc_l'])
-    num_epochs = len(data['data'][ii])
-    if args.last is None:
-      step = int(num_epochs/5)
-      if step < 2:
-        epoch_range = range(0,num_epochs)
-      else:
-        epoch_range = range(0,num_epochs,step)
-    else:
-      epoch_range = range(num_epochs-1,num_epochs)
-    for jj in epoch_range:#Iterate over epochs
-      print('Point: ' + str(ii+1) + ' of ' + str(len(data['idx'])) + ' Iteration: ' + str(jj+1) + ' of ' + str(len(data['data'][ii])))
-      truth_bin_nums = np.argmax(truth,axis=2)
-      print('True Value(s): ' + str(truth_bin_nums.T))
-      num_samples = len(data['data'][ii])
-      output = data['data'][ii][jj]
+  plotOrigin(fig,ax)
       #if args.coord_type is not None:
       #  output = backProject(output,args.coord_type, data['foc_l'])
       if args.bin is not None:

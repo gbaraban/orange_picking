@@ -20,13 +20,13 @@ if __name__ == "__main__":
 	#parser.add_argument('--plotonly', type=bool, help='skip image generation') TODO: maybe add plot only mode
 	args = parser.parse_args()
 
-	env_name = args.env + 'unity/env_v7' #v4 / v5 for lambda
+	env_name = args.env + 'unity/env_v9' #v4 / v5 for lambda
 	#train_mode = True
 	#env = UnityEnvironment(file_name=env_name, worker_id=args.worker_id, seed=args.seed)
 	#env.reset()
 
 	run_num = 0
-	base_folder = './data/data_collection/'
+	base_folder = './test_data/data_collection_sim/'
 	if not os.path.exists(base_folder):
 		os.makedirs(base_folder)
 	data_folder = base_folder + 'Run' + str(run_num) + "/"
@@ -37,11 +37,13 @@ if __name__ == "__main__":
 	print(data_folder)
 	exp = 0
 	trial_num = 0
-	trials = 20
+	trials = 30
 	np.random.seed(args.seed)
 	while (exp < trials) or args.loop:
 		overviewname = "traj_plot" + str(exp)
 		picturename = "image"
+		seg_picturename = "seg_image"
+		depth_picturename = "depth_image"
 		suffix = ".png"
 
 		#env = UnityEnvironment(file_name=env_name, worker_id=args.worker_id+exp, seed=args.seed+exp)
@@ -61,6 +63,8 @@ if __name__ == "__main__":
 		exp += 1
 
 		#continue
+		#print(orange, orangePosTrue)
+		#exit(0)
 
 		N = 500
 		tf = 15
@@ -83,9 +87,16 @@ if __name__ == "__main__":
 			#rot = rot.T
 			#print(pos)
 			camAct = makeCamAct(state)
-			image = unity_image(env, camAct, camName)
+			(img_arr, ext_arr) = unity_image(env, camAct, camName, envName, depth_flag=True, seg_flag=True)
+			image = img_arr[0]
+			depth_image = img_arr[1]
+			seg_image = img_arr[2]
 			image = img.fromarray(np.uint8(image*255))
 			image.save(data_folder + fname + picturename + str(ctr) + suffix)
+			depth_image = img.fromarray(np.uint8(depth_image*255))
+			depth_image.save(data_folder + fname + depth_picturename + str(ctr) + suffix)
+			seg_image = img.fromarray(np.uint8(seg_image*255))
+			seg_image.save(data_folder + fname + seg_picturename + str(ctr) + suffix)
 			ctr += 1
 
 		env.close()

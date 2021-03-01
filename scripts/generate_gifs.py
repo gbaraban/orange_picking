@@ -61,6 +61,34 @@ def generate_gif_data(fname, loc="/home/gabe/ws/ros_ws/src/orange_picking/data/s
                 im[0].save(gifs + temp_name + '.gif',save_all=True, append_images=im[1:], duration=10, loop=0,optimize=True, quality=100)
 
 
+def generate_gifs_dataset(loc, gifs):
+    print("Generating Dataset gifs")
+    if not os.path.isdir(gifs):
+        os.makedirs(gifs)
+
+    for dir in os.listdir(loc):
+        print(dir)
+        count = 0
+        for file in os.listdir(loc + "/" + dir):
+            if file.startswith("image") and file.endswith("png"):
+                count += 1
+
+        print(count)
+        im = []
+        for i in range(count):
+            if os.path.isfile(loc + "/" + dir + "/image" + str(i) + ".png"):
+                img = Image.open(loc + "/" + dir + "/image" + str(i) + ".png")
+                img = img.resize((336,200))
+                im.append(img)
+            else:
+                break
+
+        if len(im) > 0:
+                run_num = dir
+                temp_name = run_num
+                print(temp_name)
+                im[0].save(gifs + "/" + temp_name + '.gif',save_all=True, append_images=im[1:], duration=10, loop=0,optimize=True, quality=100)
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -68,8 +96,14 @@ if __name__ == "__main__":
     parser.add_argument('--loc', type=str, default="/home/gabe/ws/ros_ws/src/orange_picking/data/simulation/", help='folder to find above fname')
     parser.add_argument('--gifs', type=str, default="/home/gabe/ws/ros_ws/src/orange_picking/gifs/", help='folder to save gifs in')
     parser.add_argument('--data_collection', type=int, default=0)
+    parser.add_argument('--dataset', type=bool, default=False)
     args = parser.parse_args()
-    if args.data_collection == 0:
-        generate_gif(args.fname, loc=args.loc, gifs=args.gifs)
+
+    if args.dataset:
+        generate_gifs_dataset(args.fname, args.gifs)
+
     else:
-        generate_gif_data(args.fname, loc=args.loc, gifs=args.gifs)
+        if args.data_collection == 0:
+            generate_gif(args.fname, loc=args.loc, gifs=args.gifs)
+        else:
+            generate_gif_data(args.fname, loc=args.loc, gifs=args.gifs)

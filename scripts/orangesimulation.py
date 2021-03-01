@@ -243,7 +243,7 @@ def setUpEnv(env, x0, treePos, orangePos, envAct=(0,1,0), treeScale = 0.125, ora
 #image_arr: numpy array of the image from Unity
 #mean_image: mean_image for subtraction
 #device: torch device to run the model.
-def run_model(model,image_arr,mean_image=None,device=None):
+def run_model(model,image_arr,args,mean_image=None,device=None):
     #Calculate new goal
     if mean_image is None:
         mean_subtracted = (image_arr).astype('float32')
@@ -264,7 +264,17 @@ def run_model(model,image_arr,mean_image=None,device=None):
         for coord in range(model.outputs):
             bin_size = (model.max[pt][coord] - model.min[pt][coord])/float(model.bins)
             point.append(model.min[pt][coord] + bin_size*predict[0,coord,pt])
-        goal.append(np.array(point))
+        point = np.array(point)
+        if args.relative_pose and pt != 0:
+            prev_R = R.from_euler('zyx', goal[-1][3:6]).as_dcm()
+            prev_p = goal[-1][0:3]
+            Rot = R.from_euler('zyx', point[3:6]).as_dcm()
+            p = point[0:3]
+            Rot = list(R.from_dcm(np.matmul(prev_R, Rot)).as_euler('zyx'))
+            p = list(np.matmul(prev_R, p)+prev_p)
+            p.extend(Rot)
+            point = np.array(p)
+        goal.append(point)
     goal = np.array(goal)
     #print(goal[0,:])
     return goal
@@ -620,21 +630,25 @@ def sys_f_linear(x,goal,dt,goal_time=1,plot_flag=False):
 #max_steps: The number of image simulations to run
 #dt: The number of time between image inferences
 #save_path: The location to save images and metadata
-def run_sim(args,sys_f,env_name,model,eps=0.3, max_steps=99,dt=0.1,save_path = None,
-            plot_step_flag = False,mean_image = None,trial_num=0,device=None,exp=None):
+def run_sim(args,sys_f,env_name,model,eps=1.0, max_steps=99,dt=0.1,save_path = None,
+            plot_step_flag = False,mean_image = None,trial_num=0,device=None,exp=None, setup_data=None):
     x_list = []
     u_list = []
     ret_val = None
     occ = 1.0
-    while occ > 0.6:
-        (env,x,camName,envName,orange,tree,occ,orangePosTrue) = shuffleEnv(env_name,trial_num=trial_num,args=args,include_occlusion=True,exp=exp) #,spawn_orange=False)#,x0,orange,tree)
-        if occ > 0.6:
-            trial_num += 1
-            env.close()
-            time.sleep(5)
+    if setup_data is None:
+        while occ > 0.6:
+            (env,x,camName,envName,orange,tree,occ,orangePosTrue) = shuffleEnv(env_name,trial_num=trial_num,args=args,include_occlusion=True,exp=exp) #,spawn_orange=False)#,x0,orange,tree)
+            if occ > 0.6:
+                trial_num += 1
+                env.close()
+                time.sleep(5)
+    else:
+        (env,x,camName,envName,orange,tree,occ,orangePosTrue) = setup_data
     print("Occlusion: ", occ)
     #print(x)
     #print(x.shape)
+    yawf = np.arctan2(tree[1]-orange[1],tree[0]-orange[0])
     if "sys_f_gcop" in str(sys_f):
         x_ = tuple(x[0:3])
         rot_m = R.from_euler('zyx', x[3:6]).as_matrix()
@@ -659,9 +673,17 @@ def run_sim(args,sys_f,env_name,model,eps=0.3, max_steps=99,dt=0.1,save_path = N
         #print("State: ",x)
         if "sys_f_linear" in str(sys_f):
             dist = eps + 1
+            ang_dist = eps + 1
         else:
             dist = np.linalg.norm(x[0] - orange)
-        if dist < eps and False:#TODO:Change to > when using DAgger
+            ang = R.from_dcm(x[1]).as_euler('zyx')
+            diff = ((yawf-ang[0] + np.pi) % (2*np.pi)) - np.pi
+            if diff < -np.pi:
+                diff += 2*np.pi
+            ang_dist = np.abs(diff)
+            #ang_dist = np.abs(yawf-ang[0])
+        print(dist, ang_dist)
+        if dist < eps and ang_dist < 0.25: #TODO:Change to > when using DAgger
             print("exit if")
             #if save_path is not None:
             #    ts = np.linspace(0,dt*(len(x_list)-1),len(x_list))
@@ -672,22 +694,62 @@ def run_sim(args,sys_f,env_name,model,eps=0.3, max_steps=99,dt=0.1,save_path = N
             ret_val = 0
             break
         #Get Image
+        orange_pix = [1., 0., 0.]
+        tree_pix = [0., 0., 0.]
         image_arr = None
         for ii in range(model.num_images):
             temp_idx = max(0,int(len(x_list) - 1 - int(ii*image_spacing)))
             camAct = makeCamAct(x_list[temp_idx])
             if image_arr is None:
-                (image_arr,ext_image_arr) = unity_image(env,camAct,camName,envName)
+                (img_arr,ext_image_arr) = unity_image(env,camAct,camName,envName, depth_flag=True,seg_flag=True)
+                image_arr = img_arr[0]
+                seg_image = np.array(img_arr[2])
+                depth_image = img_arr[1]
+                #print(image_arr.shape, seg_image.shape)
+                image_arr = np.array(image_arr)
+                orange_loc = np.array(np.where(np.all(seg_image == orange_pix, axis=-1)))
+                tree_loc = np.array(np.where(np.all(seg_image == tree_pix, axis=-1)))
+                seg_image = np.zeros((image_arr.shape[0], image_arr.shape[1], 2))
+                seg_image[orange_loc[0,:], orange_loc[1,:], 0] = 1.
+                
+                seg_image[tree_loc[0,:], tree_loc[1,:], 1] = 1.
                 #image_arr = unity_image(env,camAct,camName)
                 #print(image_arr.shape)
+                image_arr = np.concatenate((image_arr, seg_image), axis=2)
+                if np.sum(seg_image[:,:,0]/(image_arr.shape[0]*image_arr.shape[1])) > 0.02:
+                    print("exit if ==> seg stop", np.sum(seg_image[:,:,0]/(image_arr.shape[0]*image_arr.shape[1])))
+                    #if save_path is not None:
+                    #    ts = np.linspace(0,dt*(len(x_list)-1),len(x_list))
+                    #    make_full_plots(ts,x_list,orange,tree,saveFolder=save_path,truth=ref_traj)
+                    print("Close Env")
+                    env.close()
+                    #return 0, trial_num
+                    ret_val = 0
+                    break
             else:
-                image_arr = np.concatenate((image_arr,unity_image(env,camAct,camName,None)),axis=2)#TODO: check axis number
+                (img_arr,ext_image_arr) = unity_image(env,camAct,camName,envName, depth_flag=True,seg_flag=True)
+                image = img_arr[0]
+                seg_image = np.array(img_arr[2])
+                depth_image = img_arr[1]
+                image = np.array(image)
+                orange_loc = np.array(np.where(np.all(seg_image == orange_pix, axis=-1)))
+                tree_loc = np.array(np.where(np.all(seg_image == tree_pix, axis=-1)))
+                seg_image = np.zeros((image.shape[0], image.shape[1], 2))
+                seg_image[orange_loc[0,:], orange_loc[1,:], 0] = 1.
+                seg_image[tree_loc[0,:], tree_loc[1,:], 1] = 1.
+                #image_arr = unity_image(env,camAct,camName)
+                #print(image_arr.shape)
+                temp_image = np.concatenate((image, seg_image), axis=2)
+                image_arr = np.concatenate((image_arr,temp_image),axis=2)#TODO: check axis number
                 #print(image_arr.shape)
         #Optionally save image
         if save_path is not None:
             save_image_array(image_arr[:,:,0:3],save_path,"sim_image"+str(step)) #TODO: Use concat axis from above
             save_image_array(ext_image_arr,save_path,"ext_image"+str(step)) #TODO
-        goal = run_model(model,image_arr,mean_image,device=device)
+        if ret_val == 0:
+            break
+
+        goal = run_model(model,image_arr,args,mean_image,device=device)
         if "sys_f_linear" in str(sys_f):
             if type(x).__module__ == np.__name__:
                 pass
@@ -740,7 +802,7 @@ def run_sim(args,sys_f,env_name,model,eps=0.3, max_steps=99,dt=0.1,save_path = N
         if not os.path.exists("./score/simulation/"):
             os.makedirs("./score/simulation/")
         file = open("./score/simulation/"+ save_path.replace("/", "_").strip("_") , "x")
-        file.write(str(score))
+        file.write(str(score)+" " + str(ret_val) + " " + str(dist) + " " + str(ang_dist) + " " + str(np.sum(seg_image[:,:,0]/(image_arr.shape[0]*image_arr.shape[1]))))
         file.close()
 
         if not os.path.exists("./score/gcop_simulation/"):
@@ -778,18 +840,32 @@ def main():
   parser.add_argument('--steps', type=int, default=100, help='Steps per simulation')
   parser.add_argument('--hz', type=float, default=1, help='Recalculation rate')
   #parser.add_argument('--physics', type=float, default=50, help="Freq at which physics sim is performed")
-  parser.add_argument('--env', type=str, default="unity/env_v7", help='unity filename')
+  parser.add_argument('--env', type=str, default="unity/env_v9", help='unity filename')
   parser.add_argument('--plot_step', type=bool, default=False, help='PLot each step')
-  parser.add_argument('--mean_image', type=str, default='data/mean_imgv2_data_Run23.npy', help='Mean Image')
+  parser.add_argument('--mean_image', type=str, default='data/mean_imgv2_data_Run24.npy', help='Mean Image')
+  parser.add_argument('--seg', type=bool, default=False, help='Mean Image')
+  parser.add_argument('--seg_mean_image', type=str, default='data/mean_imgv2_data_seg_Run24.npy', help='Mean Image')
+  parser.add_argument('--relative_pose', type=bool, default=False, help='Relative Position')
+
   args = parser.parse_args()
   #args.min = [(0,-0.5,-0.1),(0,-1,-0.15),(0,-1.5,-0.2),(0,-2,-0.3),(0,-3,-0.5)]
   #args.max = [(1,0.5,0.1),(2,1,0.15),(4,1.5,0.2),(6,2,0.3),(7,0.3,0.5)]
-  args.min = [(0.,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.,-1.,-0.15,-np.pi,-np.pi/2,-np.pi),(0.,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.,-2.,-0.3,-np.pi,-np.pi/2,-np.pi),(0.,-3.,-0.5,-np.pi,-np.pi/2,-np.pi)]
-  args.max = [(1.,0.5,0.1,np.pi,np.pi/2,np.pi),(2.,1.,0.15,np.pi,np.pi/2,np.pi),(4.,1.5,0.2,np.pi,np.pi/2,np.pi),(6.,2.,0.3,np.pi,np.pi/2,np.pi),(7.,0.3,0.5,np.pi,np.pi/2,np.pi)]
+  if not args.relative_pose:
+    args.min = [(-0.1, -0.5, -0.25, -0.5, -0.1, -0.1), (-0.1, -1.0, -0.4, -np.pi/4, -0.1, -0.1), (-0.1, -1.25, -0.6, -np.pi/2, -0.1, -0.1)]
+    args.max = [(1.0, 0.5, 0.25, 0.5, 0.1, 0.1), (1.75, 1.0, 0.4, np.pi/4, 0.1, 0.1), (2.5, 1.25, 0.6, np.pi/2, 0.1, 0.1)]
+  else:
+    args.min = [(-0.1, -0.5, -0.25, -0.5, -0.1, -0.1), (-0.1, -0.5, -0.25, -0.5, -0.1, -0.1), (-0.1, -0.5, -0.25, -0.5, -0.1, -0.1)]
+    args.max = [(1.0, 0.5, 0.25, 0.5, 0.1, 0.1), (1.0, 0.5, 0.25, 0.5, 0.1, 0.1), (1.0, 0.5, 0.25, 0.5, 0.1, 0.1)]
+          
   np.random.seed(args.seed)
   #Load model
+  if args.seg:
+    n_channels = 5
+  else:
+    n_channels = 3
+
   if not args.resnet18:
-      model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=args.outputs)
+      model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=args.outputs,num_channels=n_channels,real=False)
   else:
       model = OrangeNet18(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=args.outputs)
 
@@ -811,6 +887,9 @@ def main():
   else:
       #print('mean image file found')
       mean_image = np.load(args.mean_image)
+      if args.seg:
+          seg_mean = np.load(args.seg_mean_image)
+          mean_image = np.concatenate((mean_image,seg_mean),axis=2)
 
   import copy
   temp_image = copy.deepcopy(mean_image)
@@ -855,6 +934,8 @@ def main():
     time.sleep(5)
     if err_code is not 0:
       print('Simulation did not converge.  code is: ', err_code)
+    elif err_code is 0:
+      print(trial_num, 'Simulation converged. code is: ', err_code)
 
 if __name__ == '__main__':
   main()

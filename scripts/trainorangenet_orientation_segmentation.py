@@ -1,4 +1,3 @@
-import PIL.Image as Image
 from torch.utils.tensorboard import SummaryWriter
 import torch
 import torch.nn as nn
@@ -13,17 +12,11 @@ import os
 import copy
 from datetime import datetime
 import argparse
-import PIL.Image as img
 import signal
 import sys
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 from customTransforms import *
-#from orangenetarch import *
 import pickle
-#from customRealDatasets import *
-#print("summ")
-#from torch.utils.tensorboard import SummaryWriter 
-#print("gc")
 import gc
 import random
 from scipy.spatial.transform import Rotation as R
@@ -312,7 +305,7 @@ def angle_dist(true_angle, pred_angle):
 
 	return dist
 
-def acc_metric(args,logits,point_batch,yaw_only):
+def acc_metric(args,logits,point_batch,yaw_only, sphere_flag = False):
     #TODO: Add diff accuracy for angles
     softmax = nn.Softmax(dim=0)
     shape = logits.size()#.item()
@@ -323,16 +316,31 @@ def acc_metric(args,logits,point_batch,yaw_only):
         ang_d = 0
         for ii in range(shape[0]):
             coord_list = []
-            for coord in range(3):
-                prob = np.array(softmax(logits[ii,coord,pt,:]))#.numpy()
-                max_pred = np.argmax(prob)
-                #true_pred = np.argmax(point_batch[ii,pt,coord,:])
-                true_pred = np.array(point_batch[ii,pt,coord])
-                bin_size = (args.max[pt][coord] - args.min[pt][coord])/float(args.bins)
-                d = (true_pred - max_pred)*bin_size
-                coord_list.append(d)
-            d = np.vstack([coord_list[0],coord_list[1],coord_list[2]])
-            batch_list.append(np.linalg.norm(d))
+            if sphere_flag:
+                r_theta_phi = [0.,0.,0.,0.,0.,0.]
+                r_theta_phi_true = [0.,0.,0.,0.,0.,0.]
+                for coord in range(3):
+                    prob = np.array(softmax(logits[ii,coord,pt,:]))#.numpy()
+                    idx = np.argmax(prob)
+                    true_idx = np.array(point_batch[ii,pt,coord])
+                    bin_size = (args.max[pt][coord] - args.min[pt][coord])/float(args.bins)
+                    r_theta_phi[coord] = idx*bin_size + args.min[pt][coord]
+                    r_theta_phi_true[coord] = true_idx*bin_size + args.min[pt][coord]
+                (xyz,xyz_true) = sphericalToXYZ()([r_theta_phi,r_theta_phi_true])
+                d = (xyz - xyz_true)
+                batch_list.append(np.linalg.norm(d))
+
+            else:
+                for coord in range(3):
+                    prob = np.array(softmax(logits[ii,coord,pt,:]))#.numpy()
+                    max_pred = np.argmax(prob)
+                    #true_pred = np.argmax(point_batch[ii,pt,coord,:])
+                    true_pred = np.array(point_batch[ii,pt,coord])
+                    bin_size = (args.max[pt][coord] - args.min[pt][coord])/float(args.bins)
+                    d = (true_pred - max_pred)*bin_size
+                    coord_list.append(d)
+                d = np.vstack([coord_list[0],coord_list[1],coord_list[2]])
+                batch_list.append(np.linalg.norm(d))
 
             if not yaw_only:
                 true_angle = []
@@ -364,6 +372,39 @@ def acc_metric(args,logits,point_batch,yaw_only):
         acc_list.append(batch_mean)
     return acc_list
 
+def acc_metric_regression(args, logits, point_batch, sphere_flag = False):
+    acc_list = []
+    shape = logits.size()
+    logits = logits.detach()
+    if sphere_flag:
+        logits = sphericalToXYZ()(logits)
+    for pt in range(shape[1]):
+        batch_list = []
+        ang_d = 0
+        for ii in range(shape[0]):
+            coord_list = []
+            for coord in range(3):
+                pred = logits[ii,pt,coord]
+                d = pred - point_batch[ii, pt, coord]
+                coord_list.append(d)
+            d = np.vstack([coord_list[0],coord_list[1],coord_list[2]])
+            batch_list.append(np.linalg.norm(d))
+
+            true_angle = []
+            pred_angle = []
+            for coord in range(3,6):
+                pred = logits[ii,pt,coord]
+                true_angle.append(point_batch[ii, pt, coord])
+                pred_angle.append(pred)
+            ang_d = angle_dist(true_angle, pred_angle)
+        
+        batch_mean = np.mean(batch_list)
+        batch_mean = [batch_mean, ang_d]
+        acc_list.append(batch_mean)
+    return acc_list
+
+
+
 def main():
     signal.signal(signal.SIGINT,signal_handler)
     global model
@@ -385,13 +426,13 @@ def main():
     parser.add_argument('--min', type=tuple, default=(0,-0.5,-0.5), help='minimum xyz ')
     parser.add_argument('--max', type=tuple, default=(1,0.5,0.5), help='maximum xyz')
     parser.add_argument('--bins', type=int, default=30, help='number of bins per coordinate')
-    parser.add_argument('-j', type=int, default=4, help='number of loader workers')
-    parser.add_argument('--traj', type=int, default=0, help='train trajectories')
+    parser.add_argument('-j', type=int, default=8, help='number of loader workers')
+    parser.add_argument('--traj', type=int, default=1, help='train trajectories')
     parser.add_argument('--real', type=int, default=0, help='real world imgs')
     parser.add_argument('--val', type=float, default=0.10, help='validation percentage')
     parser.add_argument('--resnet18', type=int, default=0, help='ResNet18')
     parser.add_argument('--yaw_only', type=int, default=0, help='yaw only')
-    parser.add_argument('--custom', type=str, default="", help='custom parser')
+    parser.add_argument('--custom', type=str, default="", help='custom parser: Run18/no_parse')
     parser.add_argument('--test_arch', type=int, default=100, help='testing architectures')
     parser.add_argument('--train', type=int, default=1, help='train or test')
     parser.add_argument('--data_aug_flip',type=int,default=1, help='Horizontal flipping on/off')
@@ -407,9 +448,14 @@ def main():
     parser.add_argument('--temp_seg',type=bool,default=False,help='use segmentation channel')
     parser.add_argument('--seg_only',type=bool,default=False,help='use segmentation channel')
     parser.add_argument('--save_variables',type=int,default=20,help="save after every x epochs")
-    parser.add_argument('--mean_seg',type=str,default='data/depth_data/data/mean_seg.npy',help='mean segmentation image')
+    parser.add_argument('--mean_seg',type=str,default='data/mean_imgv2_data_seg_Run24.npy',help='mean segmentation image') # data/depth_data/data/mean_seg.npy
     parser.add_argument('--segload', help='segment model to load')
     parser.add_argument('--retrain_off_seg',type=bool,default=False,help='retrain segmentation off')
+    parser.add_argument('--relative_pose', type=bool, default=False,help='relative pose of points')
+    parser.add_argument('--regression', type=bool, default=False,help='Use regression loss (MSE)')
+    parser.add_argument('--spherical', type=bool, default=False,help='Use spherical coordinates')
+    parser.add_argument('--pred_dt',type=float, default=1.0, help="Space between predicted points")
+    parser.add_argument('--image_dt',type=float,default=1.0, help="Space between images provided to network")
 
     args = parser.parse_args()
 
@@ -446,8 +492,9 @@ def main():
         OrangeNet8 = i.OrangeNet8
         OrangeNet18 = i.OrangeNet18
 
-    from segmentation.segmentnetarch import SegmentationNet
-    segmodel = SegmentationNet(retrain_off_seg=args.retrain_off_seg)
+    if args.temp_seg:
+        from segmentation.segmentnetarch import SegmentationNet
+        segmodel = SegmentationNet(retrain_off_seg=args.retrain_off_seg)
 
     if args.real_test == 0:
         args.real_test = False
@@ -456,14 +503,45 @@ def main():
 
     if args.relative_pose:
       #Change these
-      args.min = [(0.,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.,-1.,-0.15,-np.pi,-np.pi/2,-np.pi),(0.,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.,-2.,-0.3,-np.pi,-np.pi/2,-np.pi),(0.,-3,-0.5,-np.pi,-np.pi/2,-np.pi)]
-      args.max = [(1.,0.5,0.1,np.pi,np.pi/2,np.pi),(2.,1.,0.15,np.pi,np.pi/2,np.pi),(4.,1.5,0.2,np.pi,np.pi/2,np.pi),(6.,2.,0.3,np.pi,np.pi/2,np.pi),(7.,0.3,0.5,np.pi,np.pi/2,np.pi)]
-    else: 
-      args.min = [(0.,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.,-1.,-0.15,-np.pi,-np.pi/2,-np.pi),(0.,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.,-2.,-0.3,-np.pi,-np.pi/2,-np.pi),(0.,-3,-0.5,-np.pi,-np.pi/2,-np.pi)]
-      args.max = [(1.,0.5,0.1,np.pi,np.pi/2,np.pi),(2.,1.,0.15,np.pi,np.pi/2,np.pi),(4.,1.5,0.2,np.pi,np.pi/2,np.pi),(6.,2.,0.3,np.pi,np.pi/2,np.pi),(7.,0.3,0.5,np.pi,np.pi/2,np.pi)]
+      print("Relative Pose")
+      if args.spherical:
+          args.min = [(0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2), (0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2), (0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2)]
+          args.max = [(0.7, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2), (0.7, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2), (0.7, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2)]
+      else:
+          if not args.real:
+              args.min = [(-0.1, -0.5, -0.25, -0.5, -0.1, -0.1), (-0.1, -0.5, -0.25, -0.5, -0.1, -0.1), (-0.1, -0.5, -0.25, -0.5, -0.1, -0.1)]
+              args.max = [(1.0, 0.5, 0.25, 0.5, 0.1, 0.1), (1.0, 0.5, 0.25, 0.5, 0.1, 0.1), (1.0, 0.5, 0.25, 0.5, 0.1, 0.1)]
+          else:
+              #args.min = [(0.,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.,-1.,-0.15,-np.pi,-np.pi/2,-np.pi),(0.,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.,-2.,-0.3,-np.pi,-np.pi/2,-np.pi),(0.,-3.,-0.5,-np.pi,-np.pi/2,-np.pi)]
+              args.min = [(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi)]
+              args.max = [(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi)]
+    else:
+      #args.min = [(0.,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.,-1.,-0.15,-np.pi,-np.pi/2,-np.pi),(0.,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.,-2.,-0.3,-np.pi,-np.pi/2,-np.pi),(0.,-3.,-0.5,-np.pi,-np.pi/2,-np.pi)]
+      #args.max = [(1.,0.5,0.1,np.pi,np.pi/2,np.pi),(2.,1.,0.15,np.pi,np.pi/2,np.pi),(4.,1.5,0.2,np.pi,np.pi/2,np.pi),(6.,2.,0.3,np.pi,np.pi/2,np.pi),(7.,0.3,0.5,np.pi,np.pi/2,np.pi)]
+      if args.spherical:
+          args.min = [(0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2), (0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2), (0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2)]
+          args.max = [(0.7, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2), (1.2, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2), (1.7, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2)]
+      else:
+          if not args.real:
+              args.min = [(-0.1, -0.5, -0.25, -0.5, -0.1, -0.1), (-0.1, -1.0, -0.4, -np.pi/4, -0.1, -0.1), (-0.1, -1.25, -0.6, -np.pi/2, -0.1, -0.1)]
+              args.max = [(1.0, 0.5, 0.25, 0.5, 0.1, 0.1), (1.75, 1.0, 0.4, np.pi/4, 0.1, 0.1), (2.5, 1.25, 0.6, np.pi/2, 0.1, 0.1)]
+          else:
+              args.min = [(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.75,-0.75,-0.5,-np.pi,-np.pi,-np.pi),(-1.0,-1.0,-0.75,-np.pi,-np.pi,-np.pi)]
+              args.max = [(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.5,1.0,0.5,np.pi,np.pi,np.pi),(2.0,1.0,0.75,np.pi,np.pi,np.pi)]
+
     #args.traj = False
     #Data Transforms
-    pt_trans = transforms.Compose([pointToBins(args.min,args.max,args.bins)])#,GaussLabels(1,1e-10,args.bins)])
+    pt_trans = []
+    if not args.regression:
+        if args.spherical:
+            pt_trans.append(xyzToSpherical())
+        pt_trans.append(pointToBins(args.min,args.max,args.bins))
+    if len(pt_trans) > 0:
+        pt_trans = transforms.Compose(pt_trans)
+    else:
+        pt_trans = None
+
+    #TODO ,GaussLabels(1,1e-10,args.bins)])
 
     if args.train == 1 and args.data_aug_flip == 1:
         print("Image transform set")
@@ -490,7 +568,8 @@ def main():
     #Create dataset class
     seg_mean_image = torch.tensor(np.load(args.mean_seg))
 
-    dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, custom_dataset=args.custom, input=args.input_size, depth=args.depth, seg=args.seg, temp_seg=args.temp_seg, seg_only=args.seg_only, rel_pose=args.relative_pose)
+    #TOCHECK
+    dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, custom_dataset=args.custom, input=args.input_size, depth=args.depth, seg=args.seg, temp_seg=args.temp_seg, seg_only=args.seg_only, rel_pose=args.relative_pose, pred_dt = args.pred_dt, dt=args.image_dt)
 
     #Break up into validation and training
     #val_perc = 0.07
@@ -534,8 +613,8 @@ def main():
         val_idx = np.array(val_indices)
         train_idx = np.array(train_indices)
 
-        fopen = open('val_data_xyz.pickle', 'wb')
-        pickle.dump(val_data, fopen, pickle.HIGHEST_PROTOCOL)
+        #fopen = open('val_data_xyz.pickle', 'wb')
+        #pickle.dump(val_data, fopen, pickle.HIGHEST_PROTOCOL)
 
     train_data = SubSet(dataclass,train_idx)
     #print(np.min(train_idx), np.max(train_idx))
@@ -569,10 +648,13 @@ def main():
     if args.depth:
         n_channels += 1
     if args.seg or args.seg_only or args.temp_seg:
-        n_channels += 1
+        if args.seg and not args.real:
+            n_channels += 2
+        else:
+            n_channels += 1
 
     if not args.resnet18:
-        model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,retrain_off=args.freeze,input=args.input_size, num_channels = n_channels)
+        model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,retrain_off=args.freeze,input=args.input_size, num_channels = n_channels, real=args.real)
     else:
         model = OrangeNet18(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,input=args.input_size, num_channels = n_channels)
 
@@ -600,23 +682,32 @@ def main():
         if args.gpu:
             device = torch.device('cuda:'+str(args.gpu))
             model = model.to(device)
-            segmodel = segmodel.to(device)
+            if args.temp_seg:
+                segmodel = segmodel.to(device)
         else:
             device = torch.device('cuda')
             model = model.to(device)
-            segmodel = segmodel.to(device)
+            if args.temp_seg:
+                segmodel = segmodel.to(device)
             if (torch.cuda.device_count() > 1):
                 model = nn.DataParallel(model)
-                segmodel = nn.DataParallel(segmodel)
+                if args.temp_seg:
+                    segmodel = nn.DataParallel(segmodel)
     else:
         device = torch.device('cpu')
     print('Device: ', device)
-    print('Model Device: ', next(model.parameters()).device, next(segmodel.parameters()).device)
+    if args.temp_seg:
+        print('Model Device: ', next(model.parameters()).device, next(segmodel.parameters()).device)
+    else:
+        print('Model Device: ', next(model.parameters()).device)
 
     #Create Optimizer
     learning_rate = args.learning_rate
     learn_rate_decay = np.power(1e-3,1/float(args.epochs))#0.9991#10 / args.epochs
-    optimizer = optim.AdamW(list(model.parameters()) + list(segmodel.parameters()), lr = args.learning_rate, weight_decay=1e-2)
+    if args.temp_seg:
+        optimizer = optim.AdamW(list(model.parameters()) + list(segmodel.parameters()), lr = args.learning_rate, weight_decay=1e-2)
+    else:
+        optimizer = optim.AdamW(list(model.parameters()), lr = args.learning_rate, weight_decay=1e-2)
     #optimizer = optim.SGD(list(model.parameters()) + list(segmodel.parameters()), lr=args.learning_rate, momentum=0.9)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=learn_rate_decay)
     #ReduceLROnPlateau is an interesting idea
@@ -630,7 +721,7 @@ def main():
     #if args.traj:
     #    val_path = addTimestamp(os.path.join(log_path, 'validation_'))
     plot_data_path = addTimestamp(os.path.join(log_path, 'plot_data_'))
-
+    print("Saving models at: ", save_path)
     print ('Training...')
     writer = SummaryWriter(tensorboard_path)
     #val_writer = SummaryWriter(val_path)
@@ -640,7 +731,7 @@ def main():
     #print ('Writers Set Up')
 
     #iters = 0
-    if args.traj:
+    if args.traj and False: #TODO Does nothing significant rn 
         plotting_data = dict()
         data_loc = copy.deepcopy(args.data)
         val_outputs_x, val_outputs_y, val_outputs_z, val_outputs_yaw, val_outputs_p, val_outputs_r = loadData(val_idx,dataclass.num_list,data_loc,model,dataclass.traj_list,args.real,dataclass,args)
@@ -682,7 +773,8 @@ def main():
     #model = model.to('cpu')
     seg_mean_image = seg_mean_image.to(device)
     for epoch in range(args.epochs):
-        segmodel = segmodel.to(device)
+        if args.temp_seg:
+            segmodel = segmodel.to(device)
         model = model.to(device)
         print('Epoch: ', epoch)
         #Train
@@ -701,130 +793,158 @@ def main():
         for ctr, batch in enumerate(loader):
             #print('Batch: ',ctr)
             #image_batch = batch['image'].to(device).float()
-            point_batch = batch['points']#.to(device)
+            point_batch = batch['points'] #.to(device)
             optimizer.zero_grad()
-            segmodel.train()
+            if args.temp_seg:
+                segmodel.train()
             model.train()
             with torch.set_grad_enabled(True):
                 batch_imgs = batch['image']
                 batch_imgs = batch_imgs.to(device)
                 #model = model.to(device)
-                batch_images = None
-                for img_num in range(args.num_images):
-                    seglogits = segmodel(batch_imgs[:, img_num*base_n_channels:(img_num+1)*base_n_channels, :, :])
-                    seglogits = seglogits.view(-1,2,segmodel.h,segmodel.w)
-                    segimages = (torch.max(seglogits, 1).indices).type(torch.FloatTensor).to(device)
-                    #k = 0
-                    #floc = "test_segs"
-                    #os.makedirs(floc)
-                    #for i in range(segimages.shape[0]):
-                    #    img = segimages[i, :, :]
+                if args.temp_seg:
+                    batch_images = None
+                    for img_num in range(args.num_images):
+                        seglogits = segmodel(batch_imgs[:, img_num*base_n_channels:(img_num+1)*base_n_channels, :, :])
+                        seglogits = seglogits.view(-1,2,segmodel.h,segmodel.w)
+                        segimages = (torch.max(seglogits, 1).indices).type(torch.FloatTensor).to(device)
+                        #k = 0
+                        #floc = "test_segs"
+                        #os.makedirs(floc)
+                        #for i in range(segimages.shape[0]):
+                        #    img = segimages[i, :, :]
 
-                    #    img = (np.array(img) * 255).astype(np.uint8)
-                    #    #print(img.shape, np.max(img), np.min(img), np.sum(np.where(img==255, 1, 0)))
-                    #    im = Image.fromarray(img.astype(np.uint8))
-                    #    im.save(floc + "/output" + str(k + i) + ".png")
+                        #    img = (np.array(img) * 255).astype(np.uint8)
+                        #    #print(img.shape, np.max(img), np.min(img), np.sum(np.where(img==255, 1, 0)))
+                        #    im = Image.fromarray(img.astype(np.uint8))
+                        #    im.save(floc + "/output" + str(k + i) + ".png")
 
-                    #exit(0)
-                    segimages -= seg_mean_image
-                    segimages = torch.reshape(segimages, (segimages.shape[0], 1, segimages.shape[1], segimages.shape[2]))
-                    t_batch_imgs =  torch.cat((batch_imgs[:, img_num*base_n_channels:(img_num+1)*base_n_channels, :, :], segimages), 1)
-                    if batch_images is None:
-                        batch_images = t_batch_imgs
-                    else:
-                        batch_images = torch.cat((batch_images, t_batch_imgs), 1)
+                        #exit(0)
+                        segimages -= seg_mean_image
+                        segimages = torch.reshape(segimages, (segimages.shape[0], 1, segimages.shape[1], segimages.shape[2]))
+                        t_batch_imgs =  torch.cat((batch_imgs[:, img_num*base_n_channels:(img_num+1)*base_n_channels, :, :], segimages), 1)
+                        if batch_images is None:
+                            batch_images = t_batch_imgs
+                        else:
+                            batch_images = torch.cat((batch_images, t_batch_imgs), 1)
+                else:
+                    batch_images = batch_imgs
                     
                 logits = model(batch_images)
                 #print(logits.shape)
                 #exit(0)
                 #del batch_imgs
                 #del batch
-                if not args.yaw_only:
-                    logits = logits.view(-1,6,model.num_points,model.bins)
-                else:
-                    logits = logits.view(-1,4,model.num_points,model.bins)
-
-                loss_x = [0. for t in range(model.num_points)]
-                loss_y = [0. for t in range(model.num_points)]
-                loss_z = [0. for t in range(model.num_points)]
-
-                if not args.yaw_only:
-                    loss_r = [0. for t in range(model.num_points)]
-                    loss_p = [0. for t in range(model.num_points)]
-
-                loss_yaw = [0. for t in range(model.num_points)]
-
-                b_size = logits.shape[0]
-                point_batch = point_batch.to(device)
-                for temp in range(model.num_points):
-                    #print(logits[:,0,temp,:].shape)
-                    #print(((point_batch)[:,temp,0]).shape)
-                    #exit()
-                    loss_x[temp] += F.cross_entropy(logits[:,0,temp,:],(point_batch)[:,temp,0])
-                    loss_y[temp] += F.cross_entropy(logits[:,1,temp,:],(point_batch)[:,temp,1])
-                    loss_z[temp] += F.cross_entropy(logits[:,2,temp,:],(point_batch)[:,temp,2])
-                    loss_yaw[temp] += F.cross_entropy(logits[:,3,temp,:],(point_batch)[:,temp,3])
-
-                    if not args.yaw_only:
-                        loss_p[temp] += F.cross_entropy(logits[:,4,temp,:],(point_batch)[:,temp,4])
-                        loss_r[temp] += F.cross_entropy(logits[:,5,temp,:],(point_batch)[:,temp,5])
-
-                point_batch = point_batch.to('cpu')
-                logits = logits.to('cpu')
-                if args.use_error_sampler:
-                    arg2 = 6
+                if not args.regression:
                     if not args.yaw_only:
                         logits = logits.view(-1,6,model.num_points,model.bins)
                     else:
-                        arg2 = 4
                         logits = logits.view(-1,4,model.num_points,model.bins)
-                    idx_batch = batch['idx'].to('cpu')
-                    #label_batch = batch['time_frac']
-                    #print(logits.shape)
-                    #print(idx_batch)
-                    for ii, idx in enumerate(idx_batch):
-                        temp_logits = (logits.cpu()[ii]).view(1, arg2, model.num_points,model.bins)
-                        temp_point_batch = (point_batch.cpu()[ii]).view(1, model.num_points, arg2)
-                        acc_list = acc_metric(args, temp_logits, temp_point_batch, args.yaw_only)
-                        #ele = np.where(train_idx == np.int(idx))
-                        #print(idx, ele)
-                        #print(train_idx)
-                        #if len(ele) != 1:
-                        #    print(idx, ele)
-                        #print(idx)
-                        eps = 1e-6
-                        error_weights[int(train_loc[int(idx)])] = np.sum(np.array(acc_list)) + eps
-                        #print(error_weights[batch['idx'][ii]])
 
-                acc_list = acc_metric(args,logits,point_batch,args.yaw_only)
-                #del point_batch
-                #del logits
+                    loss_x = [0. for t in range(model.num_points)]
+                    loss_y = [0. for t in range(model.num_points)]
+                    loss_z = [0. for t in range(model.num_points)]
 
-                batch_loss = None
-                for t in range(model.num_points):
-                    if args.custom_loss:
-                        if batch_loss is None:
-                            batch_loss = loss_mult[0,t]*loss_x[t]
-                        else:
-                            batch_loss += loss_mult[0,t]*loss_x[t]
-                        batch_loss += loss_mult[0,t]*loss_y[t]
-                        batch_loss += loss_mult[0,t]*loss_z[t]
-                        batch_loss += loss_mult[1,t]*loss_yaw[t]
+                    if not args.yaw_only:
+                        loss_r = [0. for t in range(model.num_points)]
+                        loss_p = [0. for t in range(model.num_points)]
+
+                    loss_yaw = [0. for t in range(model.num_points)]
+
+                    b_size = logits.shape[0]
+                    point_batch = point_batch.to(device)
+                    for temp in range(model.num_points):
+                        #print(logits[:,0,temp,:].shape)
+                        #print(((point_batch)[:,temp,0]).shape)
+                        #exit()
+                        loss_x[temp] += F.cross_entropy(logits[:,0,temp,:],(point_batch)[:,temp,0])
+                        loss_y[temp] += F.cross_entropy(logits[:,1,temp,:],(point_batch)[:,temp,1])
+                        loss_z[temp] += F.cross_entropy(logits[:,2,temp,:],(point_batch)[:,temp,2])
+                        loss_yaw[temp] += F.cross_entropy(logits[:,3,temp,:],(point_batch)[:,temp,3])
+
                         if not args.yaw_only:
-                            batch_loss += loss_mult[1,t]*loss_p[t]
-                            batch_loss += loss_mult[1,t]*loss_r[t]
+                            loss_p[temp] += F.cross_entropy(logits[:,4,temp,:],(point_batch)[:,temp,4])
+                            loss_r[temp] += F.cross_entropy(logits[:,5,temp,:],(point_batch)[:,temp,5])
 
+                    point_batch = point_batch.to('cpu')
+                    logits = logits.to('cpu')
+                    if args.use_error_sampler:
+                        arg2 = 6
+                        if not args.yaw_only:
+                            logits = logits.view(-1,6,model.num_points,model.bins)
+                        else:
+                            arg2 = 4
+                            logits = logits.view(-1,4,model.num_points,model.bins)
+                        idx_batch = batch['idx'].to('cpu')
+                        #label_batch = batch['time_frac']
+                        #print(logits.shape)
+                        #print(idx_batch)
+                        for ii, idx in enumerate(idx_batch):
+                            temp_logits = (logits.cpu()[ii]).view(1, arg2, model.num_points,model.bins)
+                            temp_point_batch = (point_batch.cpu()[ii]).view(1, model.num_points, arg2)
+                            acc_list = acc_metric(args, temp_logits, temp_point_batch, args.yaw_only,sphere_flag = args.spherical)
+                            #ele = np.where(train_idx == np.int(idx))
+                            #print(idx, ele)
+                            #print(train_idx)
+                            #if len(ele) != 1:
+                            #    print(idx, ele)
+                            #print(idx)
+                            eps = 1e-6
+                            error_weights[int(train_loc[int(idx)])] = np.sum(np.array(acc_list)) + eps
+                            #print(error_weights[batch['idx'][ii]])
+
+                    acc_list = acc_metric(args,logits,point_batch,args.yaw_only,sphere_flag = args.spherical)
+                    #del point_batch
+                    #del logits
+
+                    batch_loss = None
+                    for t in range(model.num_points):
+                        if args.custom_loss:
+                            if batch_loss is None:
+                                batch_loss = loss_mult[0,t]*loss_x[t]
+                            else:
+                                batch_loss += loss_mult[0,t]*loss_x[t]
+                            batch_loss += loss_mult[0,t]*loss_y[t]
+                            batch_loss += loss_mult[0,t]*loss_z[t]
+                            batch_loss += loss_mult[1,t]*loss_yaw[t]
+                            if not args.yaw_only:
+                                batch_loss += loss_mult[1,t]*loss_p[t]
+                                batch_loss += loss_mult[1,t]*loss_r[t]
+
+                        else:
+                            if batch_loss is None:
+                                batch_loss = loss_x[t]
+                            else:
+                                batch_loss += loss_x[t]
+                            batch_loss += loss_y[t]
+                            batch_loss += loss_z[t]
+                            batch_loss += loss_yaw[t]
+                            if not args.yaw_only:
+                                batch_loss += loss_p[t]
+                                batch_loss += loss_r[t]
+
+                else:
+                    logits = logits.view(-1,model.num_points,6)
+                    b_size = logits.shape[0]
+                    logits = logits.to(device).double()
+                    point_batch = point_batch.to(device).double()
+                    # print((point_batch)[:,0, 0])
+                    # s0, s1, s2 = len(point_batch), len(point_batch[0]), len(point_batch[0][0])
+                    # pb = torch.Tensor(s0, s1, s2)
+                    # print(s0, s1, s2)
+                    # list_pb = []
+                    # for ele_s0 in range(s0):
+                    #     list_list_pb = torch.Tensor(s1, s2)
+                    #     torch.cat(point_batch[ele_s0], out=list_list_pb)
+                    #     list_pb.append(list_list_pb)
+                    # print(pb.shape)
+                    # torch.cat(list_pb, out=pb)
+                    if args.spherical:
+                        temp_transform = sphericalToXYZ()
+                        batch_loss = F.mse_loss(temp_transform(logits),point_batch)#TODO: make sure this works
                     else:
-                        if batch_loss is None:
-                            batch_loss = loss_x[t]
-                        else:
-                            batch_loss += loss_x[t]
-                        batch_loss += loss_y[t]
-                        batch_loss += loss_z[t]
-                        batch_loss += loss_yaw[t]
-                        if not args.yaw_only:
-                            batch_loss += loss_p[t]
-                            batch_loss += loss_r[t]
+                        batch_loss = F.mse_loss(logits, point_batch)
+                    acc_list = acc_metric_regression(args, logits.cpu(), point_batch.cpu(),sphere_flag = args.spherical)
 
                 #print(batch_loss)
                 #batch_loss.to_cpu()
@@ -843,14 +963,14 @@ def main():
                 model = model.to(device)
                 #optimizer = optimizer.to('cpu')
                 loss_mult = loss_mult.to(device)
-                for i in range(model.num_points):
-                    loss_x[i] = loss_x[i].to(device)
-                    loss_y[i] = loss_y[i].to(device)
-                    loss_z[i] = loss_z[i].to(device)
-                    loss_yaw[i] = loss_yaw[i].to(device)
-                    loss_p[i] = loss_p[i].to(device)
-                    loss_r[i] = loss_r[i].to(device)
-
+                if not args.regression:
+                    for i in range(model.num_points):
+                        loss_x[i] = loss_x[i].to(device)
+                        loss_y[i] = loss_y[i].to(device)
+                        loss_z[i] = loss_z[i].to(device)
+                        loss_yaw[i] = loss_yaw[i].to(device)
+                        loss_p[i] = loss_p[i].to(device)
+                        loss_r[i] = loss_r[i].to(device)
 
                 #print(batch_loss.device, l2_reg.device, lamda.device, logits.device, point_batch.device)
                 batch_loss.backward()
@@ -859,14 +979,15 @@ def main():
 
                 del batch_imgs, point_batch, logits, batch_images, batch
 
-                writer.add_scalar('train_loss',batch_loss,ctr+epoch*len(train_loader))
-                writer.add_scalar('train_loss_x',torch.sum(torch.tensor(loss_x)),ctr+epoch*len(train_loader))
-                writer.add_scalar('train_loss_y',torch.sum(torch.tensor(loss_y)),ctr+epoch*len(train_loader))
-                writer.add_scalar('train_loss_z',torch.sum(torch.tensor(loss_z)),ctr+epoch*len(train_loader))
-                writer.add_scalar('train_loss_yaw',torch.sum(torch.tensor(loss_yaw)),ctr+epoch*len(train_loader))
-                if not args.yaw_only:
-                    writer.add_scalar('train_loss_p',torch.sum(torch.tensor(loss_p)),ctr+epoch*len(train_loader))
-                    writer.add_scalar('train_loss_r',torch.sum(torch.tensor(loss_r)),ctr+epoch*len(train_loader))
+                if not args.regression:
+                    writer.add_scalar('train_loss',batch_loss,ctr+epoch*len(train_loader))
+                    writer.add_scalar('train_loss_x',torch.sum(torch.tensor(loss_x)),ctr+epoch*len(train_loader))
+                    writer.add_scalar('train_loss_y',torch.sum(torch.tensor(loss_y)),ctr+epoch*len(train_loader))
+                    writer.add_scalar('train_loss_z',torch.sum(torch.tensor(loss_z)),ctr+epoch*len(train_loader))
+                    writer.add_scalar('train_loss_yaw',torch.sum(torch.tensor(loss_yaw)),ctr+epoch*len(train_loader))
+                    if not args.yaw_only:
+                        writer.add_scalar('train_loss_p',torch.sum(torch.tensor(loss_p)),ctr+epoch*len(train_loader))
+                        writer.add_scalar('train_loss_r',torch.sum(torch.tensor(loss_r)),ctr+epoch*len(train_loader))
 
                 for ii, acc in enumerate(acc_list):
                     writer.add_scalar('train_acc_'+str(ii),acc[0],ctr+epoch*len(train_loader))
@@ -893,70 +1014,91 @@ def main():
             val_loss = [0.,0.,0.,0.,0.,0.]
 
         val_acc = np.zeros((model.num_points,2))
-        if not args.yaw_only:
-            resnet_output = np.zeros((0, 6, args.num_pts, model.bins))
-        else:
-            resnet_output = np.zeros((0, 4, args.num_pts, model.bins))
+        # if not args.yaw_only:
+        #     resnet_output = np.zeros((0, 6, args.num_pts, model.bins))
+        # else:
+        #     resnet_output = np.zeros((0, 4, args.num_pts, model.bins))
 
         for batch in val_loader:
             with torch.set_grad_enabled(False):
                 image_batch = batch['image'].to(device)
                 #model = model.to(device)
-                batch_images = None
-                for img_num in range(args.num_images):
-                    seglogits = segmodel(image_batch[:, img_num*base_n_channels:(img_num+1)*base_n_channels, :, :])
-                    seglogits = seglogits.view(-1,2,segmodel.h,segmodel.w)
-                    segimages = (torch.max(seglogits, 1).indices).type(torch.FloatTensor).to(device)
-                    #k = 0
-                    #floc = "test_segs"
-                    #os.makedirs(floc)
-                    #for i in range(segimages.shape[0]):
-                    #    img = segimages[i, :, :]
+                if args.temp_seg:
+                    batch_images = None
+                    for img_num in range(args.num_images):
+                        seglogits = segmodel(image_batch[:, img_num*base_n_channels:(img_num+1)*base_n_channels, :, :])
+                        seglogits = seglogits.view(-1,2,segmodel.h,segmodel.w)
+                        segimages = (torch.max(seglogits, 1).indices).type(torch.FloatTensor).to(device)
+                        #k = 0
+                        #floc = "test_segs"
+                        #os.makedirs(floc)
+                        #for i in range(segimages.shape[0]):
+                        #    img = segimages[i, :, :]
 
-                    #    img = (np.array(img) * 255).astype(np.uint8)
-                    #    #print(img.shape, np.max(img), np.min(img), np.sum(np.where(img==255, 1, 0)))
-                    #    im = Image.fromarray(img.astype(np.uint8))
-                    #    im.save(floc + "/output" + str(k + i) + ".png")
+                        #    img = (np.array(img) * 255).astype(np.uint8)
+                        #    #print(img.shape, np.max(img), np.min(img), np.sum(np.where(img==255, 1, 0)))
+                        #    im = Image.fromarray(img.astype(np.uint8))
+                        #    im.save(floc + "/output" + str(k + i) + ".png")
 
-                    #exit(0)
-                    segimages -= seg_mean_image
-                    segimages = torch.reshape(segimages, (segimages.shape[0], 1, segimages.shape[1], segimages.shape[2]))
-                    t_batch_imgs =  torch.cat((image_batch[:, img_num*base_n_channels:(img_num+1)*base_n_channels, :, :], segimages), 1)
-                    if batch_images is None:
-                        batch_images = t_batch_imgs
-                    else:
-                        batch_images = torch.cat((batch_images, t_batch_imgs), 1)
+                        #exit(0)
+                        segimages -= seg_mean_image
+                        segimages = torch.reshape(segimages, (segimages.shape[0], 1, segimages.shape[1], segimages.shape[2]))
+                        t_batch_imgs =  torch.cat((image_batch[:, img_num*base_n_channels:(img_num+1)*base_n_channels, :, :], segimages), 1)
+                        if batch_images is None:
+                            batch_images = t_batch_imgs
+                        else:
+                            batch_images = torch.cat((batch_images, t_batch_imgs), 1)
+                else:
+                    batch_images = image_batch
+
                 #print(segimages.shape, batch_imgs.shape)
                 model = model.to(device)
                 model.eval()
                 logits = model(batch_images)
                 del image_batch
-                if not args.yaw_only:
-                    logits = logits.view(-1,6,model.num_points,model.bins)
-                else:
-                    logits = logits.view(-1,4,model.num_points,model.bins)
-                logits_x = logits[:,0,:,:]
-                logits_y = logits[:,1,:,:]
-                logits_z = logits[:,2,:,:]
-                logits_yaw = logits[:,3,:,:]
-                if not args.yaw_only:
-                    logits_p = logits[:,4,:,:]
-                    logits_r = logits[:,5,:,:]
-
-                point_batch = batch['points'].to(device)
-                for temp in range(model.num_points):
-                    val_loss[0] += F.cross_entropy(logits_x[:,temp,:],point_batch[:,temp,0])
-                    val_loss[1] += F.cross_entropy(logits_y[:,temp,:],point_batch[:,temp,1])
-                    val_loss[2] += F.cross_entropy(logits_z[:,temp,:],point_batch[:,temp,2])
-                    val_loss[3] += F.cross_entropy(logits_yaw[:,temp,:],point_batch[:,temp,3])
+                if not args.regression:
                     if not args.yaw_only:
-                        val_loss[4] += F.cross_entropy(logits_p[:,temp,:],point_batch[:,temp,4])
-                        val_loss[5] += F.cross_entropy(logits_r[:,temp,:],point_batch[:,temp,5])
+                        logits = logits.view(-1,6,model.num_points,model.bins)
+                    else:
+                        logits = logits.view(-1,4,model.num_points,model.bins)
+                    logits_x = logits[:,0,:,:]
+                    logits_y = logits[:,1,:,:]
+                    logits_z = logits[:,2,:,:]
+                    logits_yaw = logits[:,3,:,:]
+                    if not args.yaw_only:
+                        logits_p = logits[:,4,:,:]
+                        logits_r = logits[:,5,:,:]
 
-                val_acc_list = acc_metric(args,logits.cpu(),point_batch.cpu(), args.yaw_only)
+                    point_batch = batch['points'].to(device)
+                    for temp in range(model.num_points):
+                        val_loss[0] += F.cross_entropy(logits_x[:,temp,:],point_batch[:,temp,0])
+                        val_loss[1] += F.cross_entropy(logits_y[:,temp,:],point_batch[:,temp,1])
+                        val_loss[2] += F.cross_entropy(logits_z[:,temp,:],point_batch[:,temp,2])
+                        val_loss[3] += F.cross_entropy(logits_yaw[:,temp,:],point_batch[:,temp,3])
+                        if not args.yaw_only:
+                            val_loss[4] += F.cross_entropy(logits_p[:,temp,:],point_batch[:,temp,4])
+                            val_loss[5] += F.cross_entropy(logits_r[:,temp,:],point_batch[:,temp,5])
+
+                    val_acc_list = acc_metric(args,logits.cpu(),point_batch.cpu(), args.yaw_only,sphere_flag = args.spherical)
+    
+                else:
+                    logits = logits.view(-1,model.num_points,6)
+                    logits = logits.to(device).double()
+                    point_batch = batch['points'].to(device).double()
+                    # s0, s1, s2 = len(point_batch), len(point_batch[0]), len(point_batch[0][0])
+                    # pb = torch.Tensor(s0, s1, s2)
+                    # list_pb = []
+                    # for ele_s0 in range(s0):
+                    #     list_list_pb = torch.Tensor(s1, s2)
+                    #     torch.cat(point_batch[ele_s0], out=list_list_pb)
+                    #     list_pb.append(list_list_pb)
+                    # torch.cat(list_pb, out=pb)
+                    # batch_loss = F.mse_loss(logits, pb)
+                    val_loss = F.mse_loss(logits, point_batch)
+                    val_acc_list = acc_metric_regression(args, logits.cpu(), point_batch.cpu(),sphere_flag = args.spherical)
                 logits = logits.to('cpu')
                 #print(logits.shape)
-                resnet_output = np.concatenate((resnet_output,logits), axis=0)
+                #resnet_output = np.concatenate((resnet_output,logits), axis=0)
                 #print(resnet_output.shape)
                 b_size = logits.shape[0]
                 for ii, acc in enumerate(val_acc_list):
@@ -965,30 +1107,31 @@ def main():
                         epoch_acc[ii][jj].append(acc_j)
                 del point_batch
                 model = model.to('cpu')
-
-        if args.traj:
+        val_acc = val_acc/len(val_loader)
+        if args.traj and False:
             for ii in plotting_data['idx']:
                 plotting_data['data'][ii].append(resnet_output[ii,:,:,:])
 
             if args.plot_data:
                 with open(plot_data_path+'/data.pickle','wb') as f:
                     pickle.dump(plotting_data,f,pickle.HIGHEST_PROTOCOL)
-        if not args.yaw_only:
-            val_loss = [val_loss[temp].item()/len(val_loader) for temp in range(6)]
-        else:
-            val_loss = [val_loss[temp].item()/len(val_loader) for temp in range(4)]
-        val_acc = val_acc/len(val_loader)
-        writer.add_scalar('val_loss',sum(val_loss),(epoch+1)*len(train_loader))
-        writer.add_scalar('val_loss_x',val_loss[0],(epoch+1)*len(train_loader))
-        writer.add_scalar('val_loss_y',val_loss[1],(epoch+1)*len(train_loader))
-        writer.add_scalar('val_loss_z',val_loss[2],(epoch+1)*len(train_loader))
-        writer.add_scalar('val_loss_yaw',val_loss[3],(epoch+1)*len(train_loader))
-        if not args.yaw_only:
-            writer.add_scalar('val_loss_p',val_loss[4],(epoch+1)*len(train_loader))
-            writer.add_scalar('val_loss_r',val_loss[5],(epoch+1)*len(train_loader))
+        if not args.regression:
+            if not args.yaw_only:
+                val_loss = [val_loss[temp].item()/len(val_loader) for temp in range(6)]
+            else:
+                val_loss = [val_loss[temp].item()/len(val_loader) for temp in range(4)]
+            
+            writer.add_scalar('val_loss',sum(val_loss),(epoch+1)*len(train_loader))
+            writer.add_scalar('val_loss_x',val_loss[0],(epoch+1)*len(train_loader))
+            writer.add_scalar('val_loss_y',val_loss[1],(epoch+1)*len(train_loader))
+            writer.add_scalar('val_loss_z',val_loss[2],(epoch+1)*len(train_loader))
+            writer.add_scalar('val_loss_yaw',val_loss[3],(epoch+1)*len(train_loader))
+            if not args.yaw_only:
+                writer.add_scalar('val_loss_p',val_loss[4],(epoch+1)*len(train_loader))
+                writer.add_scalar('val_loss_r',val_loss[5],(epoch+1)*len(train_loader))
         for ii, acc in enumerate(val_acc):
             writer.add_scalar('val_acc_'+str(ii),acc[0],(epoch+1)*len(train_loader))
-        print('Val Cross-Entropy Loss: ',sum(val_loss),val_loss)
+        print('Val Cross-Entropy Loss: ', val_loss)
         print('Val Accuracy: ',val_acc)
         #NOTE: Experimental --- might be bad
         if args.use_error_sampler and epoch % sampler_n_epochs == 0:
@@ -1030,7 +1173,7 @@ def main():
                             label = time_bin_num - 1
                         temp_logits = (logits.cpu()[ii]).view(1, arg2, model.num_points,model.bins)
                         temp_point_batch = (point_batch.cpu()[ii]).view(1, model.num_points, arg2)
-                        acc_list = acc_metric(args, temp_logits, temp_point_batch, args.yaw_only)
+                        acc_list = acc_metric(args, temp_logits, temp_point_batch, args.yaw_only,sphere_flag = args.spherical)
                         total_acc = np.sum(np.array(acc_list)) #TODO: This can be changed to a weighted sum later #TODO: Check
                         time_sample_cnt[label] += 1
                         if time_sample_metric[label] is None:
