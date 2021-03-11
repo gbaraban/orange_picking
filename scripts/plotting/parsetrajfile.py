@@ -91,6 +91,67 @@ def make_step_plot(goals,states,saveFolder=None,name=None):
         fig.clf()
         plt.close('all')
 
+def extractStates(statefile,tree=None,rot_flag = False):
+  r_xyz = None
+  rot_list = []
+  for state in statefile:
+    (x,y,z,roll,pitch,yaw,yd,yawc,logR) = parse_state(state)
+    xyz = np.array((x,y,z))
+    if tree is not None:
+      xyz = xyz-tree[0:3]
+    if r_xyz is None:
+      r_xyz = xyz
+    else:
+      r_xyz = np.vstack((r_xyz,xyz))
+    if rot_flag:
+      rot = R.from_euler('zyx',(yaw,pitch,roll))
+      rot_list.append(rot)
+  if rot_flag:
+    return(r_xyz,rot_list)
+  return r_xyz
+     
+
+def plotMetaData(fig,ax,metadata,tree_compensate = None):
+  if metadata is None:
+    cyl_o = np.array((0,0,0))
+    cyl_r = 0.6
+    goal = None
+  else:
+    goal = metadata['orangeTrue']
+    cyl_o = metadata['tree'][0:3]
+    if tree_compensate:
+      goal = goal - cyl_o
+    ax.plot3D([goal[0]],[goal[1]],[goal[2]],color="orange",marker="o")
+    cyl_r = np.linalg.norm((goal[0:2]-cyl_o[0:2]))
+  cyl_h = 1.6
+  if tree_compensate:
+    cyl_o = np.array((0,0,0))
+  theta = np.linspace(0, 2*np.pi, 50)
+  zs = np.linspace(cyl_o[2], cyl_o[2]+cyl_h, 50)
+  thetac, zc = np.meshgrid(theta,zs)
+  xc = cyl_r * np.cos(thetac) + cyl_o[0]
+  yc = cyl_r * np.sin(thetac) + cyl_o[1]
+  ax.plot_surface(xc,yc,zc,alpha=0.25)
+ 
+def plotTrajData(fig,ax,states,rots = None, color=None,marker=None):
+  colors = ['red','blue','green']
+  x = states[:,0]
+  y = states[:,1]
+  z = states[:,2]
+  if rots is None:
+    ax.plot3D(x,y,z,color=color,marker=marker)
+  else:
+    for ii in range(len(rots)):
+      for c in [0,1,2]:
+        alpha = 0.25
+        v = tuple(rots[ii].as_dcm()[:,c])
+        ax.plot3D((x[ii],x[ii] + alpha*v[0]),(y[ii],y[ii]+alpha*v[1]),(z[ii],z[ii]+alpha*v[2]),colors[c])
+  max_range = np.array([max(x) - min(x),max(y) - min(y),max(z) - min(z)]).max()
+  mid = np.array([(max(x)+min(x))/2.0,(max(y)+min(y))/2.0,(max(z)+min(z))/2.0])
+  ax.set_xlim(mid[0]-max_range/2.0,mid[0]+max_range/2.0)
+  ax.set_ylim(mid[1]-max_range/2.0,mid[1]+max_range/2.0)
+  ax.set_zlim(max(0,mid[2]-max_range/2.0),mid[2]+max_range/2.0)
+
 def make_full_plots(ts,states, targ=None, cyl_o=None, cyl_r=0.6, cyl_h=1.6, saveFolder=None, truth=None):
   x_list = []
   y_list = []
@@ -120,14 +181,7 @@ def make_full_plots(ts,states, targ=None, cyl_o=None, cyl_r=0.6, cyl_h=1.6, save
   fig = plt.figure()
   ax = plt.axes(projection='3d')
   #Plot cylinder
-  if cyl_o is not None:
-      theta = np.linspace(0, 2*np.pi, 50)
-      zs = np.linspace(cyl_o[2], cyl_o[2]+cyl_h, 50)
-      thetac, zc = np.meshgrid(theta,zs)
-      xc = cyl_r * np.cos(thetac) + cyl_o[0]
-      yc = cyl_r * np.sin(thetac) + cyl_o[1]
-      ax.plot_surface(xc,yc,zc,alpha=0.5)
-  #Plot x0 and xf
+ #Plot x0 and xf
   if targ is not None:
       ax.plot3D((x_list[0],targ[0]),(y_list[0],targ[1]),(z_list[0],targ[2]),'black')
   #Plot trajectory
@@ -223,16 +277,33 @@ def make_full_plots(ts,states, targ=None, cyl_o=None, cyl_r=0.6, cyl_h=1.6, save
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
-  parser.add_argument('fname', help='pickle file')
+  parser.add_argument('fname', nargs="+", help='pickle file')
   args = parser.parse_args()
-  #with open(args.fname+'/metadata.pickle','rb') as f:
-  #  metadata = pickle.load(f)
-  with open(args.fname+'/traj_data.pickle','rb') as f:
-    trajdata = pickle.load(f)
-  with open(args.fname+'/ref_traj.pickle','rb') as f:
-    refdata = pickle.load(f)
-  #ts = np.linspace(0,metadata['tf'],metadata['N']+1)
-  ts = np.linspace(0,15,len(trajdata))
+  fig = plt.figure()
+  ax = plt.axes(projection='3d')
+  for fname in args.fname:
+    if os.path.isfile(fname+'/metadata.pickle'):
+      with open(fname+'/metadata.pickle','rb') as f:
+        metadata = pickle.load(f)
+      plotMetaData(fig,ax,metadata,tree_compensate=(len(args.fname) > 1))
+      tree_flag = metadata['tree'] if (len(args.fname) > 1) else None
+    else:
+      tree_flag = None
+      plotMetaData(fig,ax,None,False)
+    if os.path.isfile(fname+'/traj_data.pickle'):
+      with open(fname+'/traj_data.pickle','rb') as f:
+        trajdata = pickle.load(f)
+      with open(fname+'/ref_traj.pickle','rb') as f:
+        refdata = pickle.load(f)
+      ref_states = extractStates(refdata,tree = tree_flag)
+      plotTrajData(fig,ax,ref_states,color="green")
+    else:
+      with open(fname+'/traj_data_no_orange.pickle','rb') as f:
+        trajdata = pickle.load(f)
+    #(traj_states,traj_rot) = extractStates(trajdata,tree = tree_flag,rot_flag = True)
+    traj_states,traj_rot = (extractStates(trajdata,tree = tree_flag,rot_flag = False),None)
+    plotTrajData(fig,ax,traj_states,rots = traj_rot)
+  plt.show()
+    #make_full_plots(ts,trajdata,cyl_o = (0,0,0),truth = refdata)#targ,metadata['cyl_o'],metadata['cyl_r'],metadata['h'],None)
   #targ = metadata['xf']
   #make_full_plots(ts,trajdata,targ,metadata['cyl_o'],metadata['cyl_r'],metadata['h'],None)
-  make_full_plots(ts,trajdata,cyl_o = (0,0,0),truth = refdata)#targ,metadata['cyl_o'],metadata['cyl_r'],metadata['h'],None)
