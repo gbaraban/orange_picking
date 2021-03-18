@@ -221,6 +221,9 @@ def setUpEnv(env, x0, treePos, orangePos, envAct=(0,1,0), treeScale = 0.125, ora
         orangeAct = np.array([np.hstack((gcopVecToUnity(orangePos),orangeColor,1))])
         env.set_actions(orangeName,orangeAct)
         env.step()
+        orange = orangePos
+        occ_frac = None
+        orangePosTrue = orangePos
     else:
         orange, occ_frac, orangePosTrue, orangeAct = move_orange(env,orangeName,orangePos[0:3],orangeColor,treePos[0:3],collisionR,camName,spawn_orange=spawn_orange)
         #TODO: store occ_frac somewhere
@@ -634,6 +637,8 @@ def run_sim(args,sys_f,env_name,model,eps=1.0, max_steps=99,dt=0.1,save_path = N
             plot_step_flag = False,mean_image = None,trial_num=0,device=None,exp=None, setup_data=None):
     x_list = []
     u_list = []
+    orange_pix = [1., 0., 0.]
+    tree_pix = [0., 0., 0.]
     ret_val = None
     occ = 1.0
     if setup_data is None:
@@ -682,20 +687,28 @@ def run_sim(args,sys_f,env_name,model,eps=1.0, max_steps=99,dt=0.1,save_path = N
                 diff += 2*np.pi
             ang_dist = np.abs(diff)
             #ang_dist = np.abs(yawf-ang[0])
-        print(dist, ang_dist)
+        #print("Dist:", dist, ang_dist)
         if dist < eps and ang_dist < 0.25: #TODO:Change to > when using DAgger
-            print("exit if")
-            #if save_path is not None:
-            #    ts = np.linspace(0,dt*(len(x_list)-1),len(x_list))
-            #    make_full_plots(ts,x_list,orange,tree,saveFolder=save_path,truth=ref_traj)
-            print("Close Env")
-            env.close()
-            #return 0, trial_num
-            ret_val = 0
-            break
+            camAct_test = makeCamAct(x_list[len(x_list)-1])
+            (img_arr_test,ext_image_arr_test) = unity_image(env,camAct_test,camName,envName, depth_flag=True,seg_flag=True)
+            seg_image_test = np.array(img_arr_test[2])
+            orange_loc_test = np.array(np.where(np.all(seg_image_test == orange_pix, axis=-1)))
+            seg_image = np.zeros((seg_image_test.shape[0], seg_image_test.shape[1], 2))
+            seg_image_test[orange_loc_test[0,:], orange_loc_test[1,:], 0] = 1.
+            if np.sum(seg_image_test[:,:,0]/(seg_image_test.shape[0]*seg_image_test.shape[1])) < 0.0000:
+                pass
+            else:
+                print("exit if")
+                #if save_path is not None:
+                #    ts = np.linspace(0,dt*(len(x_list)-1),len(x_list))
+                #    make_full_plots(ts,x_list,orange,tree,saveFolder=save_path,truth=ref_traj)
+                print("Close Env")
+                env.close()
+                #return 0, trial_num
+                ret_val = 0
+                break
         #Get Image
-        orange_pix = [1., 0., 0.]
-        tree_pix = [0., 0., 0.]
+        orange_coverage = 0.0
         image_arr = None
         for ii in range(model.num_images):
             temp_idx = max(0,int(len(x_list) - 1 - int(ii*image_spacing)))
@@ -711,12 +724,12 @@ def run_sim(args,sys_f,env_name,model,eps=1.0, max_steps=99,dt=0.1,save_path = N
                 tree_loc = np.array(np.where(np.all(seg_image == tree_pix, axis=-1)))
                 seg_image = np.zeros((image_arr.shape[0], image_arr.shape[1], 2))
                 seg_image[orange_loc[0,:], orange_loc[1,:], 0] = 1.
-                
                 seg_image[tree_loc[0,:], tree_loc[1,:], 1] = 1.
                 #image_arr = unity_image(env,camAct,camName)
                 #print(image_arr.shape)
                 image_arr = np.concatenate((image_arr, seg_image), axis=2)
-                if np.sum(seg_image[:,:,0]/(image_arr.shape[0]*image_arr.shape[1])) > 0.02:
+                orange_coverage = np.sum(seg_image[:,:,0]/(image_arr.shape[0]*image_arr.shape[1]))
+                if np.sum(seg_image[:,:,0]/(image_arr.shape[0]*image_arr.shape[1])) > 0.02 and False:
                     print("exit if ==> seg stop", np.sum(seg_image[:,:,0]/(image_arr.shape[0]*image_arr.shape[1])))
                     #if save_path is not None:
                     #    ts = np.linspace(0,dt*(len(x_list)-1),len(x_list))
@@ -746,6 +759,22 @@ def run_sim(args,sys_f,env_name,model,eps=1.0, max_steps=99,dt=0.1,save_path = N
         if save_path is not None:
             save_image_array(image_arr[:,:,0:3],save_path,"sim_image"+str(step)) #TODO: Use concat axis from above
             save_image_array(ext_image_arr,save_path,"ext_image"+str(step)) #TODO
+
+        if step > 20:
+            dist_change = 0.
+            for i in range(10):
+                check_i = len(x_list) - 1 - i
+                if check_i - 1 >= 0:
+                    dist_change += np.linalg.norm(np.array(x_list[check_i][0])-np.array(x_list[check_i-1][0]))
+                else:
+                    dist_change += 9999 
+            #print("Dist Change: ", dist_change)
+            if dist_change/10. < 0.0001 and orange_coverage > 0.0005 and False:
+                print("exit if ==> dist_change")
+                print("Close Env")
+                env.close()
+                ret_val = 0
+
         if ret_val == 0:
             break
 

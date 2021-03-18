@@ -7,6 +7,7 @@ import os
 import sys
 from scipy.spatial.transform import Rotation as R
 import PIL.Image
+import matplotlib.pyplot as plt
 
 def depthnp_from_image(image):
   #Stolen from https://github.com/eric-wieser/ros_numpy/blob/master/src/ros_numpy/image.py
@@ -22,8 +23,9 @@ def depthnp_from_image(image):
     dtype.itemsize * channels,
     dtype.itemsize
   )
-  data = ((data[:,:,0].astype(np.float64)/data.max())*255).astype(np.uint8)
-  return data
+  data = data[:,:,0].astype(np.float64)
+  cm_from_pixel = 0.095
+  return data*cm_from_pixel
 
 
 def np_from_image(image):
@@ -82,15 +84,15 @@ def getCentroid(img, segmodel, mean_image,device):
     seg_np = np.array(segimages[0,:,:])
     c = ndimage.measurements.center_of_mass(seg_np)
     if np.isnan(c[0]) or np.isnan(c[1]):
-        return None
+        return (None,seg_np)
     #if (c[0] < 100) or (c[1] < 100):
     #    PIL.Image.fromarray((seg_np*255).astype('uint8')).show()
-    return c
+    return (c,seg_np)
 
 def objectiveFunction(depth_im, c):
     if depth_im is None:
         print("Depth Img is None")
-        return False
+        return float('inf')
     depth_arr = depthnp_from_image(depth_im)
     c_fl = (int(c[0]),int(c[1]))
     frac = (float(c[0])-c_fl[0],float(c[1])-c_fl[1])
@@ -101,33 +103,52 @@ def objectiveFunction(depth_im, c):
     ctr_d4[1,0] = depth_arr[c_ceil[0],c_fl[1]]
     ctr_d4[1,1] = depth_arr[c_ceil[0],c_ceil[1]]
     ctr_d = ctr_d4[0,0] + frac[0]*(ctr_d4[1,0]-ctr_d4[0,0]) + frac[1]*(ctr_d4[0,1]-ctr_d4[0,0])
-    if (c[0] < 100) or (c[1] < 100):
-        print("U-V failed")
-        return False
-    if (ctr_d > 29) or (ctr_d < 1):
-        return False
-    print("Centroid: ",c," Depth: ",ctr_d)
-    return True
+    if ctr_d < 10:
+        #PIL.Image.fromarray((depth_arr*255.0/depth_arr.max()).astype('uint8')).show()
+        print("Strangely low ctr_d: " + str(ctr_d4))
+        #return float('inf')
+    #if (c[0] < 100) or (c[1] < 100):
+    #    print("U-V failed")
+    #    return False
+    ctr_desired = 60
+    error = ctr_d-ctr_desired
+    return error
+    #if error > 15:
+        #print("D: ",ctr_d," failed")
+    #    return False
+    #print("e: ",error," passed")
+    #print("Centroid: ",c," Depth: ",ctr_d)
+    #return True
     #TODO: add check on u,v or do back projection
 
 def processRun(img,depth_im,start_time,end_time,stop_ctr,model, mean_image,device,bag_start_time = None):
     time_thresh = 10
-    stop_thresh = 5
+    stop_thresh = 1
     duration = end_time - start_time
     if duration.to_sec() < time_thresh:
         #print(duration.to_sec(),"s too short")
-        return (0,0)
+        #return (0,0)
+        return None
     print(duration.to_sec(),"s run found, with ", stop_ctr, " stops")
     if stop_ctr < stop_thresh:
-        return (0,1)
-    centroid = getCentroid(img, model, mean_image,device)
+        return float('inf')
+    (centroid,seg_np) = getCentroid(img, model, mean_image,device)
     if centroid is None:
-        return (0,1)
-    if (objectiveFunction(depth_im,centroid)):
-        if bag_start_time:
-            print("Start: ",(start_time-bag_start_time).to_sec()," End: ",(end_time-bag_start_time).to_sec())
-        return (1,1)
-    return (0,1)
+        return float('inf')
+    retval = objectiveFunction(depth_im,centroid)
+    if retval < -60:
+        #img_np = np_from_image(img)
+        #PIL.Image.fromarray((img_np).astype('uint8')).show()
+        #depth_np = depthnp_from_image(depth_im)
+        #PIL.Image.fromarray((depth_np*255.0/depth_np.max()).astype('uint8')).show()
+        #PIL.Image.fromarray((seg_np*255.0).astype('uint8')).show()
+        return None
+    return retval
+    #if (objectiveFunction(depth_im,centroid)):
+        #if bag_start_time:
+            #print("Start: ",(start_time-bag_start_time).to_sec()," End: ",(end_time-bag_start_time).to_sec())
+        #return (1,1)
+    #return (0,1)
 
 def main():
     parser = argparse.ArgumentParser()
@@ -141,6 +162,7 @@ def main():
     stop_thresh = 10
     success = 0
     trials = 0
+    err_list = []
     segload =  "/home/gabe/ws/ros_ws/src/orange_picking/model/segmentation/logs/variable_log/2021-01-31_13-25-31/model_seg145.pth.tar" 
     if torch.cuda.is_available():
         gpu = 0
@@ -209,12 +231,16 @@ def main():
                     last_stop_depth_image = last_depth_image
                     if stop_ctr > 10:
                         retval = processRun(last_stop_image,last_stop_depth_image,status_on_time,last_stop_time,stop_ctr,model,mean_image,device,temp_t)
-                        success += retval[0]
-                        trials += retval[1]
+                        if retval is not None:
+                            print("Score is " + str(retval))
+                            trials += 1
+                            err_list.append(retval)
                         status = False
-                        last_image = None
-                        last_depth_image = None
+                        last_stop_image = None
+                        last_stop_depth_image = None
                         stop_ctr = 0
+                        #success += retval[0]
+                        #trials += retval[1]
                 else:
                     #if stop_ctr > 0:
                     #    print("Resetting: ",stop_ctr)
@@ -227,17 +253,51 @@ def main():
                     if last_stop_time is None:
                         last_stop_time = t
                     retval = processRun(last_stop_image,last_stop_depth_image,status_on_time,last_stop_time,stop_ctr,model,mean_image,device,temp_t)
-                    success += retval[0]
-                    trials += retval[1]
-                    status = False
-                    last_image = None
-                    last_depth_image = None
+                    if retval is not None:
+                        print("Score is " + str(retval))
+                        trials += 1
+                        err_list.append(retval)
+                    last_stop_image = None
+                    last_stop_depth_image = None
                     stop_ctr = 0
+                    status = False
         if status:
             retval = processRun(last_stop_image,last_stop_depth_image,status_on_time,last_stop_time,stop_ctr,model,mean_image,device,temp_t)
-            success += retval[0]
-            trials += retval[1]
-    print("Accuracy: ",float(success)/trials, "%. ",success," out of ",trials)
+            if retval is not None:
+                print("Score is " + str(retval))
+                trials += 1
+                err_list.append(retval)
+                status = False
+                #success += retval[0]
+            #success += retval[0]
+            #trials += retval[1]
+    trials -= 3
+    print(trials)
+    print(len(err_list))
+    bin_size = 4#5
+    min_err_list = 0# min(err_list)
+    max_err_list = 20#max([e for e in err_list if e < 50])#20
+    num_bins = int(float(max_err_list-min_err_list)/bin_size)
+    err_bins = np.array([ii*bin_size + min_err_list for ii in range(num_bins)])
+    err_bins = np.array(err_bins)
+    counts = []
+    for ii in range(num_bins):
+        counts.append(sum(1.0 for err in err_list if (err < bin_size+err_bins[ii])))
+    fracs = np.zeros(num_bins)
+    fracs[0] = 100.0*counts[0]/trials
+    fracs[1:num_bins] = [(100.0*(counts[ii] - counts[ii-1])/trials) for ii in range(1,num_bins)]
+    print(err_bins)
+    print(fracs)
+    #for ii in range(1,num_bins):
+    #    counts[ii] = counts[ii] - counts[ii-1]
+    #counts = 100*np.array(counts)/trials
+    fig = plt.figure()
+    ax = plt.axes()
+    labels = [str(bin_size*ii) + " - " + str(bin_size*(ii+1)) for ii in range(num_bins)]
+    ax.bar(labels,fracs,width=0.95)
+    plt.xlabel("Error (cm)")
+    plt.ylabel("Percentage")
+    plt.show()
 
 if __name__ == '__main__':
     main()

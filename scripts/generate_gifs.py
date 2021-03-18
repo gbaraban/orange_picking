@@ -14,7 +14,7 @@ def generate_gif(fname, loc="/home/gabe/ws/ros_ws/src/orange_picking/data/simula
                 #print(os.path.isfile(img_dir + "sim_image" + str(iname) + ".png"))
                 if os.path.isfile(img_dir + "sim_image" + str(iname) + ".png"):
                         img = Image.open(img_dir + "sim_image" + str(iname) + ".png")
-                        img = img.resize((336,200))
+                        #img = img.resize((336,200))
                         im.append(img)
                 else:
                         break
@@ -27,7 +27,7 @@ def generate_gif(fname, loc="/home/gabe/ws/ros_ws/src/orange_picking/data/simula
         for iname in range(0,500):
                 if os.path.isfile(img_dir + "ext_image" + str(iname) + ".png"):
                         img = Image.open(img_dir + "ext_image" + str(iname) + ".png")
-                        img = img.resize((336,200))
+                        #img = img.resize((336,200))
                         im.append(img)
                 else:
                         break
