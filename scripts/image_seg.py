@@ -69,7 +69,7 @@ else:
 h = 480
 w = 640
 
-stop_thresh = 0.0045
+stop_thresh = 1.0040
 k = 0
 
 #segload = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model_seg99.pth.tar"
@@ -83,7 +83,7 @@ if os.path.isfile(segload):
         if not gpu is None:
                 checkpoint = torch.load(segload,map_location=torch.device('cuda'))
         else:
-                checkpoint = torch.load(segload)
+                checkpoint = torch.load(segload,map_location=torch.device('cpu'))
         segmodel.load_state_dict(checkpoint)
         segmodel.eval()
         print("Loaded Model: ", segload)
@@ -113,9 +113,9 @@ def seg_node_callback(data):
 
 	image_arr = image_arr.transpose(2,0,1)
 
-        image_arr3 = image_arr[::-1, :, :].copy()
+        #image_arr3 = image_arr[::-1, :, :].copy()
 
-	image_arr2 = image_arr3.reshape((1,3,h,w))
+	image_arr2 = image_arr.reshape((1,3,h,w))
 
 	image_tensor = torch.tensor(image_arr2)
 

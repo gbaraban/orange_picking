@@ -11,12 +11,12 @@ import cv2
 from scipy.spatial.transform import Rotation as R
 from segmentation.segmentnetarch import *
 from sensor_msgs.msg import Image
-
+from customTransforms import *
 
 capacity = 1.0
 num_images = 1
 num_pts = 3
-bins = 30
+bins = 100
 outputs = 6
 resnet18 = False
 if torch.cuda.is_available():
@@ -30,11 +30,29 @@ load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/10_19_seg/model
 load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/10_19_seg_off/modelLast.pth.tar" #seg retrain off
 load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_fixed_aug/model14.pth.tar"
 load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_fixed_aug_retrain_off/model14.pth.tar"
+load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_100_bin/model10.pth.tar"
+load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/cd4/model20.pth.tar"
+#load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/cd4_dilated/model23.pth.tar"
+load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/cd4_dilated_rel/model32.pth.tar"
+#load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/cd4_dilated_spherical/model17.pth.tar"
+#load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/cd4_rel/model5.pth.tar"
 
 
 segload = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model_seg99.pth.tar"
-mins = [(0.0,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.0,-1,-0.15,-np.pi,-np.pi/2,-np.pi),(0.0,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.0,-2.0,-0.3,-np.pi,-np.pi/2,-np.pi),(0.0,-3.0,-0.5,-np.pi,-np.pi/2,-np.pi)]
-maxs = [(1.0,0.5,0.1,np.pi,np.pi/2,np.pi),(2.0,1.0,0.15,np.pi,np.pi/2,np.pi),(4.0,1.5,0.2,np.pi,np.pi/2,np.pi),(6.0,2.0,0.3,np.pi,np.pi/2,np.pi),(7.0,0.3,0.5,np.pi,np.pi/2,np.pi)]
+segload = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/jan_2021_seg_layer/model_seg5.pth.tar"
+segload = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model_seg145.pth.tar"
+
+#mins = [(0.0,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.0,-1,-0.15,-np.pi,-np.pi/2,-np.pi),(0.0,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.0,-2.0,-0.3,-np.pi,-np.pi/2,-np.pi),(0.0,-3.0,-0.5,-np.pi,-np.pi/2,-np.pi)]
+#maxs = [(1.0,0.5,0.1,np.pi,np.pi/2,np.pi),(2.0,1.0,0.15,np.pi,np.pi/2,np.pi),(4.0,1.5,0.2,np.pi,np.pi/2,np.pi),(6.0,2.0,0.3,np.pi,np.pi/2,np.pi),(7.0,0.3,0.5,np.pi,np.pi/2,np.pi)]
+
+mins = [(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi)]
+maxs = [(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi)]
+
+#mins = [(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.75,-0.75,-0.5,-np.pi,-np.pi,-np.pi),(-1.0,-1.0,-0.75,-np.pi,-np.pi,-np.pi)]
+#maxs = [(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.5,1.0,0.5,np.pi,np.pi,np.pi),(2.0,1.0,0.75,np.pi,np.pi,np.pi)]
+
+#mins = [(0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2), (0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2), (0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2)]
+#maxs = [(0.7, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2), (1.2, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2), (1.7, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2)]
 
 
 if not resnet18:
@@ -44,6 +62,9 @@ else:
 
 model.min = mins
 model.max = maxs
+
+spherical = False
+regression = False
 
 if os.path.isfile(load):
 	if not gpu is None:
@@ -92,10 +113,15 @@ pub_seg = rospy.Publisher('/orange_picking/seg_image', Image,queue_size=50)
 h = 480
 w = 640
 
-stop_thresh = 0.025
+stop_thresh = 0.0255
 k = 0
 mean_image = "/home/gabe/ws/ros_ws/src/orange_picking/test_run/mean_imgv2_data_real_world_traj_bag.npy"
 mean_image = "/home/siddharth/Desktop/asco/ws/src/orange_picking/data/mean_imgv2_data_depth_data_data_real_world_traj_bag.npy" #"mean_imgv2_data_real_world_traj_bag480.npy"
+mean_image = "/home/siddharth/Desktop/orange_picking/data/mean_imgv2_data_data_collection4_real_world_traj_bag.npy"
+
+segmodel.eval()
+model.eval()
+torch.no_grad()
 
 seg_mean_image = torch.tensor(np.load('data/depth_data/data/mean_seg.npy')).to('cuda')
 
@@ -170,9 +196,38 @@ def inference_node_callback(data):
 		msg_stop.data = True
 		pub.publish(msg)
 		pub_stop.publish(msg_stop)
+		print("STOP STOP STOP")
 		#goal = np.array(goal)
 		return
 
+	elif np.sum(seg_np) < 0.0001:
+		msg = PoseArray()
+		spin = np.pi/18
+		for pt in range(model.num_points):
+			point = [0, 0, 0, spin, 0, 0]
+
+			point = np.array(point)
+			#print(point)
+			#goal.append(point)
+			pt_pose = Pose()
+			pt_pose.position.x = point[0]
+			pt_pose.position.y = point[1]
+			pt_pose.position.z = point[2]
+
+			R_quat = R.from_euler('zyx', point[3:6]).as_quat()
+			pt_pose.orientation.x = R_quat[0]
+			pt_pose.orientation.y = R_quat[1]
+			pt_pose.orientation.z = R_quat[2]
+			pt_pose.orientation.w = R_quat[3]
+			msg.poses.append(pt_pose)
+
+		#msg_stop.data = True
+		pub.publish(msg)
+		#pub_stop.publish(msg_stop)
+		print("SPIN SPIN SPIN")
+		#goal = np.array(goal)
+		return
+			
 
 	segimages -= seg_mean_image
 	segimages = torch.reshape(segimages, (segimages.shape[0], 1, segimages.shape[1], segimages.shape[2]))
@@ -192,8 +247,18 @@ def inference_node_callback(data):
 	for pt in range(model.num_points):
 		point = []
 		for coord in range(model.outputs):
-			bin_size = (model.max[pt][coord] - model.min[pt][coord])/float(model.bins)
-			point.append(model.min[pt][coord] + bin_size*predict[0,coord,pt])
+			if not regression:
+				bin_size = (model.max[pt][coord] - model.min[pt][coord])/float(model.bins)
+				point.append(model.min[pt][coord] + bin_size*predict[0,coord,pt])
+			else:
+				point.append(logits[0,pt, coord])
+		if spherical:
+			pointList = [np.array(point)]
+			pl = sphericalToXYZ().__call__(pointList)
+			print("Before: ", pl.shape)
+			point = pl.flatten()
+			print("After: ", point.shape)
+
 		point = np.array(point)
 		#print(point)
 		goal.append(point)

@@ -6,6 +6,8 @@ from cv_bridge import CvBridge, CvBridgeError
 import cv2
 
 mean_image = "/home/siddharth/Desktop/asco/ws/src/orange_picking/data/mean_imgv2_data_depth_data_data_real_world_traj_bag.npy" #"mean_imgv2_data_real_world_traj_bag480.npy"
+#mean_image = "/home/siddharth/Desktop/orange_picking/mean_imgv2_data_combined_data3_real_world_traj_bag.npy"
+mean_image = "/home/siddharth/Desktop/orange_picking/data/mean_imgv2_data_data_collection4_real_world_traj_bag.npy"
 
 if not (os.path.exists(mean_image)):
 	print('mean image file not found', mean_image)
@@ -37,7 +39,7 @@ def get_queued_imgs(img):
 
 def processing_callback(data):
 	try:
-		cv_image = bridge.imgmsg_to_cv2(data, "bgr8")
+		cv_image = bridge.imgmsg_to_cv2(data, "rgb8")
 	except CvBridgeError as e:
 		print(e)
 
