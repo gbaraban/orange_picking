@@ -5,16 +5,24 @@ import torch
 import numpy as np
 import time, os
 from geometry_msgs.msg import Pose, PoseArray, Point32
+from nav_msgs.msg import Odometry
 from sensor_msgs.msg import PointCloud
 import std_msgs.msg
 from cv_bridge import CvBridge, CvBridgeError
 import cv2
+import tf
 from scipy.spatial.transform import Rotation as R
+from scipy.spatial.transform import Slerp
 from scipy import ndimage
 from segmentation.segmentnetarch import *
 from sensor_msgs.msg import Image
 from customTransforms import *
 import message_filters
+from open3d import geometry
+from open3d import open3d
+
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 
 name_to_dtypes = {
@@ -77,11 +85,38 @@ class CameraIntrinsics:
         self.fx = 607.265625
         self.fy = 607.2756958007812
 
+class Rotations:
+    def __init__(self):
+        pass
+
+    def rotx(self, angle):
+        r = np.array([[1, 0, 0],
+                    [0, np.cos(angle), np.sin(angle)],
+                    [0, -np.sin(angle), np.cos(angle)]]).astype(np.float64)
+
+        return r
+
+    def roty(self, angle):
+        r = np.array([[np.cos(angle), 0, -np.sin(angle)],
+                    [0, 1, 0],
+                    [np.sin(angle), 0, np.cos(angle)]]).astype(np.float64)
+
+        return r
+
+    def rotz(self, angle):
+        r = np.array([[np.cos(angle), np.sin(angle), 0],
+                    [-np.sin(angle), np.cos(angle), 0 ],
+                    [0, 0, 1]]).astype(np.float64)
+
+        return r
+
+
 class BaselineOrangeFinder:
-    def __init__(self, image_topic='/d400/color/image_raw', depth_topic='/d400/aligned_depth_to_color/image_raw'):
+    def __init__(self, image_topic='/d400/color/image_raw', depth_topic='/d400/aligned_depth_to_color/image_raw', gcop_topic="/gcop_odom"):
         print(image_topic, depth_topic)
         self.image_sub = message_filters.Subscriber(image_topic, Image)
         self.depth_sub = message_filters.Subscriber(depth_topic, Image)
+        self.odom_node = message_filters.Subscriber(gcop_topic, Odometry)
         
         self.__params()
         
@@ -94,6 +129,28 @@ class BaselineOrangeFinder:
         self.__loadMeanImages()
 
         self.__pointcloud_publisher = rospy.Publisher("/pointcloud_topic", PointCloud, queue_size=25)
+        self.__pointcloud_publisher_extra = rospy.Publisher("/pointcloud_topic_extra", PointCloud, queue_size=25)
+        self.__pointcloud_publisher_extra_norange = rospy.Publisher("/pointcloud_topic_extra_norange", PointCloud, queue_size=25)
+        
+        self.__goalpoint_publisher = rospy.Publisher("/ros_tracker", PoseArray, queue_size=100)
+        self.__normal_vec_publisher = rospy.Publisher("/normal_tracker", PoseArray, queue_size=100)
+        
+        rot = Rotations()
+        self.world2orange = None #np.eye(3)#np.matmul(rot.rotz(0), np.matmul(rot.rotx(np.pi/2),np.matmul(rot.rotz(np.pi/2), rot.roty(np.pi/2))))
+        #self.world2orange = np.matmul(rot.rotz(np.pi/2), rot.roty(np.pi/2))
+
+        self.listener = tf.TransformListener()
+        self.br = tf.TransformBroadcaster()
+        
+        self.world2orange_pos = None
+        self.t = 0
+      
+        self.alpha = 0.5
+        self.min_alpha = 0.1
+        self.max_steps = 100
+
+        self.stamp_now = None
+
         print("Setup complete")
 
     def __loadModel(self):
@@ -144,7 +201,6 @@ class BaselineOrangeFinder:
             image_arr = self.__bridge.imgmsg_to_cv2(data,"rgb8")
         except CvBridgeError as e:
             print(e)
-        
         return image_arr
 
     def __meanSubtract(self, cv_image):
@@ -249,8 +305,8 @@ class BaselineOrangeFinder:
             ny = np.linspace(0, height-1, height)
             u, v = np.meshgrid(nx, ny)
         else:
-            u = area[:, 0]
-            v = area[:, 1]
+            u = area[:, 1]
+            v = area[:, 0]
 
         x = (u.flatten() - camera_intrinsics.ppx)/camera_intrinsics.fx
         y = (v.flatten() - camera_intrinsics.ppy)/camera_intrinsics.fy
@@ -267,22 +323,252 @@ class BaselineOrangeFinder:
 
         return x, y, z
 
-    def __publishPointCloud(self, x, y, z, step=100):
+    def __publishPointCloud(self, x, y, z, publ, step=100):
         pointcloud = PointCloud()
         header = std_msgs.msg.Header()
-        header.stamp = rospy.Time.now()
-        header.frame_id = 'camera_link'
+        header.stamp = self.stamp_now #rospy.Time.now()
+        header.frame_id = 'camera_depth_optical_frame'
+        #header.frame_id = 'camera_link'
+        
         pointcloud.header = header
 
         for i in range(0, len(x), step):
             pointcloud.points.append(Point32(x[i], y[i], z[i]))
 
-        self.__pointcloud_publisher.publish(pointcloud)
+        publ.publish(pointcloud)
 
+
+    def __rotate_frame(self, x, y, z):
+        x = x.reshape((x.shape[0], 1))
+        y = y.reshape((y.shape[0], 1))
+        z = z.reshape((z.shape[0], 1))
+        points = np.concatenate((x, y, z), axis=1)
+        #print(x.shape, points.shape)
+        r = Rotations()
+        points = (np.matmul(r.rotz(np.pi/2), np.matmul(r.rotx(np.pi/2), points.T))).T
+        x = points[:,0]
+        y = points[:,1]
+        z = points[:,2]
+        return x, y, z
+
+    def __orange_orientation(self, trans, rot, mean_pos, orientation=None):
+
+        if self.alpha != self.min_alpha:
+            delta = (self.alpha - self.min_alpha)/self.max_steps   
+            self.alpha -= delta
+
+        #decaying alpha in future
+        rot = R.from_quat(np.array(rot))
+        #fixed_transform = R.from_quat(np.array([-0.500, 0.500, 0.500, 0.500])).as_dcm()
+        temp_world2orange_pos = np.matmul(rot.as_dcm(), mean_pos) + np.array(trans)
+            
+        if self.world2orange_pos is None:
+            self.world2orange_pos = temp_world2orange_pos.copy()
+        else:
+            self.world2orange_pos = self.world2orange_pos + self.alpha*(temp_world2orange_pos-self.world2orange_pos)
+
+        if orientation is not None:
+            if self.world2orange is None:
+                self.world2orange = R.from_quat(orientation).as_dcm()
+            else:
+                new_rot = orientation
+                old_rot = R.from_dcm(self.world2orange).as_quat()
+                key_times = [0, 1]
+                key_rots = np.array([old_rot, new_rot])
+                key_rots = R.from_quat(key_rots)
+                slerp = Slerp(key_times, key_rots)
+
+                times = [self.alpha]
+                mean_rot = slerp(times)
+                mean_rot = mean_rot[0]
+                self.world2orange = mean_rot.as_dcm()        
+
+        self.br.sendTransform((self.world2orange_pos[0], self.world2orange_pos[1], self.world2orange_pos[2]),
+                     R.from_dcm(self.world2orange).as_quat(),
+                     self.stamp_now, #rospy.Time.now(),
+                     "orange",
+                     "world")
+
+        Rot = R.from_dcm(np.matmul(np.linalg.inv(rot.as_dcm()), self.world2orange)).as_quat()
+        Trans = np.matmul(np.linalg.inv(rot.as_dcm()), (self.world2orange_pos - np.array(trans)))
+        return Rot, Trans
+
+    def _publishGoalPoints(self, x, y, z, trans=None, rot=None, orientation=None, odom_data=None, num_points=1):
+        
+        if trans is None or rot is None:
+            try:
+                (trans,rot) = self.listener.lookupTransform('world', 'camera_depth_optical_frame_filtered', rospy.Time(0))
+            except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+                return
+
+        mean_x = np.mean(x)
+        mean_y = np.mean(y)
+        mean_z = np.mean(z)
+        # if odom_data is not None:
+        #     rot = np.array([odom_data.pose.pose.orientation.x, odom_data.pose.pose.orientation.y, odom_data.pose.pose.orientation.z, odom_data.pose.pose.orientation.w])
+        orientation, mean_pos = self.__orange_orientation(trans, rot, np.array([mean_x, mean_y, mean_z]), orientation)
+
+        mean_x, mean_y, mean_z = mean_pos[0], mean_pos[1], mean_pos[2] 
+
+        header = std_msgs.msg.Header()
+        header.stamp = self.stamp_now #rospy.Time.now()
+        header.frame_id = 'camera_depth_optical_frame'
+        #header.frame_id = 'camera_link'
+        
+        goalarray_msg = PoseArray()
+        goalarray_msg.header = header
+        
+        for i in range(num_points): 
+            goal = Pose()
+            goal.position.x = mean_x
+            goal.position.y = mean_y
+            goal.position.z = mean_z
+
+            goal.orientation.x = orientation[0]
+            goal.orientation.y = orientation[1]
+            goal.orientation.z = orientation[2]
+            goal.orientation.w = orientation[3]
+
+            goalarray_msg.poses.append(goal)
+        print("Publishing")
+        self.__goalpoint_publisher.publish(goalarray_msg)
+    
+
+    def __skew(self, vec):
+        return np.array([[0, -vec[2], vec[1]],
+                        [vec[2], 0, -vec[0]],
+                        [-vec[1], vec[0], 0]])
+
+    def __find_rot(self, vector):
+        vector = np.array(vector)
+        vector = vector/np.linalg.norm(vector)
+
+        vector2 = np.array([1, 0, 0])
+
+        v = np.cross(vector, vector2)
+        s = np.linalg.norm(v)
+        c = np.dot(vector, vector2)
+
+        rot = np.eye(3) + self.__skew(v) + (np.matmul(self.__skew(v), self.__skew(v))*(1-c)/(s*s)) 
+        return R.from_dcm(rot).as_quat() 
+        
+    def debugPlanePlotter(self, pts, plane):
+        x = np.linspace(-2.,2.,20)
+        y = np.linspace(-2.,2.,20)
+
+        X,Y = np.meshgrid(x,y)
+        Z=(plane[0]*X + plane[1]*Y + plane[3])/-plane[2]
+
+        fig = plt.figure()
+        ax = fig.gca(projection='3d')
+
+        #surf = ax.plot_surface(X, Y, Z)
+        ax.scatter3D(X, Y, Z, c='b')
+
+        ax.scatter3D(pts[:,0], pts[:,1], pts[:,2], c='r')
+        # ax.set_aspect('equal')
+        ax.set_zlabel("x")
+        ax.set_xlabel("-y")
+        ax.set_ylabel("-z")
+        ax.axis('equal')
+        plt.show()
+
+    def __find_plane(self, x, y, z, Trans, Rot, mean_pt, debug=True):
+        #mean_pt = mean_pt/np.linalg.norm(mean_pt)
+        pts = np.array([x, y, z]).T
+        all_points = open3d.utility.Vector3dVector(pts)
+        pc = geometry.PointCloud(all_points)
+        plane, success_pts = pc.segment_plane(0.1, int(pts.shape[0]*0.8), 1000)
+        plane = np.array(plane)
+
+        print("Plane:", pts.shape, len(success_pts))
+        if debug:
+            self.debugPlanePlotter(pts, plane)
+        d = np.dot(mean_pt, plane[:3])
+
+        if d > 0:
+            plane = -plane
+        
+        plane_ = np.matmul(R.from_quat(Rot).as_dcm(), plane[:3].T)
+        plane_[2] = 0
+        plane_ /= np.linalg.norm(plane_)
+        z = np.array([0, 0, 1])
+        y = np.cross(z, plane_)
+        rot = np.array([plane_, y, z])
+        print(rot, np.linalg.det(rot), R.from_dcm(rot).as_euler('zyx', degrees=True))
+        orientation = R.from_dcm(rot).as_quat()
+        normal_vec = Pose()
+        normal_vec.position.x = plane_[0]
+        normal_vec.position.y = plane_[1]
+        # normal_vec.position.z = plane[2]
+        #orientation = [0, 0, 0, 1]#self.__find_rot(plane[0:3])
+        #normal_vec.orientation.x = orientation[0]
+        #normal_vec.orientation.y= orientation[1]
+        #normal_vec.orientation.z= orientation[2]
+        #normal_vec.orientation.w = orientation[3]
+
+        vecs = PoseArray()
+        vecs.poses.append(normal_vec)
+        header = std_msgs.msg.Header()
+        header.stamp = self.stamp_now #rospy.Time.now()
+        header.frame_id = "orange"
+
+        vecs.header = header
+        self.__normal_vec_publisher.publish(vecs)
+        # print(plane)
+        return orientation
+
+    def publishData(self, depth_image, camera_intrinsics, area, publ, Trans, Rot, mean_pt = None, norm_tracker=False, tracker=False):
+        if area.shape[0] > 40:
+            # print(area.shape)
+            x, y, z = self.__convert_depth_frame_to_pointcloud(depth_image, camera_intrinsics, area)
+            #print(x.shape, y.shape, z.shape)
+            if np.any(np.isnan(x)) or np.any(np.isnan(y)) or np.any(np.isnan(z)):
+                return 
+            # print(np.mean(x), np.mean(y), np.mean(z))
+            # print(np.min(x),np.max(x),np.min(y),np.max(y), np.min(z),np.max(z))
+            # print("\n\n\n")
+            filter = True
+            if filter:
+                pts = np.array([x, y, z]).T
+                pts = self.reject_outliers3d(pts)
+                x, y, z = pts[:, 0], pts[:, 1], pts[:, 2]
+            
+            self.__publishPointCloud(x, y, z, publ, step=10)
+            orientation = None
+            if norm_tracker:
+                if mean_pt is None:
+                    print("ISSUUEE")
+                    exit(0)
+                    #mean_pt = np.array([np.mean(x), np.mean(y), np.mean(z)])
+                orientation = self.__find_plane(x, y, z, Trans, Rot, mean_pt)
+            if tracker:
+                if orientation is None or mean_pt is None:
+                    print("This should not happen!")
+                    exit(0)
+                self._publishGoalPoints(mean_pt[0], mean_pt[1], mean_pt[2], orientation=orientation, trans=Trans, rot=Rot, odom_data=None)
+            else:
+                pass
+                #self._publishGoalPoints(x, y, z, orientation=orientation, odom_data=None)
+
+            return np.array([np.mean(x), np.mean(y), np.mean(z)])
+    
+    def reject_outliers(self, data, m=1.5):
+        return data[np.multiply(np.abs(data[:, 0] - np.mean(data[:, 0])) < m * np.std(data[:, 0]), np.abs(data[:,1] - np.mean(data[:,1])) < m * np.std(data[:,1]))]
+    
+
+    def reject_outliers3d(self, data, m=3):
+        return data[np.multiply(np.multiply(np.abs(data[:, 0] - np.mean(data[:, 0])) < m * np.std(data[:, 0]), np.abs(data[:,1] - np.mean(data[:,1])) < m * np.std(data[:,1])), np.abs(data[:,2] - np.mean(data[:,2])) < m * np.std(data[:,2]))]
+    
+    def reject_outliers3dMedian(self, data, m=3):
+        return data[np.multiply(np.multiply(np.abs(data[:, 0] - np.median(data[:, 0])) < m * np.std(data[:, 0]), np.abs(data[:,1] - np.median(data[:,1])) < m * np.std(data[:,1])), np.abs(data[:,2] - np.median(data[:,2])) < m * np.std(data[:,2]))]
+    
 
     def callback(self, image_data, depth_image_data):
         print("Reaching callback")
+        self.t += 1
         t1 = time.time()
+        self.stamp_now = image_data.header.stamp
         image = self.__rosmsg2np(image_data)
         depth_image = self.__depthnpFromImage(depth_image_data)
 
@@ -293,25 +579,62 @@ class BaselineOrangeFinder:
 
         camera_intrinsics = CameraIntrinsics()
         area = np.argwhere(seg_np == 1)
+        if area.shape[0] < 40:
+            return
+        area = self.reject_outliers(area)
+
+        mean_x, mean_y = np.mean(area, axis=0)
+
+        min_ = np.min(area, axis=0)
+        max_ = np.max(area, axis=0)
+        min_x, min_y = min_[0], min_[1]
+        max_x, max_y = max_[0], max_[1]
+        size_x = np.abs(max_x - min_x)
+        size_y = np.abs(max_y - min_y)
+        size_ = np.max((size_x, size_y))
+        # mult_x, mult_y = 1.5, 1.5
+        #extra_min_x, extra_max_x = np.max((0, min_x-int(mult_x*size_x))), np.min((seg_np.shape[0], max_x+int(mult_x*size_)))
+        #extra_min_y, extra_max_y = np.max((0, min_y-int(mult_y*size_y))), np.min((seg_np.shape[1], max_y+int(mult_y*size_)))
+        mult_x, mult_y = 2., 2.
+        extra_min_x, extra_max_x = np.max((0, mean_x-int(mult_x*size_x))), np.min((seg_np.shape[0], mean_x+int(mult_x*size_)))
+        extra_min_y, extra_max_y = np.max((0, mean_y-int(mult_y*size_y))), np.min((seg_np.shape[1], mean_y+int(mult_y*size_)))
+        
+        nx = np.linspace(extra_min_x, extra_max_x-1, extra_max_x - extra_min_x, dtype=np.int32)
+        ny = np.linspace(extra_min_y, extra_max_y-1, extra_max_y - extra_min_y, dtype=np.int32)
+        extra_area = np.transpose([np.tile(nx, len(ny)), np.repeat(ny, len(nx))])
+        
+        trans, rot = None, None
+        try:
+            (trans,rot) = self.listener.lookupTransform('world', 'camera_depth_optical_frame_filtered', rospy.Time(0))
+        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+            return
+
+        if trans is None or rot is None:
+            return
+
         print(area.shape)
-        if area.shape[0] != 0:
-            x, y, z = self.__convert_depth_frame_to_pointcloud(depth_image, camera_intrinsics, area)
-            print(x.shape, y.shape, z.shape)
-            print(np.mean(x), np.mean(y), np.mean(z))
-            print(np.min(x),np.max(x),np.min(y),np.max(y), np.min(z),np.max(z))
-            # print("\n\n\n")
-    
-            self.__publishPointCloud(x, y, z, step=1)
+        if area.shape[0] > 40:
+            mean_pt = self.publishData(depth_image, camera_intrinsics, area, self.__pointcloud_publisher, Trans=trans, Rot=rot, tracker=False)
+            self.publishData(depth_image, camera_intrinsics, extra_area, self.__pointcloud_publisher_extra, Trans=trans, Rot=rot, mean_pt=mean_pt, norm_tracker=True, tracker=True)
+            # print(area.shape)
+            # x, y, z = self.__convert_depth_frame_to_pointcloud(depth_image, camera_intrinsics, area)
+            # #print(x.shape, y.shape, z.shape)
+            # if np.any(np.isnan(x)) or np.any(np.isnan(y)) or np.any(np.isnan(z)):
+            #     return 
+            # print(np.mean(x), np.mean(y), np.mean(z))
+            # # print(np.min(x),np.max(x),np.min(y),np.max(y), np.min(z),np.max(z))
+            # # print("\n\n\n")
+            # self.__publishPointCloud(x, y, z, step=20)
+            # #self.__find_plane(x, y, z)
+            # self._publishGoalPoints(x, y, z, odom_data=None)
             print(time.time()-t1)
-            print("x: ", 3.25 - 0.91)
-            print("y: ", -0.03 - 0.13)
-            print("z: ", 1.078 - 1.41)
             
 
 def main():
     rospy.init_node('baseline_inference')
-    bof = BaselineOrangeFinder(image_topic="/camera/color/image_raw", depth_topic="/camera/aligned_depth_to_color/image_raw")
-    ts = message_filters.ApproximateTimeSynchronizer([bof.image_sub, bof.depth_sub], queue_size=20, slop=0.1,  allow_headerless=True)
+    bof = BaselineOrangeFinder(image_topic="/camera/color/image_raw/uncompressed", depth_topic="/camera/aligned_depth_to_color/image_raw/uncompressed")
+    #bof = BaselineOrangeFinder(image_topic="/d400/color/image_raw", depth_topic="/d400/aligned_depth_to_color/image_raw")
+    ts = message_filters.ApproximateTimeSynchronizer([bof.image_sub, bof.depth_sub], queue_size=20, slop=1.0,  allow_headerless=True)
     ts.registerCallback(bof.callback)
     rospy.spin()
 
