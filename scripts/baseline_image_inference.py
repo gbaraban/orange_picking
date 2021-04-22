@@ -23,6 +23,7 @@ from open3d import open3d
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from pytransform3d.rotations import *
 
 
 name_to_dtypes = {
@@ -452,7 +453,7 @@ class BaselineOrangeFinder:
         rot = np.eye(3) + self.__skew(v) + (np.matmul(self.__skew(v), self.__skew(v))*(1-c)/(s*s)) 
         return R.from_dcm(rot).as_quat() 
         
-    def debugPlanePlotter(self, pts, plane):
+    def debugPlanePlotter(self, pts, plane, orientation, position):
         x = np.linspace(-2.,2.,20)
         y = np.linspace(-2.,2.,20)
 
@@ -465,12 +466,18 @@ class BaselineOrangeFinder:
         #surf = ax.plot_surface(X, Y, Z)
         ax.scatter3D(X, Y, Z, c='b')
 
-        ax.scatter3D(pts[:,0], pts[:,1], pts[:,2], c='r')
+        # ax.scatter3D(pts[:,0], pts[:,1], pts[:,2], c='r')
         # ax.set_aspect('equal')
         ax.set_zlabel("x")
         ax.set_xlabel("-y")
         ax.set_ylabel("-z")
         ax.axis('equal')
+
+        pos = np.array(position) + np.array(plane[:3])
+        ax.scatter3D(pos[0], pos[1], pos[2], c='g')
+        ax.scatter3D(position[0], position[1], position[2], c='y')
+        # R_m = R.from_quat(orientation).as_dcm()
+        # plot_basis(ax, R_m, np.array(position), alpha=1)
         plt.show()
 
     def __find_plane(self, x, y, z, Trans, Rot, mean_pt, debug=True):
@@ -482,8 +489,9 @@ class BaselineOrangeFinder:
         plane = np.array(plane)
 
         print("Plane:", pts.shape, len(success_pts))
+
         if debug:
-            self.debugPlanePlotter(pts, plane)
+            self.debugPlanePlotter(pts, plane, orientation=None, position=mean_pt)
         d = np.dot(mean_pt, plane[:3])
 
         if d > 0:
@@ -497,6 +505,8 @@ class BaselineOrangeFinder:
         rot = np.array([plane_, y, z])
         print(rot, np.linalg.det(rot), R.from_dcm(rot).as_euler('zyx', degrees=True))
         orientation = R.from_dcm(rot).as_quat()
+
+
         normal_vec = Pose()
         normal_vec.position.x = plane_[0]
         normal_vec.position.y = plane_[1]
