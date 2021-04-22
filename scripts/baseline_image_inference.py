@@ -369,20 +369,20 @@ class BaselineOrangeFinder:
             self.world2orange_pos = self.world2orange_pos + self.alpha*(temp_world2orange_pos-self.world2orange_pos)
 
         if orientation is not None:
-            if self.world2orange is None:
-                self.world2orange = R.from_quat(orientation).as_dcm()
-            else:
-                new_rot = orientation
-                old_rot = R.from_dcm(self.world2orange).as_quat()
-                key_times = [0, 1]
-                key_rots = np.array([old_rot, new_rot])
-                key_rots = R.from_quat(key_rots)
-                slerp = Slerp(key_times, key_rots)
+            # if self.world2orange is None:
+            self.world2orange = R.from_quat(orientation).as_dcm()
+            # else:
+            #     new_rot = orientation
+            #     old_rot = R.from_dcm(self.world2orange).as_quat()
+            #     key_times = [0, 1]
+            #     key_rots = np.array([old_rot, new_rot])
+            #     key_rots = R.from_quat(key_rots)
+            #     slerp = Slerp(key_times, key_rots)
 
-                times = [self.alpha]
-                mean_rot = slerp(times)
-                mean_rot = mean_rot[0]
-                self.world2orange = mean_rot.as_dcm()        
+            #     times = [self.alpha]
+            #     mean_rot = slerp(times)
+            #     mean_rot = mean_rot[0]
+            #     self.world2orange = mean_rot.as_dcm()        
 
         self.br.sendTransform((self.world2orange_pos[0], self.world2orange_pos[1], self.world2orange_pos[2]),
                      R.from_dcm(self.world2orange).as_quat(),
@@ -466,18 +466,19 @@ class BaselineOrangeFinder:
         #surf = ax.plot_surface(X, Y, Z)
         ax.scatter3D(X, Y, Z, c='b')
 
-        # ax.scatter3D(pts[:,0], pts[:,1], pts[:,2], c='r')
+        ax.scatter3D(pts[:,0], pts[:,1], pts[:,2], c='r')
         # ax.set_aspect('equal')
         ax.set_zlabel("x")
         ax.set_xlabel("-y")
         ax.set_ylabel("-z")
-        ax.axis('equal')
+        ax.set_aspect('equal', 'box')
 
         pos = np.array(position) + np.array(plane[:3])
+        print("Pos: ", pos)
         ax.scatter3D(pos[0], pos[1], pos[2], c='g')
         ax.scatter3D(position[0], position[1], position[2], c='y')
-        # R_m = R.from_quat(orientation).as_dcm()
-        # plot_basis(ax, R_m, np.array(position), alpha=1)
+        R_m = R.from_quat(orientation).as_dcm()
+        plot_basis(ax, R_m, np.array(position), alpha=1)
         plt.show()
 
     def __find_plane(self, x, y, z, Trans, Rot, mean_pt, debug=True):
@@ -488,23 +489,27 @@ class BaselineOrangeFinder:
         plane, success_pts = pc.segment_plane(0.1, int(pts.shape[0]*0.8), 1000)
         plane = np.array(plane)
 
-        print("Plane:", pts.shape, len(success_pts))
+        # print("Plane:", pts.shape, len(success_pts))
 
         if debug:
-            self.debugPlanePlotter(pts, plane, orientation=None, position=mean_pt)
+            print("Plane: ", plane)
+            print("Mean pt: ", mean_pt)
+            plane_debug = plane.copy()
         d = np.dot(mean_pt, plane[:3])
 
         if d > 0:
             plane = -plane
         
-        plane_ = np.matmul(R.from_quat(Rot).as_dcm(), plane[:3].T)
-        plane_[2] = 0
+        plane_ = plane[:3] #np.matmul(R.from_quat(Rot).as_dcm(), plane[:3].T)
+        plane_[1] = 0
         plane_ /= np.linalg.norm(plane_)
-        z = np.array([0, 0, 1])
-        y = np.cross(z, plane_)
+        y = np.array([0, 1, 0])
+        z = np.cross(plane_, y)
         rot = np.array([plane_, y, z])
         print(rot, np.linalg.det(rot), R.from_dcm(rot).as_euler('zyx', degrees=True))
         orientation = R.from_dcm(rot).as_quat()
+        if debug:
+            self.debugPlanePlotter(pts, plane_debug, orientation, position=mean_pt)
 
 
         normal_vec = Pose()
