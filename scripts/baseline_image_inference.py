@@ -129,12 +129,14 @@ class BaselineOrangeFinder:
 
         self.__loadMeanImages()
 
-        self.__pointcloud_publisher = rospy.Publisher("/pointcloud_topic", PointCloud, queue_size=25)
-        self.__pointcloud_publisher_extra = rospy.Publisher("/pointcloud_topic_extra", PointCloud, queue_size=25)
-        self.__pointcloud_publisher_extra_norange = rospy.Publisher("/pointcloud_topic_extra_norange", PointCloud, queue_size=25)
+        self.__pointcloud_publisher = rospy.Publisher("/pointcloud_topic", PointCloud, queue_size=2)
+        self.__pointcloud_publisher_extra = rospy.Publisher("/pointcloud_topic_extra", PointCloud, queue_size=2)
+        self.__pointcloud_publisher_extra_norange = rospy.Publisher("/pointcloud_topic_extra_norange", PointCloud, queue_size=2)
         
         self.__goalpoint_publisher = rospy.Publisher("/ros_tracker", PoseArray, queue_size=100)
         self.__normal_vec_publisher = rospy.Publisher("/normal_tracker", PoseArray, queue_size=100)
+
+        self.__seg_image_publisher = rospy.Publisher("/seg_image", Image, queue_size=5)
         
         rot = Rotations()
         self.world2orange = None #np.eye(3)#np.matmul(rot.rotz(0), np.matmul(rot.rotx(np.pi/2),np.matmul(rot.rotz(np.pi/2), rot.roty(np.pi/2))))
@@ -147,8 +149,8 @@ class BaselineOrangeFinder:
         self.t = 0
       
         self.alpha = 0.5
-        self.min_alpha = 0.1
-        self.max_steps = 100
+        self.min_alpha = 0.05
+        self.max_steps = 50
 
         self.stamp_now = None
 
@@ -233,6 +235,8 @@ class BaselineOrangeFinder:
         seg_np = np.array(segimages[0,:,:])
         
         pub_np = (255 * seg_np.copy()).astype(np.uint8).reshape((self.__h, self.__w))
+        image_message = self.__bridge.cv2_to_imgmsg(pub_np, encoding="passthrough")
+        self.__seg_image_publisher.publish(image_message)
         cv2.imwrite('test.png', pub_np)
 
         return seg_np
@@ -358,6 +362,8 @@ class BaselineOrangeFinder:
             delta = (self.alpha - self.min_alpha)/self.max_steps   
             self.alpha -= delta
 
+        print(self.alpha)
+
         #decaying alpha in future
         rot = R.from_quat(np.array(rot))
         #fixed_transform = R.from_quat(np.array([-0.500, 0.500, 0.500, 0.500])).as_dcm()
@@ -369,7 +375,8 @@ class BaselineOrangeFinder:
             self.world2orange_pos = self.world2orange_pos + self.alpha*(temp_world2orange_pos-self.world2orange_pos)
 
         if orientation is not None:
-            orientation = R.from_dcm(np.matmul(rot.as_dcm(),R.from_quat(orientation).as_dcm())).as_quat()
+            rot_obj = Rotations()
+            orientation = R.from_dcm(np.matmul(np.matmul(rot.as_dcm(),R.from_quat(orientation).as_dcm()), rot_obj.rotx(np.pi/2))).as_quat()
             if self.world2orange is None:
                 self.world2orange = R.from_quat(orientation).as_dcm()
             else:
@@ -399,10 +406,15 @@ class BaselineOrangeFinder:
         
         if trans is None or rot is None:
             try:
-                (trans,rot) = self.listener.lookupTransform('world', 'camera_depth_optical_frame_filtered', rospy.Time(0))
+                # (trans,rot) = self.listener.lookupTransform('world', 'camera_depth_optical_frame_filtered', rospy.Time(0))
+                (trans,rot) = self.listener.lookupTransform('world', 'camera_depth_optical_frame', rospy.Time(0))
             except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
                 return
 
+        if np.any(np.isnan(trans)) or np.any(np.isnan(rot)) or np.any(np.isnan(x)) or np.any(np.isnan(y)) or np.any(np.isnan(z)):
+            print("NANANNANANANANANNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNANANANANANANANANNANNANANA")
+            return
+        
         mean_x = np.mean(x)
         mean_y = np.mean(y)
         mean_z = np.mean(z)
@@ -414,6 +426,7 @@ class BaselineOrangeFinder:
 
         header = std_msgs.msg.Header()
         header.stamp = self.stamp_now #rospy.Time.now()
+        header.frame_id = 'camera_depth_optical_frame_filtered'
         header.frame_id = 'camera_depth_optical_frame'
         #header.frame_id = 'camera_link'
         
@@ -432,7 +445,7 @@ class BaselineOrangeFinder:
             goal.orientation.w = orientation[3]
 
             goalarray_msg.poses.append(goal)
-        print("Publishing")
+        # print("Publishing")
         self.__goalpoint_publisher.publish(goalarray_msg)
     
 
@@ -491,9 +504,14 @@ class BaselineOrangeFinder:
     def __find_plane(self, x, y, z, Trans, Rot, mean_pt, debug=False):
         #mean_pt = mean_pt/np.linalg.norm(mean_pt)
         pts = np.array([x, y, z]).T
+        print(pts.shape)
+        t_size = np.min((500, pts.shape[0]))
+        t_pts = np.random.choice(np.arange(pts.shape[0]), size=t_size, replace=False)
+        pts = pts[t_pts]
+        print(pts.shape)
         all_points = open3d.utility.Vector3dVector(pts)
         pc = geometry.PointCloud(all_points)
-        plane, success_pts = pc.segment_plane(0.1, int(pts.shape[0]*0.8), 1000)
+        plane, success_pts = pc.segment_plane(0.05, int(pts.shape[0]*0.7), 1000)
         plane = np.array(plane)
 
         # print("Plane:", pts.shape, len(success_pts))
@@ -513,7 +531,7 @@ class BaselineOrangeFinder:
         y = np.array([0, -1, 0])
         z = np.cross(plane_, y)
         rot = np.array([plane_, y, z]).T
-        print(rot, np.linalg.det(rot), R.from_dcm(rot).as_euler('zyx', degrees=True))
+        # print(rot, np.linalg.det(rot), R.from_dcm(rot).as_euler('zyx', degrees=True))
         orientation = R.from_dcm(rot).as_quat()
         if debug:
             self.debugPlanePlotter(pts, plane, orientation, position=mean_pt)
@@ -541,7 +559,7 @@ class BaselineOrangeFinder:
         return orientation
 
     def publishData(self, depth_image, camera_intrinsics, area, publ, Trans, Rot, mean_pt = None, norm_tracker=False, tracker=False):
-        if area.shape[0] > 40:
+        if area.shape[0] > 30:
             # print(area.shape)
             x, y, z = self.__convert_depth_frame_to_pointcloud(depth_image, camera_intrinsics, area)
             #print(x.shape, y.shape, z.shape)
@@ -556,7 +574,14 @@ class BaselineOrangeFinder:
                 pts = self.reject_outliers3d(pts)
                 x, y, z = pts[:, 0], pts[:, 1], pts[:, 2]
             
-            self.__publishPointCloud(x, y, z, publ, step=10)
+            total_points = 1000
+            step = int(x.shape[0]/total_points)
+            step = np.max((1, step))
+            #z -= 0.02
+            self.__publishPointCloud(x, y, z, publ, step=step)
+
+            if x.shape[0] < 10:
+                return None
             orientation = None
             if norm_tracker:
                 if mean_pt is None:
@@ -574,6 +599,8 @@ class BaselineOrangeFinder:
                 #self._publishGoalPoints(x, y, z, orientation=orientation, odom_data=None)
 
             return np.array([np.mean(x), np.mean(y), np.mean(z)])
+        else:
+            print("Failed in Publish Data check")
     
     def reject_outliers(self, data, m=1.5):
         return data[np.multiply(np.abs(data[:, 0] - np.mean(data[:, 0])) < m * np.std(data[:, 0]), np.abs(data[:,1] - np.mean(data[:,1])) < m * np.std(data[:,1]))]
@@ -587,7 +614,7 @@ class BaselineOrangeFinder:
     
 
     def callback(self, image_data, depth_image_data):
-        print("Reaching callback")
+        print("Reaching callbazck")
         self.t += 1
         t1 = time.time()
         self.stamp_now = image_data.header.stamp
@@ -597,13 +624,20 @@ class BaselineOrangeFinder:
         image_tensor = self.__process4model(image)  
 
         seg_np = self.__segmentationInference(image_tensor)
+
+        
         #centroid = self.__getCentroid(seg_np)
 
         camera_intrinsics = CameraIntrinsics()
         area = np.argwhere(seg_np == 1)
-        if area.shape[0] < 40:
+        pre_area = area.copy()
+        # print("Orignal shape: ", area.shape)
+        if area.shape[0] < 30:
+            print("Early return??", area.shape)
             return
+        
         area = self.reject_outliers(area)
+        # print("No outlier shape: ", area.shape)
 
         mean_x, mean_y = np.mean(area, axis=0)
 
@@ -627,16 +661,21 @@ class BaselineOrangeFinder:
         
         trans, rot = None, None
         try:
-            (trans,rot) = self.listener.lookupTransform('world', 'camera_depth_optical_frame_filtered', rospy.Time(0))
+            # (trans,rot) = self.listener.lookupTransform('world', 'camera_depth_optical_frame_filtered', rospy.Time(0))
+            (trans,rot) = self.listener.lookupTransform('world', 'camera_depth_optical_frame', rospy.Time(0))
         except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
             return
 
         if trans is None or rot is None:
             return
 
-        print(area.shape)
-        if area.shape[0] > 40:
+        # print(area.shape)
+        if area.shape[0] > 30:
+            # print("In orange: ")
             mean_pt = self.publishData(depth_image, camera_intrinsics, area, self.__pointcloud_publisher, Trans=trans, Rot=rot, tracker=False)
+            if mean_pt is None:
+                return
+            # print("In extra orange ")
             self.publishData(depth_image, camera_intrinsics, extra_area, self.__pointcloud_publisher_extra, Trans=trans, Rot=rot, mean_pt=mean_pt, norm_tracker=True, tracker=True)
             # print(area.shape)
             # x, y, z = self.__convert_depth_frame_to_pointcloud(depth_image, camera_intrinsics, area)
@@ -650,13 +689,14 @@ class BaselineOrangeFinder:
             # #self.__find_plane(x, y, z)
             # self._publishGoalPoints(x, y, z, odom_data=None)
             print(time.time()-t1)
-            
+        else:
+            print("Left pre-area check", area.shape, pre_area.shape)
 
 def main():
     rospy.init_node('baseline_inference')
     bof = BaselineOrangeFinder(image_topic="/camera/color/image_raw/uncompressed", depth_topic="/camera/aligned_depth_to_color/image_raw/uncompressed")
     #bof = BaselineOrangeFinder(image_topic="/d400/color/image_raw", depth_topic="/d400/aligned_depth_to_color/image_raw")
-    ts = message_filters.ApproximateTimeSynchronizer([bof.image_sub, bof.depth_sub], queue_size=20, slop=1.0,  allow_headerless=True)
+    ts = message_filters.ApproximateTimeSynchronizer([bof.image_sub, bof.depth_sub], queue_size=2, slop=1.0,  allow_headerless=True)
     ts.registerCallback(bof.callback)
     rospy.spin()
 
