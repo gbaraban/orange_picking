@@ -36,6 +36,8 @@ load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/cd4/model20.pth
 load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/cd4_dilated_rel/model32.pth.tar"
 #load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/cd4_dilated_spherical/model17.pth.tar"
 #load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/cd4_rel/model5.pth.tar"
+load = "/home/siddharth/Desktop/orange_picking/model/may31_2021_traj/model4.pth.tar"
+load = "/home/siddharth/Desktop/orange_picking/model/may31_2021_no_traj/model29.pth.tar"
 
 
 segload = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model_seg99.pth.tar"
@@ -45,8 +47,8 @@ segload = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model_seg145
 #mins = [(0.0,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.0,-1,-0.15,-np.pi,-np.pi/2,-np.pi),(0.0,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.0,-2.0,-0.3,-np.pi,-np.pi/2,-np.pi),(0.0,-3.0,-0.5,-np.pi,-np.pi/2,-np.pi)]
 #maxs = [(1.0,0.5,0.1,np.pi,np.pi/2,np.pi),(2.0,1.0,0.15,np.pi,np.pi/2,np.pi),(4.0,1.5,0.2,np.pi,np.pi/2,np.pi),(6.0,2.0,0.3,np.pi,np.pi/2,np.pi),(7.0,0.3,0.5,np.pi,np.pi/2,np.pi)]
 
-mins = [(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi)]
-maxs = [(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi)]
+#mins = [(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi)]
+#maxs = [(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi)]
 
 #mins = [(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.75,-0.75,-0.5,-np.pi,-np.pi,-np.pi),(-1.0,-1.0,-0.75,-np.pi,-np.pi,-np.pi)]
 #maxs = [(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.5,1.0,0.5,np.pi,np.pi,np.pi),(2.0,1.0,0.75,np.pi,np.pi,np.pi)]
@@ -54,6 +56,9 @@ maxs = [(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.,0.5,0.
 #mins = [(0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2), (0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2), (0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2)]
 #maxs = [(0.7, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2), (1.2, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2), (1.7, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2)]
 
+
+mins = [(-0.1, -0.4, -0.1, -np.pi/2, -0.1, -0.1), (-0.2, -0.8, -.15, -np.pi/2, -0.1, -0.1), (-0.3, -1.2, -0.25, -np.pi/2, -0.1, -0.1)]
+maxs = [(0.5, 0.5, 0.2, np.pi/2, 0.1, 0.1), (1.0, 0.8, 0.4, np.pi/2, 0.1, 0.1), (1.5, 1.2, 0.55, np.pi/2, 0.1, 0.1)]
 
 if not resnet18:
 	model = OrangeNet8(capacity,num_images,num_pts,bins,mins,maxs,n_outputs=outputs,num_channels=4)
@@ -201,6 +206,7 @@ def inference_node_callback(data):
 		return
 
 	elif np.sum(seg_np) < 0.0001:
+		return
 		msg = PoseArray()
 		spin = np.pi/18
 		for pt in range(model.num_points):
