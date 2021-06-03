@@ -819,7 +819,7 @@ class BaselineOrangeFinder:
             # print("In extra orange ")
             mean_pt, orientation = self.publishData(depth_image, camera_intrinsics, extra_area, self.__pointcloud_publisher_extra, Trans=trans, Rot=rot, mean_pt=mean_pt, norm_tracker=True, tracker=True)
 
-            # orientation = R.from_euler("ZYX", orientation).as_quat()
+            orientation = R.from_quat(orientation).as_euler("ZYX")
             # print(area.shape)
             # x, y, z = self.__convert_depth_frame_to_pointcloud(depth_image, camera_intrinsics, area)
             # #print(x.shape, y.shape, z.shape)

@@ -291,11 +291,11 @@ class OrangeSimDataSet(Dataset):
                 if folder_orange_pose is not None:
                     if folder_orange_pose[ii] is not None:
                         if np.any(np.isnan(folder_orange_pose[ii][0])) or np.any(np.isnan(folder_orange_pose[ii][1])):
-                            dict_i["orange_pose"] = np.array([0., 0., 0., 0., 0., 0., 0.])
+                            dict_i["orange_pose"] = np.array([0., 0., 0., 0., 0., 0.])
                         else:
-                            dict_i["orange_pose"] = np.concatenate((folder_orange_pose[ii][0], folder_orange_pose[ii][1])) 
+                            dict_i["orange_pose"] = np.concatenate((folder_orange_pose[ii][0], R.from_quat(folder_orange_pose[ii][1]).as_euler('ZYX'))) 
                     else:
-                        dict_i["orange_pose"] = np.array([0., 0., 0., 0., 0., 0., 0.])
+                        dict_i["orange_pose"] = np.array([0., 0., 0., 0., 0., 0.])
                 else:
                     dict_i["orange_pose"] = None
 
