@@ -149,6 +149,12 @@ def calculateOrangeState(odom,image_msg,dimg,bof):
     orange_R = R.from_dcm(retval[1])
     return (orange_p,orange_R) #postion as np.array, Rotation as Rotation object
 
+def anglewrap(x):
+    x = (x + np.pi) % (2*np.pi)
+    if x < 0:
+        x += 2*np.pi
+    return x - np.pi
+
 def createTrajectory(odom, orange_p, orange_R):
     start_p = np.array((odom.transform.translation.x, odom.transform.translation.y, odom.transform.translation.z))
     start_R = R.from_quat([odom.transform.rotation.x, odom.transform.rotation.y,
@@ -172,7 +178,7 @@ def createTrajectory(odom, orange_p, orange_R):
     target_R = orange_R*R.from_euler('z',offset_yaw)
     target_yaw = target_R.as_euler('ZYX')[0]
     error_p = target_p - start_p
-    error_yaw = target_yaw - start_yaw
+    error_yaw = anglewrap(target_yaw - start_yaw)
     deg = 9
     dim = 4
     constraints = np.zeros((deg+1,dim))

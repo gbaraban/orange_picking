@@ -5,6 +5,8 @@ from geometry_msgs.msg import Pose, PoseArray, Point32, TransformStamped
 import tf2_ros
 from nav_msgs.msg import Odometry
 from scipy.spatial.transform import Rotation as R
+import matplotlib.pyplot as plt
+from mpl_toolkits import mplot3d
 
 class tf_class:
     def __init__(self,pos, Rot):
@@ -43,8 +45,15 @@ class tf_class:
         t.transform.rotation.w = quat[3]
         br.sendTransform(t)
 
+def anglewrap(x):
+    x = (x + np.pi) % (2*np.pi)
+    if x < 0:
+        x += 2*np.pi
+    return x - np.pi
+
 def coeffMatrix(start_py, goal_py, tf):
     error_py = goal_py - start_py
+    error_py[3] = anglewrap(error_py[3])
     deg = 9
     dim = 4
     constraints = np.zeros((deg+1,dim))
@@ -140,8 +149,6 @@ class PolyTraj:
                 self.stage_flag = True
                 offset_tf = self.staging_tf
         goal_tf = track_global*offset_tf
-        print("Goal TF")
-        print(goal_tf)
     	max_v = 0.15
     	min_tf = 4.0
         distance = np.linalg.norm(goal_tf.p - self.start_posyaw[0:3])
@@ -154,17 +161,12 @@ class PolyTraj:
         wp = coeffToWP(coeff,self.start_posyaw,wp_t)
         msg = PoseArray()
         tf0 = self.odom
-        print("TF0")
-        print(tf0)
         for state in wp:
             py = state[0]
-            print(py)
             p_i = py[0:3]
             R_i = R.from_euler('ZYX',(py[3],0,0))
             tf_i = tf_class(p_i,R_i)
             tf_rel = tf0.inv()*tf_i
-            print("TF_i")
-            print(tf_i)
             pose_i = Pose()
             pose_i.position.x = tf_rel.p[0]
             pose_i.position.y = tf_rel.p[1]
