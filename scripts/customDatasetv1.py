@@ -87,6 +87,7 @@ class OrangeSimDataSet(Dataset):
         self.gaussian_var = [0.012, 0.012, 0.012, 0.04, 0.02, 0.02]
         self.gaussian_limit = [0.025, 0.025, 0.025, 0.08, 0.04, 0.04]
         self.resets = use_resets
+        self.coeff_exists = False
 
         self.np_dir = root_dir.rstrip("/") + "_np/"
         #if seg or seg_only: #temp_seg
@@ -109,6 +110,8 @@ class OrangeSimDataSet(Dataset):
             if os.path.exists(self.run_dir + "/" + trial + "/data.pickle_no_parse"):
                 ret_val = self.parseSubFolder(self.run_dir+"/"+trial+"/")
                 if ret_val:
+                    temp_dict = {}
+                    temp_dict["start"] = len(self.event_list)
                     self.event_list = self.event_list+ret_val
                     temp_dict["end"] = len(self.event_list)
                     self.num_samples_dir[self.traj_count] = temp_dict
@@ -155,7 +158,7 @@ class OrangeSimDataSet(Dataset):
         depth_loc_list = dict_i["depth"]
         orange_pose = None
         if "orange_pose" in dict_i:
-            orange_pose = dict_i["orange_pose"]
+            orange_pose = dict_i["orange_pose"].astype("float32")
 
         rp = dict_i["rp"]
         image = None
@@ -189,9 +192,14 @@ class OrangeSimDataSet(Dataset):
         #     data["rots"] = rot_list
         #     image, points, rot_list, flipped = self.image_transform(data)
         time_frac = dict_i["time_frac"]
-        body_v = dict_i["bodyV"]
-        return_dict = {'image':image, 'points':points, "flipped":flipped, "time_frac": time_frac, "body_v": body_v.astype("float32"), "rp": rp.astype("float32"), "orange_pose": orange_pose.astype("float32")}
+        return_dict = {'image':image, 'points':points, "flipped":flipped, "time_frac": time_frac, "rp": rp.astype("float32")}
 
+        if "bodyV" in dict_i and not self.coeff_exists:
+            return_dict["body_v"] = dict_i["bodyV"].astype("float32")
+        
+        if orange_pose is not None and not self.coeff_exists:
+            return_dict["orange_pose"] = orange_pose
+        
         return return_dict
 
     def parseSubFolder(self,subfolder):
@@ -199,6 +207,7 @@ class OrangeSimDataSet(Dataset):
         with open(subfolder + "data.pickle_no_parse",'rb') as f:
             folder_data = pickle.load(f, encoding="latin1")
         if "coeff" in folder_data:
+            self.coeff_exists = True
             #Hand carried data
             folder_odom = folder_data["data"]
             folder_coeff = folder_data["coeff"]
@@ -206,7 +215,8 @@ class OrangeSimDataSet(Dataset):
             no_events = len(folder_coeff)
             image_hz = no_events/float(folder_time)
             image_offset = int(self.img_dt*image_hz)
-            for ii, odom, coeff in enumerate(zip(folder_odom,folder_coeff)):
+            for ii, (odom, coeff) in enumerate(zip(folder_odom,folder_coeff)):
+                dict_i = {}
                 dict_i["image"] = []
                 if self.depth:
                     dict_i["depth"] = []
@@ -217,11 +227,16 @@ class OrangeSimDataSet(Dataset):
                     image_loc = subfolder + "image" + str(image_idx) + ".png"
                     dict_i["image"].append(image_loc)
                     if self.depth:
-                        depth_loc = subfolder + "depth" + str(image_idx) + ".png"
+                        depth_loc = subfolder + "depth_image" + str(image_idx) + ".npy"
                         dict_i["depth"].append(depth_loc)
                 dict_i["time_frac"] = float(ii)/no_events
                 point_idx = ii
+                temp_p0 = folder_odom[point_idx][0][0:3]
+                temp_R0 = R.from_quat(folder_odom[point_idx][1][:4]).as_euler("zyx")
+                temp_pt = np.concatenate((temp_p0, temp_R0))
+                folder_odom[point_idx] = temp_pt
                 p0 = folder_odom[point_idx][0:3]
+                #R0 = R.from_quat(folder_odom[point_idx][1][:4]).as_dcm()
                 R0 = R.from_euler('zyx', folder_odom[point_idx][3:6]).as_dcm()
                 dict_i["rp"] = folder_odom[point_idx][4:6]
                 time_list = [(temp+1)*self.pred_dt for temp in range(self.num_pts)]
@@ -401,7 +416,7 @@ class OrangeSimDataSet(Dataset):
         w = (R_b.T).dot(self.logR(R_a.T.dot(R_b)))*hz
         return np.hstack((v,w))
 
-    def basisMatrix(time):
+    def basisMatrix(self,time):
         deg = 9
         dim = 4
         basis = np.zeros((dim+1,deg+1))
@@ -421,7 +436,7 @@ class OrangeSimDataSet(Dataset):
                     basis[row,col] = 0
         return basis
 
-    def coeffToWP(coeff,x0,times):
+    def coeffToWP(self,coeff,x0,times):
         wp_list = []
         for time in times:
             basis = self.basisMatrix(time)

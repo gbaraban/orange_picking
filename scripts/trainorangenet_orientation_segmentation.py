@@ -104,7 +104,7 @@ def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass,args):
     #R0 = np.array(traj_data[trial_idx][idx][1])
     points = []
 
-    if not args.real:
+    if args.real == 0:
         p0 = np.array(traj_data[trial_idx][idx][0])
         R0 = np.array(traj_data[trial_idx][idx][1])
 
@@ -403,7 +403,23 @@ def acc_metric_regression(args, logits, point_batch, sphere_flag = False):
         acc_list.append(batch_mean)
     return acc_list
 
+def get_state_data(state_config, data):
+    if state_config == 1:
+        # print("State 1")
+        orange_pose_data = data["orange_pose"]
+        # print("RP State")
+        rp_data = data["rp"]
+        states_data = torch.cat((orange_pose_data, rp_data), 1)
+        return states_data
 
+    elif state_config == 2:
+        body_v_data = data["body_v"]
+        orange_pose_data = data["orange_pose"]
+        rp_data = data["rp"]
+        states_data = torch.cat((body_v_data, orange_pose_data, rp_data), 1)
+        return states_data
+    else:
+        return None
 
 def main():
     signal.signal(signal.SIGINT,signal_handler)
@@ -428,7 +444,7 @@ def main():
     parser.add_argument('--bins', type=int, default=30, help='number of bins per coordinate')
     parser.add_argument('-j', type=int, default=8, help='number of loader workers')
     parser.add_argument('--traj', type=int, default=1, help='train trajectories')
-    parser.add_argument('--real', type=int, default=0, help='real world imgs')
+    parser.add_argument('--real', type=int, default=0, help='real world imgs (0: sim data, 1: orange tracking data, else: normal real world data')
     parser.add_argument('--val', type=float, default=0.10, help='validation percentage')
     parser.add_argument('--resnet18', type=int, default=0, help='ResNet18')
     parser.add_argument('--yaw_only', type=int, default=0, help='yaw only')
@@ -448,7 +464,7 @@ def main():
     parser.add_argument('--temp_seg',type=bool,default=False,help='use segmentation channel')
     parser.add_argument('--seg_only',type=bool,default=False,help='use segmentation channel')
     parser.add_argument('--save_variables',type=int,default=20,help="save after every x epochs")
-    parser.add_argument('--mean_seg',type=str,default='data/mean_imgv2_data_seg_Run24.npy',help='mean segmentation image') # data/depth_data/data/mean_seg.npy
+    parser.add_argument('--mean_seg',type=str,default='data/depth_data/data/mean_seg.npy',help='mean segmentation image') # data/depth_data/data/mean_seg.npy #data/mean_imgv2_data_seg_Run24.npy
     parser.add_argument('--segload', help='segment model to load')
     parser.add_argument('--retrain_off_seg',type=bool,default=False,help='retrain segmentation off')
     parser.add_argument('--relative_pose', type=bool, default=False,help='relative pose of points')
@@ -456,6 +472,7 @@ def main():
     parser.add_argument('--spherical', type=bool, default=False,help='Use spherical coordinates')
     parser.add_argument('--pred_dt',type=float, default=1.0, help="Space between predicted points")
     parser.add_argument('--image_dt',type=float,default=1.0, help="Space between images provided to network")
+    parser.add_argument('--states',type=int,default=0,help="states to use with network")
 
     args = parser.parse_args()
 
@@ -479,13 +496,18 @@ def main():
 
     if args.real == 0:
         from customDatasetsOrientation import OrangeSimDataSet, SubSet
-        args.real = False
+        #args.real = False
+    elif args.real == 1:
+        from customDatasetv1 import OrangeSimDataSet, SubSet
     else:
         from customRealDatasetsOrientation import OrangeSimDataSet, SubSet
-        args.real = True
+        #args.real = True
 
     if args.test_arch == 100:
-        from orangenetarch import OrangeNet8, OrangeNet18
+        if args.states == 0:
+            from orangenetarch import OrangeNet8, OrangeNet18
+        else:
+            from orangenetarchstates import OrangeNet8, OrangeNet18           
     else:
         import importlib
         i = importlib.import_module('architecture.orangenetarch' + str(args.test_arch))
@@ -508,9 +530,12 @@ def main():
           args.min = [(0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2), (0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2), (0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2)]
           args.max = [(0.7, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2), (0.7, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2), (0.7, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2)]
       else:
-          if not args.real:
+          if args.real == 0:
               args.min = [(-0.1, -0.5, -0.25, -0.5, -0.1, -0.1), (-0.1, -0.5, -0.25, -0.5, -0.1, -0.1), (-0.1, -0.5, -0.25, -0.5, -0.1, -0.1)]
               args.max = [(1.0, 0.5, 0.25, 0.5, 0.1, 0.1), (1.0, 0.5, 0.25, 0.5, 0.1, 0.1), (1.0, 0.5, 0.25, 0.5, 0.1, 0.1)]
+          elif args.real == 1:
+              args.min = [(-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1)]
+              args.max = [(0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1), (0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1), (0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1)]
           else:
               #args.min = [(0.,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.,-1.,-0.15,-np.pi,-np.pi/2,-np.pi),(0.,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.,-2.,-0.3,-np.pi,-np.pi/2,-np.pi),(0.,-3.,-0.5,-np.pi,-np.pi/2,-np.pi)]
               args.min = [(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi)]
@@ -522,9 +547,12 @@ def main():
           args.min = [(0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2), (0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2), (0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2)]
           args.max = [(0.7, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2), (1.2, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2), (1.7, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2)]
       else:
-          if not args.real:
+          if args.real == 0:
               args.min = [(-0.1, -0.5, -0.25, -0.5, -0.1, -0.1), (-0.1, -1.0, -0.4, -np.pi/4, -0.1, -0.1), (-0.1, -1.25, -0.6, -np.pi/2, -0.1, -0.1)]
               args.max = [(1.0, 0.5, 0.25, 0.5, 0.1, 0.1), (1.75, 1.0, 0.4, np.pi/4, 0.1, 0.1), (2.5, 1.25, 0.6, np.pi/2, 0.1, 0.1)]
+          elif args.real == 1:
+              args.min = [(-0.1, -0.4, -0.1, -np.pi/2, -0.1, -0.1), (-0.2, -0.8, -.15, -np.pi/2, -0.1, -0.1), (-0.3, -1.2, -0.25, -np.pi/2, -0.1, -0.1)]
+              args.max = [(0.5, 0.5, 0.2, np.pi/2, 0.1, 0.1), (1.0, 0.8, 0.4, np.pi/2, 0.1, 0.1), (1.5, 1.2, 0.55, np.pi/2, 0.1, 0.1)]
           else:
               args.min = [(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.75,-0.75,-0.5,-np.pi,-np.pi,-np.pi),(-1.0,-1.0,-0.75,-np.pi,-np.pi,-np.pi)]
               args.max = [(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.5,1.0,0.5,np.pi,np.pi,np.pi),(2.0,1.0,0.75,np.pi,np.pi,np.pi)]
@@ -569,7 +597,10 @@ def main():
     seg_mean_image = torch.tensor(np.load(args.mean_seg))
 
     #TOCHECK
-    dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, custom_dataset=args.custom, input=args.input_size, depth=args.depth, seg=args.seg, temp_seg=args.temp_seg, seg_only=args.seg_only, rel_pose=args.relative_pose, pred_dt = args.pred_dt, dt=args.image_dt)
+    if args.real == 1:
+        dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, depth=args.depth, rel_pose=args.relative_pose, pred_dt = args.pred_dt, img_dt=args.image_dt)
+    else:
+        dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, custom_dataset=args.custom, input=args.input_size, depth=args.depth, seg=args.seg, temp_seg=args.temp_seg, seg_only=args.seg_only, rel_pose=args.relative_pose, pred_dt = args.pred_dt, dt=args.image_dt)
 
     #Break up into validation and training
     #val_perc = 0.07
@@ -590,29 +621,29 @@ def main():
 
     else:
         print("Traj")
-        val_order = np.ceil(len(dataclass.num_samples_dir_size)*val_perc).astype(int)
+        val_order = np.ceil(len(dataclass.num_samples_dir)*val_perc).astype(int)
         val_indices = []
         train_indices = []
         val_data = {}
-        val_data["order"] = np.array(random.sample(list(dataclass.num_samples_dir_size.keys()), k=val_order))
+        val_data["order"] = np.array(random.sample(list(dataclass.num_samples_dir.keys()), k=val_order))
         #print(val_data["order"])
 
         for x in val_data["order"]:
             val_indices.extend(list(range(dataclass.num_samples_dir[x]['start'], dataclass.num_samples_dir[x]['end'])))
             val_data[x] = dataclass.num_samples_dir[x]
 
-        for i, x in enumerate(list(dataclass.num_samples_dir_size.keys())):
+        for i, x in enumerate(list(dataclass.num_samples_dir.keys())):
             if x not in val_data["order"]:
                 train_indices.extend(list(range(dataclass.num_samples_dir[x]['start'], dataclass.num_samples_dir[x]['end'])))
 
         val_idx = len(val_indices)
-        train_idx = dataclass.num_samples - val_idx
+        train_idx = len(dataclass) - val_idx
 
         random.shuffle(train_indices)
 
         val_idx = np.array(val_indices)
         train_idx = np.array(train_indices)
-
+        
         #fopen = open('val_data_xyz.pickle', 'wb')
         #pickle.dump(val_data, fopen, pickle.HIGHEST_PROTOCOL)
 
@@ -645,6 +676,11 @@ def main():
     base_n_channels = 3
     n_channels = base_n_channels
 
+    if args.depth == 0:
+        args.depth = False
+    else:
+        args.depth = True
+
     if args.depth:
         n_channels += 1
     if args.seg or args.seg_only or args.temp_seg:
@@ -653,14 +689,23 @@ def main():
         else:
             n_channels += 1
 
+    state_count = 0
+
     if not args.resnet18:
-        model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,retrain_off=args.freeze,input=args.input_size, num_channels = n_channels, real=args.real)
+        if args.states == 0:
+            model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,retrain_off=args.freeze,input=args.input_size, num_channels = n_channels, real=args.real)
+        else:
+            if args.states == 1:
+                state_count += 7 + 2
+            elif args.states == 2:
+                state_count += 7 + 6 + 2
+            model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,retrain_off=args.freeze,input=args.input_size, num_channels = n_channels, real=args.real, state_count = state_count)
     else:
         model = OrangeNet18(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,input=args.input_size, num_channels = n_channels)
 
     if args.load:
         if os.path.isfile(args.load):
-            checkpoint = torch.load(args.load)
+            checkpoint = torch.load(args.load, map_location=torch.device('cuda:'+args.gpu))
             model.load_state_dict(checkpoint)
             print("Loaded Checkpoint: ",args.load)
         else:
@@ -668,7 +713,7 @@ def main():
 
     if args.segload:
         if os.path.isfile(args.segload):
-            checkpoint = torch.load(args.segload)
+            checkpoint = torch.load(args.segload, map_location=torch.device('cuda:'+args.gpu))
             segmodel.load_state_dict(checkpoint)
             print("Loaded Checkpoint: ",args.segload)
         else:
@@ -820,17 +865,24 @@ def main():
                         #    im.save(floc + "/output" + str(k + i) + ".png")
 
                         #exit(0)
+                        # print(segimages.shape, seg_mean_image.shape)
                         segimages -= seg_mean_image
                         segimages = torch.reshape(segimages, (segimages.shape[0], 1, segimages.shape[1], segimages.shape[2]))
-                        t_batch_imgs =  torch.cat((batch_imgs[:, img_num*base_n_channels:(img_num+1)*base_n_channels, :, :], segimages), 1)
+                        t_batch_imgs =  torch.cat((batch_imgs[:, img_num*(n_channels-1):(img_num+1)*(n_channels-1), :, :], segimages), 1)
                         if batch_images is None:
                             batch_images = t_batch_imgs
                         else:
                             batch_images = torch.cat((batch_images, t_batch_imgs), 1)
                 else:
                     batch_images = batch_imgs
-                    
-                logits = model(batch_images)
+                
+                if args.states == 0:
+                    logits = model(batch_images)
+                else:
+                    states = get_state_data(args.states, batch)
+                    states = states.to(device)
+                    logits = model(batch_images, states)
+
                 #print(logits.shape)
                 #exit(0)
                 #del batch_imgs
@@ -1043,7 +1095,7 @@ def main():
                         #exit(0)
                         segimages -= seg_mean_image
                         segimages = torch.reshape(segimages, (segimages.shape[0], 1, segimages.shape[1], segimages.shape[2]))
-                        t_batch_imgs =  torch.cat((image_batch[:, img_num*base_n_channels:(img_num+1)*base_n_channels, :, :], segimages), 1)
+                        t_batch_imgs =  torch.cat((image_batch[:, img_num*(n_channels-1):(img_num+1)*(n_channels-1), :, :], segimages), 1)
                         if batch_images is None:
                             batch_images = t_batch_imgs
                         else:
@@ -1054,7 +1106,14 @@ def main():
                 #print(segimages.shape, batch_imgs.shape)
                 model = model.to(device)
                 model.eval()
-                logits = model(batch_images)
+                # logits = model(batch_images)
+                if args.states == 0:
+                    logits = model(batch_images)
+                else:
+                    states = get_state_data(args.states, batch)
+                    states = states.to(device)
+                    logits = model(batch_images, states)
+
                 del image_batch
                 if not args.regression:
                     if not args.yaw_only:
@@ -1078,6 +1137,12 @@ def main():
                         if not args.yaw_only:
                             val_loss[4] += F.cross_entropy(logits_p[:,temp,:],point_batch[:,temp,4])
                             val_loss[5] += F.cross_entropy(logits_r[:,temp,:],point_batch[:,temp,5])
+                        # for v_loss in val_loss:
+                        #     if torch.any(torch.isnan(v_loss)):
+                        #         print(v_loss)
+                        #         print(temp)
+                        #         print(logits_x[0,temp,:])
+                        #         print(point_batch[0,temp,:])
 
                     val_acc_list = acc_metric(args,logits.cpu(),point_batch.cpu(), args.yaw_only,sphere_flag = args.spherical)
     
