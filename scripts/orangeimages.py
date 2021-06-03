@@ -29,7 +29,7 @@ def makeCamAct(x):
         r = R.from_dcm(x[1])
     elif (len(x) is 6):
         cameraPos = x[0:3]
-        r = R.from_euler('zyx',x[3:6])
+        r = R.from_euler('ZYX',x[3:6])
     else:
         print("Unsupported x format")
         return

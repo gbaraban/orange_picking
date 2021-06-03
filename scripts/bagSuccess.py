@@ -48,7 +48,7 @@ def np_from_image(image):
 def checkStop(msg, num_points=3):
     eps = 1e-5
     point = np.array([0, 0, 0, 0, 0, 0])
-    R_quat = R.from_euler('zyx', point[3:6]).as_quat()	
+    R_quat = R.from_euler('ZYX', point[3:6]).as_quat()	
     
     for pt in range(num_points):
         if (np.abs(msg.poses[pt].position.x - point[0]) < eps) and \

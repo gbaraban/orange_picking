@@ -36,7 +36,7 @@ class nodeClass:
                 temp_pose.position.x = goal_point[0]
                 temp_pose.position.y = goal_point[1]
                 temp_pose.position.z = goal_point[2]
-                quat = R.from_euler('zyx',(goal_point[3],goal_point[2],goal_point[1])).as_quat()
+                quat = R.from_euler('ZYX',(goal_point[3],goal_point[2],goal_point[1])).as_quat()
                 temp_pose.orientation.x = quat[0]
                 temp_pose.orientation.y = quat[1]
                 temp_pose.orientation.z = quat[2]

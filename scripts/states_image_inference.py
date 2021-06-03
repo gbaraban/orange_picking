@@ -25,6 +25,8 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from pytransform3d.rotations import *
 
+from orangenetarchstates import *
+
 
 name_to_dtypes = {
 	"rgb8":    (np.uint8,  3),
@@ -124,10 +126,22 @@ class BaselineOrangeFinder:
         self.__bridge = CvBridge()
 
         self.__segmodel = SegmentationNet()
+        if not self.__resnet18:
+            self.__model = OrangeNet8(self.__capacity,self.__num_images,self.__num_pts,self.__bins,self.__mins,self.__maxs,n_outputs=self.__outputs,num_channels=self.__num_channels, state_count=self.__state_count)
+        else:
+            pass
+            print("Not Supported Yet")
+            exit(0)
+
         self.__loadModel()
+        
         torch.no_grad()
 
         self.__loadMeanImages()
+
+        self.__pub = rospy.Publisher("/goal_points",PoseArray,queue_size=50)
+        self.__pub_stop = rospy.Publisher("/stop_node", Bool, queue_size=10)
+        self.__pub_seg = rospy.Publisher('/orange_picking/seg_image', Image,queue_size=50)
 
         self.__pointcloud_publisher = rospy.Publisher("/pointcloud_topic", PointCloud, queue_size=2)
         self.__pointcloud_publisher_extra = rospy.Publisher("/pointcloud_topic_extra", PointCloud, queue_size=2)
@@ -169,14 +183,31 @@ class BaselineOrangeFinder:
                 print("No checkpoint found at: ", self.__segload)
                 exit(0)
 
+        if os.path.isfile(self.__modelload):
+            if not self.__gpu is None:
+                    checkpoint = torch.load(self.__modelload,map_location=torch.device('cuda'))
+            else:
+                    checkpoint = torch.load(self.__modelload)
+            self.__model.load_state_dict(checkpoint)
+            self.__model.eval()
+            print("Loaded Model: ", self.__modelload)
+        else:
+                print("No checkpoint found at: ", self.__modelload)
+                exit(0)
+
+
         if not self.__gpu is None:
             self.__device = torch.device('cuda:'+str(self.__gpu))
-            self.__segmodel = self.__segmodel.to(self.__device)
         else:
             self.__device = torch.device('cpu')
-            self.__segmodel = self.__segmodel.to(self.__device)
+        
+        self.__segmodel = self.__segmodel.to(self.__device)
+        self.__model = self.__model.to(self.__device)
 
         self.__segmodel.eval()
+
+        self.__model.min = self.__mins
+        self.__model.max = self.__maxs
     
     def __loadMeanImages(self):
         if not (os.path.exists(self.__mean_image_loc)):
@@ -185,12 +216,16 @@ class BaselineOrangeFinder:
         else:
             print('mean image file found')
             self.__mean_image = np.load(self.__mean_image_loc)
+
+        self.__seg_mean_image = torch.tensor(np.load(self.__seg_mean)).to('cuda')
+
         
     def __params(self, gpu=True, relative=True):
         self.__num_images = 1
         self.__segload = "/home/matricex/matrice_ws/src/orange_picking/model/model_seg145.pth.tar"
+        self.__modelload = "/home/matricex/matrice_ws/src/orange_picking/model/states_jun3/model29.pth.tar"
         self.__mean_image_loc = "/home/matricex/matrice_ws/src/orange_picking/data/mean_imgv2_data_data_collection4_real_world_traj_bag.npy"
-        
+        self.__seg_mean = "data/depth_data/data/mean_seg.npy"
         if torch.cuda.is_available() and gpu:
             self.__gpu = 0
         else:
@@ -198,6 +233,23 @@ class BaselineOrangeFinder:
 
         self.__h = 480
         self.__w = 640
+
+        self.__capacity = 1.0
+        self.__num_images = 1
+        self.__num_channels = 5
+        self.__num_pts = 3
+        self.__bins = 100
+        self.__outputs = 6
+        self.__state_count = 9
+        self.__resnet18 = False
+        self.__spherical = False
+        self.__regression = False
+        
+        self.__mins = [(-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1)]
+        self.__maxs = [(0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1), (0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1), (0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1)]
+        
+        self.__stop_thresh = 0.0255
+
 
     def __rosmsg2np(self,data):
         try:
@@ -239,7 +291,29 @@ class BaselineOrangeFinder:
         self.__seg_image_publisher.publish(image_message)
         cv2.imwrite('test.png', pub_np)
 
-        return seg_np
+        return seg_np, segimages
+
+    def __process4InfModel(self,image_tensor, segimages, depth_image):
+        depth_tensor = torch.tensor(depth_image)
+        depth_tensor = torch.reshape(depth_tensor, (1, 1, depth_tensor.shape[0], depth_tensor.shape[1]))
+        depth_tensor = depth_tensor.type(torch.FloatTensor).to(self.__device)
+
+        segimages = segimages.type(torch.FloatTensor).to(self.__device)
+        segimages -= self.__seg_mean_image
+        segimages = torch.reshape(segimages, (segimages.shape[0], 1, segimages.shape[1], segimages.shape[2]))
+
+        seg_tensor_image = torch.cat((image_tensor, depth_tensor, segimages), 1)
+
+        return seg_tensor_image
+
+
+    def __predictionInferene(self, seg_tensor_image, states):
+        logits = self.__model(seg_tensor_image, states)
+        logits = logits.cpu()
+        logits = logits.view(1,self.__model.outputs,self.__model.num_points,self.__model.bins).detach().numpy()
+        predict = np.argmax(logits,axis=3)
+
+        return predict
 
     def __depthnpFromImage(self, msg):
         #Stolen from https://github.com/eric-wieser/ros_numpy/blob/master/src/ros_numpy/image.py
@@ -402,6 +476,69 @@ class BaselineOrangeFinder:
         Trans = np.matmul(np.linalg.inv(rot.as_dcm()), (self.world2orange_pos - np.array(trans)))
         return Rot, Trans
 
+    def _publsihWaypoints(self, predict):
+        goal = []
+        msg = PoseArray()
+        for pt in range(self.__model.num_points):
+            point = []
+            for coord in range(self.__model.outputs):
+                if not self.__regression:
+                    bin_size = (self.__model.max[pt][coord] - self.__model.min[pt][coord])/float(self.__model.bins)
+                    point.append(self.__model.min[pt][coord] + bin_size*predict[0,coord,pt])
+                else:
+                    point.append(logits[0,pt, coord])
+            if self.__spherical:
+                pointList = [np.array(point)]
+                pl = sphericalToXYZ().__call__(pointList)
+                print("Before: ", pl.shape)
+                point = pl.flatten()
+                print("After: ", point.shape)
+
+            point = np.array(point)
+            #print(point)
+            goal.append(point)
+            pt_pose = Pose()
+            pt_pose.position.x = point[0]
+            pt_pose.position.y = point[1]
+            pt_pose.position.z = point[2]
+            R_quat = R.from_euler('ZYX', point[3:6]).as_quat()
+            pt_pose.orientation.x = R_quat[0]
+            pt_pose.orientation.y = R_quat[1]
+            pt_pose.orientation.z = R_quat[2]
+            pt_pose.orientation.w = R_quat[3]
+            msg.poses.append(pt_pose)
+        #exit()
+        self.__pub.publish(msg)
+
+    def _publsihConstantWaypoints(self, point=[0., 0., 0., 0., 0., 0.], print_msg="STOP STOP STOP"):
+        msg = PoseArray()
+        point = np.array(point)
+        
+        for pt in range(self.__model.num_points):
+			#print(point)
+			#goal.append(point)
+			pt_pose = Pose()
+			pt_pose.position.x = point[0]
+			pt_pose.position.y = point[1]
+			pt_pose.position.z = point[2]
+
+			R_quat = R.from_euler('ZYX', point[3:6]).as_quat()
+			pt_pose.orientation.x = R_quat[0]
+			pt_pose.orientation.y = R_quat[1]
+			pt_pose.orientation.z = R_quat[2]
+			pt_pose.orientation.w = R_quat[3]
+			msg.poses.append(pt_pose)
+
+		#msg_stop.data = True
+        self.__pub.publish(msg)
+		#pub_stop.publish(msg_stop)
+        print(print_msg)
+
+    def _publishStopMsg(self):
+        msg_stop = Bool()
+        msg_stop.data = True
+        self.__pub_stop.publish(msg_stop)
+
     def _publishGoalPoints(self, x, y, z, trans=None, rot=None, orientation=None, odom_data=None, num_points=1):
         
         if trans is None or rot is None:
@@ -511,7 +648,7 @@ class BaselineOrangeFinder:
         print(pts.shape)
         all_points = open3d.utility.Vector3dVector(pts)
         pc = geometry.PointCloud(all_points)
-        plane, success_pts = pc.segment_plane(0.05, int(pts.shape[0]*0.7), 1000)
+        plane, success_pts = pc.segment_plane(0.05, int(pts.shape[0]*0.7), 500)
         plane = np.array(plane)
 
         # print("Plane:", pts.shape, len(success_pts))
@@ -598,7 +735,7 @@ class BaselineOrangeFinder:
                 pass
                 #self._publishGoalPoints(x, y, z, orientation=orientation, odom_data=None)
 
-            return np.array([np.mean(x), np.mean(y), np.mean(z)])
+            return np.array([np.mean(x), np.mean(y), np.mean(z)]), orientation
         else:
             print("Failed in Publish Data check")
     
@@ -623,7 +760,7 @@ class BaselineOrangeFinder:
 
         image_tensor = self.__process4model(image)  
 
-        seg_np = self.__segmentationInference(image_tensor)
+        seg_np, segimages = self.__segmentationInference(image_tensor)
 
         
         #centroid = self.__getCentroid(seg_np)
@@ -669,14 +806,20 @@ class BaselineOrangeFinder:
         if trans is None or rot is None:
             return
 
+        mean_pt = np.array([0., 0., 0.])
+        orientation = np.array([0., 0., 0., 0.])
+
+
         # print(area.shape)
         if area.shape[0] > 30:
             # print("In orange: ")
-            mean_pt = self.publishData(depth_image, camera_intrinsics, area, self.__pointcloud_publisher, Trans=trans, Rot=rot, tracker=False)
+            mean_pt, _ = self.publishData(depth_image, camera_intrinsics, area, self.__pointcloud_publisher, Trans=trans, Rot=rot, tracker=False)
             if mean_pt is None:
                 return
             # print("In extra orange ")
-            self.publishData(depth_image, camera_intrinsics, extra_area, self.__pointcloud_publisher_extra, Trans=trans, Rot=rot, mean_pt=mean_pt, norm_tracker=True, tracker=True)
+            mean_pt, orientation = self.publishData(depth_image, camera_intrinsics, extra_area, self.__pointcloud_publisher_extra, Trans=trans, Rot=rot, mean_pt=mean_pt, norm_tracker=True, tracker=True)
+
+            # orientation = R.from_euler("ZYX", orientation).as_quat()
             # print(area.shape)
             # x, y, z = self.__convert_depth_frame_to_pointcloud(depth_image, camera_intrinsics, area)
             # #print(x.shape, y.shape, z.shape)
@@ -688,9 +831,32 @@ class BaselineOrangeFinder:
             # self.__publishPointCloud(x, y, z, step=20)
             # #self.__find_plane(x, y, z)
             # self._publishGoalPoints(x, y, z, odom_data=None)
-            print(time.time()-t1)
+            print("Plane fit time", time.time()-t1)
         else:
             print("Left pre-area check", area.shape, pre_area.shape)
+
+        
+        if np.sum(seg_np) >= (self.__stop_thresh * self.__w * self.__h):
+            self._publsihConstantWaypoints()
+            self._publishStopMsg()
+            return
+
+        elif np.sum(seg_np) < 0.0001:
+            spin = np.pi/18
+            self._publsihConstantWaypoints([0., 0., 0., spin, 0., 0.], "SPIN SPIN SPIN")
+            return
+
+        rp = R.from_quat(rot).as_euler("ZYX")[1:]
+        states = torch.tensor(np.concatenate((mean_pt, orientation, rp))).to(self.__device)
+        states = torch.reshape(states, (1, states.shape[0]))
+        states = states.type(torch.FloatTensor).to(self.__device)
+
+
+        seg_tensor_image = self.__process4InfModel(image_tensor, segimages, depth_image)
+        prediction = self.__predictionInferene(seg_tensor_image, states)
+        self._publsihWaypoints(prediction)
+        print("Total time", time.time()-t1)
+
 
 def main():
     rospy.init_node('baseline_inference')

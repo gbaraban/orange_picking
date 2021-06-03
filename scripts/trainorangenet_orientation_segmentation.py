@@ -116,7 +116,7 @@ def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass,args):
                 p = np.array(p)
                 p = list(np.matmul(R0.T,p-p0))
                 Ri = np.matmul(R0.T,Ri)
-                Ri_zyx = list(R.from_dcm(Ri).as_euler('zyx'))
+                Ri_zyx = list(R.from_dcm(Ri).as_euler('ZYX'))
                 p.extend(Ri_zyx)
                 points.append(p)
         elif dataclass.custom_dataset == "Run18":
@@ -154,7 +154,7 @@ def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass,args):
                 Ri = np.array(traj_data[trial_idx][ii][1])
                 p = list(np.matmul(R0.T,p-p0))
                 Ri = np.matmul(R0.T,Ri)
-                Ri_zyx = list(R.from_dcm(Ri).as_euler('zyx'))
+                Ri_zyx = list(R.from_dcm(Ri).as_euler('ZYX'))
                 p.extend(Ri_zyx)
                 points.append(p)
 
@@ -184,7 +184,7 @@ def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass,args):
         elif dataclass.custom_dataset == "no_parse":
             point = np.array(dataclass.traj_list[trial_idx][idx])
             p0 = np.array(point[0:3])
-            R0 = R.from_euler('zyx', point[3:6]).as_dcm()
+            R0 = R.from_euler('ZYX', point[3:6]).as_dcm()
             points = []
             h = (float(dataclass.nEvents[trial_idx])/dataclass.time_secs[trial_idx])
             indices = np.floor(np.add(np.array([1, 2, 3]) * h, idx)).astype(int)
@@ -205,7 +205,7 @@ def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass,args):
                 #print(ii, dataclass.num_list[trial_idx])
                 pt = np.array(dataclass.traj_list[trial_idx][ii])
                 p = np.array(pt[0:3])
-                Ri = R.from_euler('zyx', pt[3:6]).as_dcm()
+                Ri = R.from_euler('ZYX', pt[3:6]).as_dcm()
                 point_list.append(p)
                 rot_list.append(Ri)
 
@@ -228,7 +228,7 @@ def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass,args):
                 #print(p)
                 p = list(np.matmul(R0.T,p-p0))
                 Ri = np.matmul(R0.T,Ri)
-                Ri_zyx = list(R.from_dcm(Ri).as_euler('zyx'))
+                Ri_zyx = list(R.from_dcm(Ri).as_euler('ZYX'))
 
                 p.extend(Ri_zyx)
                 points.append(p)
@@ -293,10 +293,10 @@ def skew2axis(mat):
 	return [-mat[1,2], mat[0,2], -mat[0,1]]
 
 def angle_dist(true_angle, pred_angle):
-	Rot0 = R.from_euler('zyx', [true_angle[0], true_angle[1], true_angle[2]]) #[np.pi/3, np.pi/6, np.pi/4])
+	Rot0 = R.from_euler('ZYX', [true_angle[0], true_angle[1], true_angle[2]]) #[np.pi/3, np.pi/6, np.pi/4])
 	R0 = Rot0.as_dcm()
 
-	Rot1 = R.from_euler('zyx', [pred_angle[0], pred_angle[1], pred_angle[2]]) #[np.pi/3 + 1, np.pi/6, np.pi/4])
+	Rot1 = R.from_euler('ZYX', [pred_angle[0], pred_angle[1], pred_angle[2]]) #[np.pi/3 + 1, np.pi/6, np.pi/4])
 	R1 = Rot1.as_dcm()
 
 	R2 = np.matmul(R0.T,R1)

@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchvision
-from torchvision import datasets, models, transforms
+# import torchvision
+# from torchvision import datasets, models, transforms
 import numpy as np
 
 class Block8(torch.nn.Module):

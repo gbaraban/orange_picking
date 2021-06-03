@@ -32,11 +32,11 @@ def parse_state(state,targ = None):
     if (len(state) is 2) or (len(state) is 4):
         pos = np.array(state[0])
         rot = R.from_dcm(np.array(state[1]))
-        ypr = rot.as_euler(seq = 'zyx', degrees = True)
+        ypr = rot.as_euler(seq = 'ZYX', degrees = True)
     elif (len(state) is 6):
         pos = np.array(state[0:3])
         ypr = np.array(state[3:6])
-        rot = R.from_euler('zyx',ypr)
+        rot = R.from_euler('ZYX',ypr)
     else:
         print("Unknown state used.  len(state) is ", len(state))
     if targ is not None:
@@ -75,7 +75,7 @@ def make_step_plot(goals,states,saveFolder=None,name=None):
     for state in states:
         if len(state) is 6:
             p = state[0:3]
-            rot_mat = R.from_euler('zyx',state[3:6]).as_matrix()
+            rot_mat = R.from_euler('ZYX',state[3:6]).as_matrix()
         elif len(state) is 2:
             p = state[0]
             rot_mat = np.array(state[1])
@@ -104,7 +104,7 @@ def extractStates(statefile,tree=None,rot_flag = False):
     else:
       r_xyz = np.vstack((r_xyz,xyz))
     if rot_flag:
-      rot = R.from_euler('zyx',(yaw,pitch,roll))
+      rot = R.from_euler('ZYX',(yaw,pitch,roll))
       rot_list.append(rot)
   if rot_flag:
     return(r_xyz,rot_list)
@@ -192,7 +192,7 @@ def make_full_plots(ts,states, targ=None, cyl_o=None, cyl_r=0.6, cyl_h=1.6, save
   #        rot_mat = np.array(state[1])
   #    elif len(state) is 6:
   #        p = state[0:3]
-  #        rot_mat = R.from_euler('zyx',state[3:6]).as_matrix()
+  #        rot_mat = R.from_euler('ZYX',state[3:6]).as_matrix()
   #    colors = ['red','blue','green']
   #    for ii in [0,1,2]:
   #      alpha = 0.5
@@ -204,7 +204,7 @@ def make_full_plots(ts,states, targ=None, cyl_o=None, cyl_r=0.6, cyl_h=1.6, save
   ax.set_ylim(mid[1]-max_range/2.0,mid[1]+max_range/2.0)
   ax.set_zlim(max(0,mid[2]-max_range/2.0),mid[2]+max_range/2.0)
   if truth is not None:
-      #R0 = R.from_euler('zyx',(yaw_list[0],pitch_list[0],roll_list[0]))
+      #R0 = R.from_euler('ZYX',(yaw_list[0],pitch_list[0],roll_list[0]))
       #p0 = np.array((x_list[0],y_list[0],z_list[0]))
       for point in truth:
           #point_transformed = R0.apply(point[0]) + p0

@@ -158,8 +158,8 @@ def getNextPts(pts_odom, pt_num, events_per_sec, ax):
 		Ri = Roti.as_dcm()
 		R_relative = np.matmul(np.array(R0).T, np.array(Ri))
 		ri = R.from_dcm(R_relative)
-		r_zyx = ri.as_euler('zyx')
-		r_po_zyx = Roti.as_euler('zyx')
+		r_zyx = ri.as_euler('ZYX')
+		r_po_zyx = Roti.as_euler('ZYX')
 		rot_list.append([r_zyx[0], r_zyx[1], r_zyx[2]])
 		rot_list_po.append([r_po_zyx[0], r_po_zyx[1], r_po_zyx[2]])
 		#print(rot_list[x])
@@ -176,7 +176,7 @@ def getNextPts(pts_odom, pt_num, events_per_sec, ax):
 	#print(point_list)
 	point_list = np.concatenate((point_list, rot_list), axis=1)
 	#print(point_list)
-	rot0 = Rot0.as_euler('zyx')
+	rot0 = Rot0.as_euler('ZYX')
 	pos_only_p0 = list(p0)
 	p0 = list(p0)
 	p0.extend([rot0[0], rot0[1], rot0[2]])
@@ -368,7 +368,7 @@ def main():
 
 				pt = np.zeros((6))
 				pt[0:3] = p
-				pt[3:6] = RotR.as_euler('zyx')
+				pt[3:6] = RotR.as_euler('ZYX')
 				data_list.append(pt)
 				#Img.fromarray(img_data[i]).save(save_folder + "/image" + str(pt_n) + ".png")
 				pt_n += 1

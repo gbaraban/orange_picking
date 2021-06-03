@@ -177,8 +177,8 @@ def addDrop(R):
 #        Ri = Roti.as_dcm()
 #        R_relative = np.matmul(np.array(R0).T, np.array(Ri))
 #        ri = R.from_dcm(R_relative)
-#        r_zyx = ri.as_euler('zyx')
-#        r_po_zyx = Roti.as_euler('zyx')
+#        r_zyx = ri.as_euler('ZYX')
+#        r_po_zyx = Roti.as_euler('ZYX')
 #        rot_list.append([r_zyx[0], r_zyx[1], r_zyx[2]])
 #        rot_list_po.append([r_po_zyx[0], r_po_zyx[1], r_po_zyx[2]])
 #        #print(rot_list[x])
@@ -195,7 +195,7 @@ def addDrop(R):
 #    #print(point_list)
 #    point_list = np.concatenate((point_list, rot_list), axis=1)
 #    #print(point_list)
-#    rot0 = Rot0.as_euler('zyx')
+#    rot0 = Rot0.as_euler('ZYX')
 #    pos_only_p0 = list(p0)
 #    p0 = list(p0)
 #    p0.extend([rot0[0], rot0[1], rot0[2]])
@@ -257,7 +257,7 @@ def parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info):
                 p = np.array(p)
                 pt = np.zeros((6))
                 pt[0:3] = p
-                pt[3:6] = RotR.as_euler('zyx')
+                pt[3:6] = RotR.as_euler('ZYX')
                 fr_odom[ii] = pt
         for ii in range(fr_len):
             orange_loc = None
@@ -269,7 +269,7 @@ def parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info):
             
             if fr_odom[point_idx] is not None: #TODO Ask gabe to check
                 p0 = fr_odom[point_idx][0:3]
-                R0 = R.from_euler('zyx', fr_odom[point_idx][3:6]).as_quat()
+                R0 = R.from_euler('ZYX', fr_odom[point_idx][3:6]).as_quat()
                 orange_loc = bof.process_loc(fr_info[1][ii], fr_info[3][ii], p0, R0)
 
             orange_pose.append(orange_loc)
@@ -313,7 +313,7 @@ def parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info):
             p = np.array(p)
             pt = np.zeros((6))
             pt[0:3] = p
-            pt[3:6] = RotR.as_euler('zyx')
+            pt[3:6] = RotR.as_euler('ZYX')
             stage_odom[ii] = pt
     for ii in range(stage_len):
         orange_loc = None
@@ -326,7 +326,7 @@ def parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info):
                     
         if stage_odom[point_idx] is not None: #TODO Ask gabe to check
             p0 = stage_odom[point_idx][0:3]
-            R0 = R.from_euler('zyx', stage_odom[point_idx][3:6]).as_quat()
+            R0 = R.from_euler('ZYX', stage_odom[point_idx][3:6]).as_quat()
             orange_loc = bof.process_loc(stage_info[1][ii], stage_info[3][ii], p0, R0)
 
         orange_pose.append(orange_loc)
@@ -364,7 +364,7 @@ def parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info):
                 p = np.array(p)
                 pt = np.zeros((6))
                 pt[0:3] = p
-                pt[3:6] = RotR.as_euler('zyx')
+                pt[3:6] = RotR.as_euler('ZYX')
                 reset_odom[ii] = pt
         for ii in range(reset_len):
             Img.fromarray(reset_info[0][rr][1][ii]).save(reset_folder + "/image" + str(ii) + ".png")

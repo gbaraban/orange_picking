@@ -25,24 +25,24 @@ else:
 	gpu = None
 
 #load = "/home/gabe/ws/ros_ws/src/orange_picking/test_run/real_world_data_aug_more_data/modelLast.pth.tar"
-load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model79.pth.tar"
-load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/10_19_seg/modelLast.pth.tar" #seg retrain
-load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/10_19_seg_off/modelLast.pth.tar" #seg retrain off
-load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_fixed_aug/model14.pth.tar"
-load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_fixed_aug_retrain_off/model14.pth.tar"
-load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_100_bin/model10.pth.tar"
-load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/cd4/model20.pth.tar"
+# load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model79.pth.tar"
+# load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/10_19_seg/modelLast.pth.tar" #seg retrain
+# load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/10_19_seg_off/modelLast.pth.tar" #seg retrain off
+# load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_fixed_aug/model14.pth.tar"
+# load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_fixed_aug_retrain_off/model14.pth.tar"
+# load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/real_world_100_bin/model10.pth.tar"
+# load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/cd4/model20.pth.tar"
 #load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/cd4_dilated/model23.pth.tar"
-load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/cd4_dilated_rel/model32.pth.tar"
+# load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/cd4_dilated_rel/model32.pth.tar"
 #load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/cd4_dilated_spherical/model17.pth.tar"
 #load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/cd4_rel/model5.pth.tar"
-load = "/home/siddharth/Desktop/orange_picking/model/may31_2021_traj/model4.pth.tar"
-load = "/home/siddharth/Desktop/orange_picking/model/may31_2021_no_traj/model29.pth.tar"
+# load = "/home/siddharth/Desktop/orange_picking/model/may31_2021_traj/model4.pth.tar"
+load = "/home/matricex/matrice_ws/src/orange_picking/model/jun3_handParsed/model4.pth.tar"
 
 
-segload = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model_seg99.pth.tar"
-segload = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/jan_2021_seg_layer/model_seg5.pth.tar"
-segload = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model_seg145.pth.tar"
+# segload = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model_seg99.pth.tar"
+# segload = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/jan_2021_seg_layer/model_seg5.pth.tar"
+segload = "/home/matricex/matrice_ws/src/orange_picking/model/model_seg145.pth.tar"
 
 #mins = [(0.0,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.0,-1,-0.15,-np.pi,-np.pi/2,-np.pi),(0.0,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.0,-2.0,-0.3,-np.pi,-np.pi/2,-np.pi),(0.0,-3.0,-0.5,-np.pi,-np.pi/2,-np.pi)]
 #maxs = [(1.0,0.5,0.1,np.pi,np.pi/2,np.pi),(2.0,1.0,0.15,np.pi,np.pi/2,np.pi),(4.0,1.5,0.2,np.pi,np.pi/2,np.pi),(6.0,2.0,0.3,np.pi,np.pi/2,np.pi),(7.0,0.3,0.5,np.pi,np.pi/2,np.pi)]
@@ -120,9 +120,9 @@ w = 640
 
 stop_thresh = 0.0255
 k = 0
-mean_image = "/home/gabe/ws/ros_ws/src/orange_picking/test_run/mean_imgv2_data_real_world_traj_bag.npy"
-mean_image = "/home/siddharth/Desktop/asco/ws/src/orange_picking/data/mean_imgv2_data_depth_data_data_real_world_traj_bag.npy" #"mean_imgv2_data_real_world_traj_bag480.npy"
-mean_image = "/home/siddharth/Desktop/orange_picking/data/mean_imgv2_data_data_collection4_real_world_traj_bag.npy"
+# mean_image = "/home/gabe/ws/ros_ws/src/orange_picking/test_run/mean_imgv2_data_real_world_traj_bag.npy"
+# mean_image = "/home/siddharth/Desktop/asco/ws/src/orange_picking/data/mean_imgv2_data_depth_data_data_real_world_traj_bag.npy" #"mean_imgv2_data_real_world_traj_bag480.npy"
+mean_image = "/home/matricex/matrice_ws/src/orange_picking/data/mean_imgv2_data_data_collection4_real_world_traj_bag.npy"
 
 segmodel.eval()
 model.eval()
@@ -191,7 +191,7 @@ def inference_node_callback(data):
 			pt_pose.position.y = point[1]
 			pt_pose.position.z = point[2]
 
-			R_quat = R.from_euler('zyx', point[3:6]).as_quat()
+			R_quat = R.from_euler('ZYX', point[3:6]).as_quat()
 			pt_pose.orientation.x = R_quat[0]
 			pt_pose.orientation.y = R_quat[1]
 			pt_pose.orientation.z = R_quat[2]
@@ -220,7 +220,7 @@ def inference_node_callback(data):
 			pt_pose.position.y = point[1]
 			pt_pose.position.z = point[2]
 
-			R_quat = R.from_euler('zyx', point[3:6]).as_quat()
+			R_quat = R.from_euler('ZYX', point[3:6]).as_quat()
 			pt_pose.orientation.x = R_quat[0]
 			pt_pose.orientation.y = R_quat[1]
 			pt_pose.orientation.z = R_quat[2]
@@ -240,7 +240,7 @@ def inference_node_callback(data):
 
 	seg_tensor_image = torch.cat((image_tensor, segimages), 1)
 	#print(segimages.shape, batch_imgs.shape)
-	logits = model(seg_tensor_image)
+	# logits = model(seg_tensor_image)
 
 	logits = model(seg_tensor_image)
 	logits = logits.cpu()
@@ -272,7 +272,7 @@ def inference_node_callback(data):
 		pt_pose.position.x = point[0]
 		pt_pose.position.y = point[1]
 		pt_pose.position.z = point[2]
-		R_quat = R.from_euler('zyx', point[3:6]).as_quat()
+		R_quat = R.from_euler('ZYX', point[3:6]).as_quat()
 		pt_pose.orientation.x = R_quat[0]
 		pt_pose.orientation.y = R_quat[1]
 		pt_pose.orientation.z = R_quat[2]

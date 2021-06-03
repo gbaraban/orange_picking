@@ -150,7 +150,7 @@ def seg_node_callback(data):
 			pt_pose.position.y = point[1]
 			pt_pose.position.z = point[2]
 
-			R_quat = R.from_euler('zyx', point[3:6]).as_quat()
+			R_quat = R.from_euler('ZYX', point[3:6]).as_quat()
 			pt_pose.orientation.x = R_quat[0]
 			pt_pose.orientation.y = R_quat[1]
 			pt_pose.orientation.z = R_quat[2]

@@ -153,8 +153,8 @@ def createTrajectory(odom, orange_p, orange_R):
     start_p = np.array((odom.transform.translation.x, odom.transform.translation.y, odom.transform.translation.z))
     start_R = R.from_quat([odom.transform.rotation.x, odom.transform.rotation.y,
                         odom.transform.rotation.z, odom.transform.rotation.w])
-    start_yaw = start_R.as_euler('zyx')[0]
-    orange_yaw = orange_R.as_euler('zyx')[0]
+    start_yaw = start_R.as_euler('ZYX')[0]
+    orange_yaw = orange_R.as_euler('ZYX')[0]
     max_v = 0.15
     min_tf = 4.0
     offset_p = np.array([0.95,-0.05,0.15]) 
@@ -170,7 +170,7 @@ def createTrajectory(odom, orange_p, orange_R):
     tf = max(distance/max_v,min_tf)
     target_p = orange_p + orange_R.apply(offset_p)
     target_R = orange_R*R.from_euler('z',offset_yaw)
-    target_yaw = target_R.as_euler('zyx')[0]
+    target_yaw = target_R.as_euler('ZYX')[0]
     error_p = target_p - start_p
     error_yaw = target_yaw - start_yaw
     deg = 9

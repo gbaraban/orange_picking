@@ -44,7 +44,7 @@ import shutil
 #    for state in states:
 #        if len(state) is 6:
 #            p = state[0:3]
-#            rot_mat = R.from_euler('zyx',state[3:6]).as_matrix()
+#            rot_mat = R.from_euler('ZYX',state[3:6]).as_matrix()
 #        elif len(state) is 2:
 #            p = state[0]
 #            rot_mat = np.array(state[1])
@@ -232,12 +232,12 @@ class OrangeSimDataSet(Dataset):
                 dict_i["time_frac"] = float(ii)/no_events
                 point_idx = ii
                 temp_p0 = folder_odom[point_idx][0][0:3]
-                temp_R0 = R.from_quat(folder_odom[point_idx][1][:4]).as_euler("zyx")
+                temp_R0 = R.from_quat(folder_odom[point_idx][1][:4]).as_euler("ZYX")
                 temp_pt = np.concatenate((temp_p0, temp_R0))
                 folder_odom[point_idx] = temp_pt
                 p0 = folder_odom[point_idx][0:3]
                 #R0 = R.from_quat(folder_odom[point_idx][1][:4]).as_dcm()
-                R0 = R.from_euler('zyx', folder_odom[point_idx][3:6]).as_dcm()
+                R0 = R.from_euler('ZYX', folder_odom[point_idx][3:6]).as_dcm()
                 dict_i["rp"] = folder_odom[point_idx][4:6]
                 time_list = [(temp+1)*self.pred_dt for temp in range(self.num_pts)]
                 wp_list = self.coeffToWP(coeff,folder_odom[point_idx][0:4],time_list)
@@ -248,7 +248,7 @@ class OrangeSimDataSet(Dataset):
                     Ri = R.from_euler('z', posyaw[3]).as_dcm()
                     pb = list(np.matmul(R0.T,pi-p0))
                     Rb = np.matmul(R0.T,Ri)
-                    Rb_zyx = list(R.from_dcm(Rb).as_euler('zyx'))
+                    Rb_zyx = list(R.from_dcm(Rb).as_euler('ZYX'))
                     pb.extend(Rb_zyx)
                     point_list.append(pb)
                     if self.relative_pose:
@@ -317,7 +317,7 @@ class OrangeSimDataSet(Dataset):
                 if folder_odom[point_idx] is None: #TODO Ask gabe to check
                     continue
                 p0 = folder_odom[point_idx][0:3]
-                R0 = R.from_euler('zyx', folder_odom[point_idx][3:6]).as_dcm()
+                R0 = R.from_euler('ZYX', folder_odom[point_idx][3:6]).as_dcm()
                 dict_i["rp"] = folder_odom[point_idx][4:6]
                 for point_ctr in range(self.num_pts):
                     temp_idx = point_idx + (point_ctr+1)*point_offset
@@ -330,10 +330,10 @@ class OrangeSimDataSet(Dataset):
                     else:
                         odom = folder_odom[temp_idx]
                     pi = odom[0:3]
-                    Ri = R.from_euler('zyx', odom[3:6]).as_dcm()
+                    Ri = R.from_euler('ZYX', odom[3:6]).as_dcm()
                     pb = list(np.matmul(R0.T,pi-p0))
                     Rb = np.matmul(R0.T,Ri)
-                    Rb_zyx = list(R.from_dcm(Rb).as_euler('zyx'))
+                    Rb_zyx = list(R.from_dcm(Rb).as_euler('ZYX'))
                     pb.extend(Rb_zyx)
                     point_list.append(pb)
                     if self.relative_pose:
@@ -386,10 +386,10 @@ class OrangeSimDataSet(Dataset):
         p_b = odom_b[0:3]
         frac = float(back_idx)/(back_idx +forward_idx)
         p0 = p_a + frac*(p_b - p_a)
-        Rs = R.from_euler('zyx', (odom_a[3:6],odom_b[3:6]))
+        Rs = R.from_euler('ZYX', (odom_a[3:6],odom_b[3:6]))
         sl = Slerp([none_idx-back_idx,none_idx+forward_idx],Rs)
         R_0 = sl([none_idx])
-        return np.hstack((p0,R_0.as_euler('zyx')[0]))
+        return np.hstack((p0,R_0.as_euler('ZYX')[0]))
 
     def logR(self,R):
         arg = (np.trace(R)-1)/float(2)
@@ -411,8 +411,8 @@ class OrangeSimDataSet(Dataset):
         if (odom_list[a] is None) or (odom_list[b] is None):
             return None
         v = (odom_list[b][0:3] - odom_list[a][0:3])*hz
-        R_b = R.from_euler('zyx', odom_list[b][3:6]).as_dcm()
-        R_a = R.from_euler('zyx', odom_list[a][3:6]).as_dcm()
+        R_b = R.from_euler('ZYX', odom_list[b][3:6]).as_dcm()
+        R_a = R.from_euler('ZYX', odom_list[a][3:6]).as_dcm()
         w = (R_b.T).dot(self.logR(R_a.T.dot(R_b)))*hz
         return np.hstack((v,w))
 

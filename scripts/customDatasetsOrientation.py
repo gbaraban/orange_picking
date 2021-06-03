@@ -195,7 +195,7 @@ class OrangeSimDataSet(Dataset):
                 p = np.array(p)
                 p = list(np.matmul(R0.T,p-p0))
                 Ri = np.matmul(R0.T,Ri)
-                Ri_zyx = list(R.from_dcm(Ri).as_euler('zyx'))
+                Ri_zyx = list(R.from_dcm(Ri).as_euler('ZYX'))
                 p.extend(Ri_zyx)
                 points.append(p)
 
@@ -260,7 +260,7 @@ class OrangeSimDataSet(Dataset):
                 Ri = np.array(rot_list[ii])
                 p = list(np.matmul(prev_R.T,p-prev_p))
                 Ri = np.matmul(prev_R.T,Ri)
-                Ri_zyx = list(R.from_dcm(Ri).as_euler('zyx'))
+                Ri_zyx = list(R.from_dcm(Ri).as_euler('ZYX'))
                 p.extend(Ri_zyx)
                 points.append(p)
 

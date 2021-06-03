@@ -120,11 +120,11 @@ class RandomHorizontalTrajFlip(object):
 					E = np.zeros((4,4))
 					E[3,3] = 1
 					E[0:3,3] = np.array(pt[0:3])
-					E[0:3,0:3] = R.from_euler('zyx', pt[3:]).as_dcm()
+					E[0:3,0:3] = R.from_euler('ZYX', pt[3:]).as_dcm()
 					E = np.matmul(self.reflect, E)
 
 					points[i,:3] = list(E[0:3,3])
-					points[i,3:] = R.from_dcm(E[0:3,0:3]).as_euler('zyx')
+					points[i,3:] = R.from_dcm(E[0:3,0:3]).as_euler('ZYX')
 
 				else:
 					E = np.zeros((4))
@@ -142,7 +142,7 @@ class RandomHorizontalTrajFlip(object):
 					E[0:3,0:3] = rot_list[i,:,:]
 					E = np.matmul(self.reflect, E)
 					E = np.matmul(E, self.reflect)
-					R_2 = R.from_euler('zyx', [-np.pi/2, 0, 0])
+					R_2 = R.from_euler('ZYX', [-np.pi/2, 0, 0])
 					R_m2 = R_2.as_dcm()
 					E_m2 = np.zeros((4,4))
 					E_m2[3,3] = 1
@@ -158,7 +158,7 @@ class RandomHorizontalTrajFlip(object):
 					E[3] = 1
 					E = np.matmul(self.reflect, E)
 					E = np.matmul(E, self.reflect)
-					R_2 = R.from_euler('zyx', [-np.pi/2, 0, 0])
+					R_2 = R.from_euler('ZYX', [-np.pi/2, 0, 0])
 					R_m2 = R_2.as_dcm()
 					E_m2 = np.zeros((4,4))
 					E_m2[3,3] = 1

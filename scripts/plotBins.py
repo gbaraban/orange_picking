@@ -152,7 +152,7 @@ if __name__ == "__main__":
       Ri = np.array(rot_list[ii])
       p = list(np.matmul(prev_R.T,p-prev_p))
       Ri = np.matmul(prev_R.T,Ri)
-      Ri_zyx = list(R.from_dcm(Ri).as_euler('zyx'))
+      Ri_zyx = list(R.from_dcm(Ri).as_euler('ZYX'))
       p.extend(Ri_zyx)
       p = np.array(p)
       truth_points.append(p)
@@ -194,12 +194,12 @@ if __name__ == "__main__":
   ax = plt.axes(projection='3d')
   plotOrigin(fig,ax)
   p0 = (0,0,0)
-  R0 = R.from_euler('zyx', (0,0,0))
+  R0 = R.from_euler('ZYX', (0,0,0))
   for pt in range(3):
       plotTruth(ax,p0,R0,truth_points[pt],pt)#Check truth format
       plotProbs(ax,p0,R0,probs[:,pt,:],pt)#Check results format
       p0 = truth_points[pt][0:3]
-      R0 = R.from_euler('zyx',truth_points[pt][3:6])
+      R0 = R.from_euler('ZYX',truth_points[pt][3:6])
   x_lim = ax.get_xlim()
   x_dist = x_lim[1] - x_lim[0]
   y_lim = ax.get_ylim()
