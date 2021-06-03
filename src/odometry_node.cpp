@@ -157,6 +157,7 @@ void odom_update(const geometry_msgs::TransformStamped::ConstPtr& msg) {
   //Send odometry
   nav_msgs::Odometry temp;
   temp.header.stamp = now;
+  temp.header.frame_id = world_name;
   temp.pose.pose.position.x = x0.p[0];
   temp.pose.pose.position.y = x0.p[1];
   temp.pose.pose.position.z = x0.p[2];
