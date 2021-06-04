@@ -48,7 +48,19 @@ def main():
 
     #args.min = [(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.75,-0.75,-0.5,-np.pi,-np.pi,-np.pi),(-1.0,-1.0,-0.75,-np.pi,-np.pi,-np.pi)]
     #args.max = [(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.5,1.0,0.5,np.pi,np.pi,np.pi),(2.0,1.0,0.75,np.pi,np.pi,np.pi)]
-    pt_trans = img_trans = None
+    args.min = [(-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1)]
+    args.max = [(0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1), (0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1), (0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1)]
+
+    pt_trans = []
+    if args.spherical:
+        pt_trans.append(xyzToSpherical())
+    pt_trans.append(pointToBins(args.min,args.max,args.bins))
+    if len(pt_trans) > 0:
+        pt_trans = transforms.Compose(pt_trans)
+    else:
+        pt_trans = None
+
+    img_trans = None
 
     if args.spherical:
         print("Sphere")
