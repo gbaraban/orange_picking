@@ -125,26 +125,44 @@ def main():
                 except:
                     print(x, y, z, yaw, pitch, roll)
 
+    print("X min max:", np.min(x_list), np.max(x_list))
+    print("X mean var:", np.mean(x_list), np.var(x_list), np.median(x_list))
+    print("x 1: ", percentList(x_list,1))
     print("x 10: ", percentList(x_list,10))
     print("x 90: ", percentList(x_list,90))
     print("x 99: ", percentList(x_list,99))
 
+    print("Y min max:", np.min(y_list), np.max(y_list))
+    print("Y mean var:", np.mean(y_list), np.var(y_list), np.median(y_list))
+    print("y 1: ", percentList(y_list,1))
     print("y 10: ", percentList(y_list,10))
     print("y 90: ", percentList(y_list,90))
     print("y 99: ", percentList(y_list,99))
-    
+
+    print("Z min max:", np.min(z_list), np.max(z_list))
+    print("Z mean var:", np.mean(z_list), np.var(z_list), np.median(z_list))
+    print("z 1: ", percentList(z_list,1))
     print("z 10: ", percentList(z_list,10))
     print("z 90: ", percentList(z_list,90))
     print("z 99: ", percentList(z_list,99))
-    
+
+    print("Yaw min max:", np.min(yaw_list), np.max(yaw_list))
+    print("Yaw mean var:", np.mean(yaw_list), np.var(yaw_list), np.median(yaw_list))
+    print("yaw 1: ", percentList(yaw_list,1))
     print("yaw 10: ", percentList(yaw_list,10))
     print("yaw 90: ", percentList(yaw_list,90))
     print("yaw 99: ", percentList(yaw_list,99))
     
+    print("pitch min max:", np.min(pitch_list), np.max(pitch_list))
+    print("pitch mean var:", np.mean(pitch_list), np.var(pitch_list), np.median(pitch_list))
+    print("pitch 1: ", percentList(pitch_list,1))
     print("pitch 10: ", percentList(pitch_list,10))
     print("pitch 90: ", percentList(pitch_list,90))
     print("pitch 99: ", percentList(pitch_list,99))
-    
+
+    print("Roll min max:", np.min(roll_list), np.max(roll_list))
+    print("roll mean var:", np.mean(roll_list), np.var(roll_list), np.median(roll_list))
+    print("roll 1: ", percentList(roll_list,1))
     print("roll 10: ", percentList(roll_list,10))
     print("roll 90: ", percentList(roll_list,90))
     print("roll 99: ", percentList(roll_list,99))
