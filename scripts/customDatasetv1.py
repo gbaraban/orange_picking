@@ -82,12 +82,15 @@ class OrangeSimDataSet(Dataset):
         self.reduce_N = reduce_N
         self.depth = depth
         self.mean_seg = np.load("data/mean_imgv2_data_seg_real_world_traj_bag.npy")
+        self.mean_color_image = np.load("data/orange_tracking_data/mean_imgv2_data_orange_tracking_data_real_world_traj_bag.npy")
+        self.mean_depth_image = np.load("data/mean_depth_imgv2.npy")/10000.0 #10000 is the max of depth
         self.relative_pose = rel_pose
         self.gaussian_pts = gaussian_pts
         self.gaussian_var = [0.012, 0.012, 0.012, 0.04, 0.02, 0.02]
         self.gaussian_limit = [0.025, 0.025, 0.025, 0.08, 0.04, 0.04]
         self.resets = use_resets
         self.coeff_exists = False
+        self.phase_dict = {"staging": 0, "final": 1, "reset": 2}
 
         self.np_dir = root_dir.rstrip("/") + "_np/"
         #if seg or seg_only: #temp_seg
@@ -144,11 +147,8 @@ class OrangeSimDataSet(Dataset):
 
     def __getitem__(self,i):
         dict_i = self.event_list[i]
-        points = dict_i["points"]
-        if self.point_transform:
-            points = self.point_transform(points)
-        else:
-            points = np.array(points)
+        points = np.array(dict_i["points"])
+
         if self.gaussian_pts:
             for pt_num in range(len(points)):
                 for dof in range(len(points[pt_num])):
@@ -168,10 +168,14 @@ class OrangeSimDataSet(Dataset):
                 temp_image = np.load(image_np_loc)
             else:
                 temp_image_PIL = img.open(image_loc)
-                temp_image = np.array(temp_image_PIL) #TODO: verify this works.  don't trust the internet
+                temp_image = np.array(temp_image_PIL).astype(np.float32) #TODO: verify this works.  don't trust the internet
+                temp_image /= 255.0
+                temp_image -= self.mean_color_image
+
             temp_image = np.transpose(temp_image,[2,0,1])
             if self.depth:
-                temp_depth = np.load(depth_loc_list[ii])
+                temp_depth = np.load(depth_loc_list[ii])/10000.0 # 10000 is max output of depth, found using data/find_mean_depth_img.py
+                temp_depth -= self.mean_depth_image
                 temp_depth = np.expand_dims(temp_depth,0)
                 temp_image = np.concatenate((temp_image,temp_depth),axis=0)
             if image is None:
@@ -182,27 +186,65 @@ class OrangeSimDataSet(Dataset):
 
         flipped = False
         # TODO Add augmentation
-        # point_list = [p0]
-        # rot_list = [R0]
+        point_list = []
+        rot_list = []
+        for i in range(self.num_pts):
+            point_list.append(points[i, :3])
+            rot_list.append(R.from_euler("ZYX", points[i, 3:6]).as_dcm())
 
-        # if self.image_transform:
-        #     data = {}
-        #     data["img"] = image
-        #     data["pts"] = points
-        #     data["rots"] = rot_list
-        #     image, points, rot_list, flipped = self.image_transform(data)
+        if self.image_transform:
+             data = {}
+             data["img"] = image
+             data["pts"] = point_list
+             data["rots"] = rot_list
+             image, point_list, rot_list, flipped = self.image_transform(data)
+
+        if flipped:
+            temp_points = []
+            for i in range(self.num_pts):
+                temp = list(point_list[i])
+                temp.extend(R.from_dcm(rot_list[i]).as_euler("ZYX"))
+                temp_points.append(np.array(temp))
+            if max([abs(pt[3]) for pt in temp_points]) > 1.3:
+                #print("Input Points")
+                #print(points)
+                #print("New Points")
+                #print(np.array(temp_points))
+                pass
+            points = np.array(temp_points)
+
+        if self.point_transform:
+            point_dict = {}
+            point_dict['points'] = points
+            point_dict['phase'] = dict_i["phase"]
+            points = self.point_transform(point_dict)
+        else:
+            points = np.array(points).astype(np.float64)
+
         time_frac = dict_i["time_frac"]
         return_dict = {'image':image, 'points':points, "flipped":flipped, "time_frac": time_frac, "rp": rp.astype("float32")}
 
+        if "phase" in dict_i:
+            return_dict["phase"] = dict_i["phase"]
+
         if "bodyV" in dict_i and not self.coeff_exists:
             return_dict["body_v"] = dict_i["bodyV"].astype("float32")
-        
+
         if orange_pose is not None and not self.coeff_exists:
             return_dict["orange_pose"] = orange_pose
-        
+        #print(return_dict)
         return return_dict
 
     def parseSubFolder(self,subfolder):
+        if "final" in subfolder:
+            phase = "final"
+        elif "reset" in subfolder:
+            phase = "reset"
+        elif "staging" in subfolder:
+            phase = "staging"
+        else:
+            phase = None
+            print("phase not found in " + subfolder)
         dict_list = []
         with open(subfolder + "data.pickle_no_parse",'rb') as f:
             folder_data = pickle.load(f, encoding="latin1")
@@ -255,6 +297,8 @@ class OrangeSimDataSet(Dataset):
                         p0 = pi
                         R0 = Ri
                 dict_i["points"] = point_list
+                if phase is not None:
+                    dict_i["phase"] = self.phase_dict[phase]
 #                forward_v = self.getBodyVelocity(folder_odom,point_idx,point_idx+1,point_hz)
 #                backward_v = self.getBodyVelocity(folder_odom,point_idx-1,point_idx,point_hz)
 #                if (forward_v is None) and (backward_v is None):
@@ -273,6 +317,7 @@ class OrangeSimDataSet(Dataset):
             folder_time = folder_data["time_secs"] + (folder_data["time_nsecs"]/1e9)
             folder_odom = folder_data["data"]
 
+            #print(no_events, no_points, folder_time, folder_data)
             folder_orange_pose = None
             if "orange_pose" in folder_data:
                 folder_orange_pose = folder_data["orange_pose"] 
@@ -319,14 +364,20 @@ class OrangeSimDataSet(Dataset):
                 p0 = folder_odom[point_idx][0:3]
                 R0 = R.from_euler('ZYX', folder_odom[point_idx][3:6]).as_dcm()
                 dict_i["rp"] = folder_odom[point_idx][4:6]
+                #print("PIDX:", point_idx)
                 for point_ctr in range(self.num_pts):
                     temp_idx = point_idx + (point_ctr+1)*point_offset
+                    #print(temp_idx)
                     if self.reduce_N and temp_idx > no_points:
                         break_flag = True
                         break
                     temp_idx = min(temp_idx,len(folder_odom)-1)
                     if folder_odom[temp_idx] is None:
+                        #print("interpolate")
                         odom = self.interpolateOdom(folder_odom,temp_idx)
+                        if odom is None:
+                            break_flag = True
+                            break
                     else:
                         odom = folder_odom[temp_idx]
                     pi = odom[0:3]
@@ -339,8 +390,9 @@ class OrangeSimDataSet(Dataset):
                     if self.relative_pose:
                         p0 = pi
                         R0 = Ri
+                #print(point_idx, p0, R0, point_list)
                 if break_flag:
-                    break
+                    continue
     #            if max(point_list[0]) > 1.5:
     #                print(subfolder)
     #                print(point_list)
@@ -355,11 +407,12 @@ class OrangeSimDataSet(Dataset):
     #                make_step_plot(folder_odom[point_idx:point_idx+point_offset])
     #                make_step_plot(point_list)
                 dict_i["points"] = point_list
+                dict_i["phase"] = self.phase_dict[phase]
                 forward_v = self.getBodyVelocity(folder_odom,point_idx,point_idx+1,point_hz)
                 backward_v = self.getBodyVelocity(folder_odom,point_idx-1,point_idx,point_hz)
                 if (forward_v is None) and (backward_v is None):
                     print("Double None found")
-                    break
+                    continue
                 if (forward_v is None):
                     dict_i["bodyV"] = backward_v
                 elif (backward_v is None):
@@ -376,7 +429,7 @@ class OrangeSimDataSet(Dataset):
         if none_idx-back_idx < 0:
             return None
         forward_idx = 0
-        while (folder_odom[none_idx+forward_idx] is None) and (none_idx+forward_idx < len(folder_odom)):
+        while (none_idx+forward_idx < len(folder_odom)) and (folder_odom[none_idx+forward_idx] is None):
             forward_idx += 1
         if none_idx+forward_idx >= len(folder_odom):
             return None

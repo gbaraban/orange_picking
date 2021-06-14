@@ -305,71 +305,107 @@ def angle_dist(true_angle, pred_angle):
 
 	return dist
 
-def acc_metric(args,logits,point_batch,yaw_only, sphere_flag = False):
+def acc_metric(args,logits,point_batch,yaw_only,phase,ranges,sphere_flag = False):
     #TODO: Add diff accuracy for angles
     softmax = nn.Softmax(dim=0)
     shape = logits.size()#.item()
     acc_list = []
+    extra_acc_list = [[] for i in range(args.num_controls-1)]
     logits = logits.detach()
     for pt in range(shape[2]):
         batch_list = []
-        ang_d = 0
+        extra_batch_list = [[] for i in range(args.num_controls-1)]
+        ang_d = []
+        extra_ang_d = [[] for i in range(args.num_controls-1)]
         for ii in range(shape[0]):
             coord_list = []
+            if phase[ii] == 0:
+                bin_min = args.min
+                bin_max = args.max
+                n_bins = args.bins
+            else:
+                bin_min = args.extra_mins[phase[ii]-1]
+                bin_max = args.extra_maxs[phase[ii]-1]
+                n_bins = args.bins
+                                
             if sphere_flag:
                 r_theta_phi = [0.,0.,0.,0.,0.,0.]
                 r_theta_phi_true = [0.,0.,0.,0.,0.,0.]
                 for coord in range(3):
-                    prob = np.array(softmax(logits[ii,coord,pt,:]))#.numpy()
+                    prob = np.array(softmax(logits[ii,coord,pt,ranges[phase[ii]]]))#.numpy()
                     idx = np.argmax(prob)
                     true_idx = np.array(point_batch[ii,pt,coord])
-                    bin_size = (args.max[pt][coord] - args.min[pt][coord])/float(args.bins)
-                    r_theta_phi[coord] = idx*bin_size + args.min[pt][coord]
-                    r_theta_phi_true[coord] = true_idx*bin_size + args.min[pt][coord]
+                    bin_size = (bin_max[pt][coord] - bin_min[pt][coord])/float(n_bins)
+                    r_theta_phi[coord] = idx*bin_size + bin_min[pt][coord]
+                    r_theta_phi_true[coord] = true_idx*bin_size + bin_min[pt][coord]
                 (xyz,xyz_true) = sphericalToXYZ()([r_theta_phi,r_theta_phi_true])
                 d = (xyz - xyz_true)
-                batch_list.append(np.linalg.norm(d))
+                if phase[ii] == 0:
+                    batch_list.append(np.linalg.norm(d))
+                else:
+                    extra_batch_list[phase[ii]-1].append(np.linalg.norm(d))
 
             else:
                 for coord in range(3):
-                    prob = np.array(softmax(logits[ii,coord,pt,:]))#.numpy()
+                    prob = np.array(softmax(logits[ii,coord,pt,ranges[phase[ii]]]))#.numpy()
                     max_pred = np.argmax(prob)
                     #true_pred = np.argmax(point_batch[ii,pt,coord,:])
                     true_pred = np.array(point_batch[ii,pt,coord])
-                    bin_size = (args.max[pt][coord] - args.min[pt][coord])/float(args.bins)
+                    bin_size = (bin_max[pt][coord] - bin_min[pt][coord])/float(n_bins)
                     d = (true_pred - max_pred)*bin_size
                     coord_list.append(d)
                 d = np.vstack([coord_list[0],coord_list[1],coord_list[2]])
-                batch_list.append(np.linalg.norm(d))
+                if phase[ii] == 0:
+                    batch_list.append(np.linalg.norm(d))
+                else:
+                    extra_batch_list[phase[ii]-1].append(np.linalg.norm(d))                    
 
             if not yaw_only:
                 true_angle = []
                 pred_angle = []
                 for coord in range(3,6):
-                    prob = np.array(softmax(logits[ii,coord,pt,:]))#.numpy()
+                    prob = np.array(softmax(logits[ii,coord,pt,ranges[phase[ii]]]))#.numpy()
                     max_pred = np.argmax(prob)
                     #true_pred = np.argmax(point_batch[ii,pt,coord,:])
                     true_pred = np.array(point_batch[ii,pt,coord])
-                    bin_size = (args.max[pt][coord] - args.min[pt][coord])/float(args.bins)
+                    bin_size = (bin_max[pt][coord] - bin_min[pt][coord])/float(n_bins)
                     true_angle.append(true_pred * bin_size)
                     pred_angle.append(max_pred * bin_size)
-
-                ang_d = angle_dist(true_angle, pred_angle)
+                if phase[ii] == 0:
+                    ang_d.append(angle_dist(true_angle, pred_angle))
+                else:
+                    extra_ang_d[phase[ii]-1].append(angle_dist(true_angle, pred_angle))
 
             else:
-                prob = np.array(softmax(logits[ii,3,pt,:]))#.numpy()
+                prob = np.array(softmax(logits[ii,3,pt,ranges[phase[ii]]]))#.numpy()
                 max_pred = np.argmax(prob)
                 #true_pred = np.argmax(point_batch[ii,pt,coord,:])
                 true_pred = np.array(point_batch[ii,pt,3])
-                bin_size = (args.max[pt][coord] - args.min[pt][coord])/float(args.bins)
+                bin_size = (bin_max[pt][coord] - bin_min[pt][coord])/float(n_bins)
                 true_angle = (true_pred * bin_size)
                 pred_angle = (max_pred * bin_size)
 
-                ang_d = norm((true_angle - pred_angle))
+                if phase[ii] == 0:
+                    ang_d.append(norm((true_angle - pred_angle)))
+                else:
+                    extra_ang_d[phase[ii]-1].append(norm((true_angle - pred_angle)))
 
-        batch_mean = np.mean(batch_list)
-        batch_mean = [batch_mean, ang_d]
+        if len(batch_list) != 0:
+            batch_mean = np.mean(batch_list)
+            batch_mean = [batch_mean, np.mean(ang_d)]
+        else:
+            batch_mean = [0., 0.]
         acc_list.append(batch_mean)
+        for i in range(len(extra_batch_list)):
+            if len(extra_batch_list[i]) != 0:
+                temp_batch_mean = np.mean(extra_batch_list[i])
+                temp_batch_mean = [temp_batch_mean, np.mean(extra_ang_d[i])]
+            else:
+                temp_batch_mean = [0., 0.]
+            extra_acc_list[i].append(temp_batch_mean)
+
+    if args.num_controls > 1:
+        return acc_list, extra_acc_list
     return acc_list
 
 def acc_metric_regression(args, logits, point_batch, sphere_flag = False):
@@ -420,6 +456,14 @@ def get_state_data(state_config, data):
         return states_data
     else:
         return None
+
+def phase_accuracy(actual, predicted):
+    softmax = nn.Softmax(dim=1)
+    actual_phases = np.array(actual)
+    predicted_phases = softmax(predicted).to('cpu').detach().numpy()
+    max_pred = np.argmax(predicted_phases, axis=1)
+    accuracy = np.sum((max_pred == actual_phases).astype(np.float64))/actual_phases.shape[0]
+    return accuracy
 
 def main():
     signal.signal(signal.SIGINT,signal_handler)
@@ -473,6 +517,8 @@ def main():
     parser.add_argument('--pred_dt',type=float, default=1.0, help="Space between predicted points")
     parser.add_argument('--image_dt',type=float,default=1.0, help="Space between images provided to network")
     parser.add_argument('--states',type=int,default=0,help="states to use with network")
+    parser.add_argument('--num_controls',type=int,default=1,help="states to use with network")
+
 
     args = parser.parse_args()
 
@@ -504,10 +550,13 @@ def main():
         #args.real = True
 
     if args.test_arch == 100:
-        if args.states == 0:
+        if args.num_controls > 1:
+            from orangenetarchmulticontrol import OrangeNet8, OrangeNet18
+        elif args.states != 0:
+            from orangenetarchstates import OrangeNet8, OrangeNet18
+        elif args.states == 0 and args.num_controls == 1:
             from orangenetarch import OrangeNet8, OrangeNet18
-        else:
-            from orangenetarchstates import OrangeNet8, OrangeNet18           
+
     else:
         import importlib
         i = importlib.import_module('architecture.orangenetarch' + str(args.test_arch))
@@ -534,8 +583,13 @@ def main():
               args.min = [(-0.1, -0.5, -0.25, -0.5, -0.1, -0.1), (-0.1, -0.5, -0.25, -0.5, -0.1, -0.1), (-0.1, -0.5, -0.25, -0.5, -0.1, -0.1)]
               args.max = [(1.0, 0.5, 0.25, 0.5, 0.1, 0.1), (1.0, 0.5, 0.25, 0.5, 0.1, 0.1), (1.0, 0.5, 0.25, 0.5, 0.1, 0.1)]
           elif args.real == 1:
-              args.min = [(-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1)]
-              args.max = [(0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1), (0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1), (0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1)]
+              #args.min = [(-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1)]
+              #args.max = [(0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1), (0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1), (0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1)]
+              #args.min = [(-0.25, -0.25, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.25, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.25, -0.25, -np.pi/2, -0.1, -0.1)]
+              #args.max = [(0.45, 0.45, 0.25, np.pi/2, 0.1, 0.1), (0.45, 0.45, 0.25, np.pi/2, 0.1, 0.1), (0.45, 0.45, 0.25, np.pi/2, 0.1, 0.1)]
+              args.min = [(-0.10, -0.15, -0.10, -0.25, -0.075, -0.075), (-0.10, -0.15, -0.10, -0.25, -0.075, -0.075), (-0.10, -0.15, -0.10, -0.25, -0.075, -0.075)]
+              args.max = [(0.30, 0.15, 0.10, 0.25, 0.075, 0.075), (0.30, 0.15, 0.10, 0.25, 0.075, 0.075), (0.30, 0.15, 0.10, 0.25, 0.075, 0.075)]
+
           else:
               #args.min = [(0.,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.,-1.,-0.15,-np.pi,-np.pi/2,-np.pi),(0.,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.,-2.,-0.3,-np.pi,-np.pi/2,-np.pi),(0.,-3.,-0.5,-np.pi,-np.pi/2,-np.pi)]
               args.min = [(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi)]
@@ -557,13 +611,20 @@ def main():
               args.min = [(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.75,-0.75,-0.5,-np.pi,-np.pi,-np.pi),(-1.0,-1.0,-0.75,-np.pi,-np.pi,-np.pi)]
               args.max = [(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.5,1.0,0.5,np.pi,np.pi,np.pi),(2.0,1.0,0.75,np.pi,np.pi,np.pi)]
 
+    if args.num_controls > 1:
+        args.extra_mins = [[(-0.05, -0.05, -0.075, -0.10, -0.03, -0.03), (-0.05, -0.05, -0.075, -0.10, -0.03, -0.03), (-0.05, -0.05, -0.075, -0.10, -0.03, -0.03)]]
+        args.extra_maxs = [[(0.15, 0.05, 0.075, 0.10, 0.03, 0.03), (0.15, 0.05, 0.075, 0.10, 0.03, 0.03), (0.15, 0.05, 0.075, 0.10, 0.03, 0.03)]]
+    else:
+        args.extra_mins = None
+        args.extra_maxs = None
+
     #args.traj = False
     #Data Transforms
     pt_trans = []
     if not args.regression:
         if args.spherical:
             pt_trans.append(xyzToSpherical())
-        pt_trans.append(pointToBins(args.min,args.max,args.bins))
+        pt_trans.append(pointToBins(args.min,args.max,args.bins,extra_min=args.extra_mins,extra_max=args.extra_maxs))
     if len(pt_trans) > 0:
         pt_trans = transforms.Compose(pt_trans)
     else:
@@ -692,14 +753,17 @@ def main():
     state_count = 0
 
     if not args.resnet18:
-        if args.states == 0:
+        if args.states == 0 and args.num_controls == 1:
             model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,retrain_off=args.freeze,input=args.input_size, num_channels = n_channels, real=args.real)
         else:
             if args.states == 1:
-                state_count += 7 + 2
+                state_count += 6 + 2
             elif args.states == 2:
-                state_count += 7 + 6 + 2
-            model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,retrain_off=args.freeze,input=args.input_size, num_channels = n_channels, real=args.real, state_count = state_count)
+                state_count += 6 + 6 + 2
+            if args.num_controls > 1:
+                model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,retrain_off=args.freeze,input=args.input_size, num_channels = n_channels, real=args.real, state_count = state_count, num_controls=args.num_controls, extra_mins=args.extra_mins, extra_maxs=args.extra_maxs)
+            else:
+                model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,retrain_off=args.freeze,input=args.input_size, num_channels = n_channels, real=args.real, state_count = state_count)
     else:
         model = OrangeNet18(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,input=args.input_size, num_channels = n_channels)
 
@@ -816,16 +880,20 @@ def main():
     #    except:
     #            pass
     #model = model.to('cpu')
+
     seg_mean_image = seg_mean_image.to(device)
-    for epoch in range(args.epochs):
-        if args.temp_seg:
-            segmodel = segmodel.to(device)
-        model = model.to(device)
-        print('Epoch: ', epoch)
+    ranges = np.array([np.arange(i*args.bins, (i+1)*args.bins) for i in range(args.num_controls)])
+    for epoch in range(args.epochs):            
+        
+        print('\n\nEpoch: ', epoch)
         #Train
         #gc.collect()
         epoch_acc = [[[], []], [[], []], [[], []]]
+        extra_epoch_acc = [[[[], []], [[], []], [[], []]]]
         acc_total = [[0., 0.], [0., 0.], [0., 0.]]
+        extra_acc_total = [[[0., 0.], [0., 0.], [0., 0.]] for i in range(args.num_controls-1)]
+        extra_elements = [0. for i in range(args.num_controls-1)]
+        train_phase_accuracy = 0.
         elements = 0.
         loader = train_loader
         if args.use_sampler:
@@ -836,8 +904,9 @@ def main():
                 loader = weight_loader
 
         for ctr, batch in enumerate(loader):
-            #print('Batch: ',ctr)
+            # print('Batch: ',ctr)
             #image_batch = batch['image'].to(device).float()
+            model = model.to(device)
             point_batch = batch['points'] #.to(device)
             optimizer.zero_grad()
             if args.temp_seg:
@@ -847,7 +916,10 @@ def main():
                 batch_imgs = batch['image']
                 batch_imgs = batch_imgs.to(device)
                 #model = model.to(device)
+                classifier_loss = None
+
                 if args.temp_seg:
+                    segmodel = segmodel.to(device)
                     batch_images = None
                     for img_num in range(args.num_images):
                         seglogits = segmodel(batch_imgs[:, img_num*base_n_channels:(img_num+1)*base_n_channels, :, :])
@@ -887,11 +959,28 @@ def main():
                 #exit(0)
                 #del batch_imgs
                 #del batch
+                #classifier = logits[:, 0]
+                #logits = logits[:, :3600]
+                if args.temp_seg:
+                    segmodel = segmodel.to('cpu')
+                b_size = logits.shape[0]
+
+                if args.num_controls > 1:
+                    classifier = logits[:, :model.classifier]
+                    classifier = classifier.reshape(-1, model.classifier).to(device)
+                    logits = logits[:, model.classifier:]
+                    classifier_loss = F.cross_entropy(classifier, batch['phase'].long().to(device))
+                    temp_accuracy = phase_accuracy(batch['phase'], classifier)
+                    train_phase_accuracy = ((elements * train_phase_accuracy) + (b_size * temp_accuracy))/(elements + b_size)
+                    phase = np.array(batch['phase'].to('cpu'))
+                else:
+                    phase = np.zeros(b_size)
+
                 if not args.regression:
                     if not args.yaw_only:
-                        logits = logits.view(-1,6,model.num_points,model.bins)
+                        logits = logits.view(-1,6,model.num_points,model.bins*args.num_controls)
                     else:
-                        logits = logits.view(-1,4,model.num_points,model.bins)
+                        logits = logits.view(-1,4,model.num_points,model.bins*args.num_controls)
 
                     loss_x = [0. for t in range(model.num_points)]
                     loss_y = [0. for t in range(model.num_points)]
@@ -903,20 +992,21 @@ def main():
 
                     loss_yaw = [0. for t in range(model.num_points)]
 
-                    b_size = logits.shape[0]
+                    
                     point_batch = point_batch.to(device)
+                    elements_accessed = np.arange(b_size)
                     for temp in range(model.num_points):
                         #print(logits[:,0,temp,:].shape)
                         #print(((point_batch)[:,temp,0]).shape)
-                        #exit()
-                        loss_x[temp] += F.cross_entropy(logits[:,0,temp,:],(point_batch)[:,temp,0])
-                        loss_y[temp] += F.cross_entropy(logits[:,1,temp,:],(point_batch)[:,temp,1])
-                        loss_z[temp] += F.cross_entropy(logits[:,2,temp,:],(point_batch)[:,temp,2])
-                        loss_yaw[temp] += F.cross_entropy(logits[:,3,temp,:],(point_batch)[:,temp,3])
+                        #exit()        
+                        loss_x[temp] += F.cross_entropy(logits[elements_accessed,0,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,0])
+                        loss_y[temp] += F.cross_entropy(logits[elements_accessed,1,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,1])
+                        loss_z[temp] += F.cross_entropy(logits[elements_accessed,2,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,2])
+                        loss_yaw[temp] += F.cross_entropy(logits[elements_accessed,3,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,3])
 
                         if not args.yaw_only:
-                            loss_p[temp] += F.cross_entropy(logits[:,4,temp,:],(point_batch)[:,temp,4])
-                            loss_r[temp] += F.cross_entropy(logits[:,5,temp,:],(point_batch)[:,temp,5])
+                            loss_p[temp] += F.cross_entropy(logits[elements_accessed,4,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,4])
+                            loss_r[temp] += F.cross_entropy(logits[elements_accessed,5,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,5])
 
                     point_batch = point_batch.to('cpu')
                     logits = logits.to('cpu')
@@ -945,7 +1035,10 @@ def main():
                             error_weights[int(train_loc[int(idx)])] = np.sum(np.array(acc_list)) + eps
                             #print(error_weights[batch['idx'][ii]])
 
-                    acc_list = acc_metric(args,logits,point_batch,args.yaw_only,sphere_flag = args.spherical)
+                    acc_list = acc_metric(args,logits,point_batch,args.yaw_only,phase,ranges,sphere_flag = args.spherical)
+                    if args.num_controls > 1:
+                        acc_list, extra_acc_list = acc_list
+
                     #del point_batch
                     #del logits
 
@@ -974,10 +1067,12 @@ def main():
                             if not args.yaw_only:
                                 batch_loss += loss_p[t]
                                 batch_loss += loss_r[t]
-
+                   
+                    if args.num_controls > 1:
+                        batch_loss += classifier_loss
+ 
                 else:
                     logits = logits.view(-1,model.num_points,6)
-                    b_size = logits.shape[0]
                     logits = logits.to(device).double()
                     point_batch = point_batch.to(device).double()
                     # print((point_batch)[:,0, 0])
@@ -1007,11 +1102,11 @@ def main():
                 l2_reg = l2_reg.to(device)
                 batch_loss += lamda * l2_reg"""
                 batch_loss = batch_loss.to(device)
-                batch_imgs = batch_imgs.to(device)
+                # batch_imgs = batch_imgs.to(device)
                 #print(dir())
                 #print(optimizer)
-                logits = logits.to(device)
-                point_batch = point_batch.to(device)
+                # logits = logits.to(device)
+                # point_batch = point_batch.to(device)
                 model = model.to(device)
                 #optimizer = optimizer.to('cpu')
                 loss_mult = loss_mult.to(device)
@@ -1021,15 +1116,18 @@ def main():
                         loss_y[i] = loss_y[i].to(device)
                         loss_z[i] = loss_z[i].to(device)
                         loss_yaw[i] = loss_yaw[i].to(device)
-                        loss_p[i] = loss_p[i].to(device)
-                        loss_r[i] = loss_r[i].to(device)
+                        if not args.yaw_only:
+                            loss_p[i] = loss_p[i].to(device)
+                            loss_r[i] = loss_r[i].to(device)
 
                 #print(batch_loss.device, l2_reg.device, lamda.device, logits.device, point_batch.device)
                 batch_loss.backward()
                 optimizer.step()
-                #model = model.to('cpu')
+                model = model.to('cpu')
 
                 del batch_imgs, point_batch, logits, batch_images, batch
+                if args.states != 0:
+                    del states
 
                 if not args.regression:
                     writer.add_scalar('train_loss',batch_loss,ctr+epoch*len(train_loader))
@@ -1047,18 +1145,34 @@ def main():
                 #print('Training Accuracy: ',acc_list)
                 #print(type(acc_list))
 
-                for i in range(len(acc_total)):
-                    for j in range(2):
-                        acc_total[i][j] = ((elements * acc_total[i][j]) + (b_size * acc_list[i][j]))/(elements + b_size)
-                        #epoch_acc[i][j].append(acc_list[i][j])
+                for ii in range(args.num_controls):
+                    temp_ctr = len(np.argwhere(phase==ii))
+                    for i in range(len(acc_total)):
+                        for j in range(2):
+                            if ii == 0:
+                                if elements + temp_ctr == 0.:
+                                    continue
+                                acc_total[i][j] = ((elements * acc_total[i][j]) + (temp_ctr * acc_list[i][j]))/(elements + temp_ctr)
+                                #epoch_acc[i][j].append(acc_list[i][j])
+                            else:
+                                if extra_elements[ii-1] + temp_ctr == 0.:
+                                    continue
+                                extra_acc_total[ii-1][i][j] = ((extra_elements[ii-1] * extra_acc_total[ii-1][i][j]) + (temp_ctr * extra_acc_list[ii-1][i][j]))/(extra_elements[ii-1] + temp_ctr)                               
 
-                elements += b_size
+                    if ii == 0:
+                        elements += temp_ctr
+                    else:
+                        extra_elements[ii-1] += temp_ctr
 
                 #print(b_size)
 
         #Validation
         #print("Reach here")
         print('Training Accuracy: ',acc_total)
+        if args.num_controls > 1:
+            print("Train Phase Loss:", classifier_loss)
+            print('Training Phase Accuracy:', train_phase_accuracy)
+            print("Training Extra:", extra_acc_total)
         #exit()
         if args.yaw_only:
             val_loss = [0.,0.,0.,0.]
@@ -1066,16 +1180,25 @@ def main():
             val_loss = [0.,0.,0.,0.,0.,0.]
 
         val_acc = np.zeros((model.num_points,2))
+        if args.num_controls > 1:
+            extra_val_acc = np.zeros((args.num_controls-1,model.num_points,2))
         # if not args.yaw_only:
         #     resnet_output = np.zeros((0, 6, args.num_pts, model.bins))
         # else:
         #     resnet_output = np.zeros((0, 4, args.num_pts, model.bins))
 
+        val_elements = [0. for i in range(args.num_controls)]
+
+
+        val_phase_accuracy = 0.
+
         for batch in val_loader:
+            val_classifier_loss = None
             with torch.set_grad_enabled(False):
                 image_batch = batch['image'].to(device)
-                #model = model.to(device)
+                model = model.to(device)
                 if args.temp_seg:
+                    segmodel = segmodel.to(device)
                     batch_images = None
                     for img_num in range(args.num_images):
                         seglogits = segmodel(image_batch[:, img_num*base_n_channels:(img_num+1)*base_n_channels, :, :])
@@ -1100,11 +1223,12 @@ def main():
                             batch_images = t_batch_imgs
                         else:
                             batch_images = torch.cat((batch_images, t_batch_imgs), 1)
+                    segmodel = segmodel.to('cpu')
                 else:
                     batch_images = image_batch
 
                 #print(segimages.shape, batch_imgs.shape)
-                model = model.to(device)
+                # model = model.to(device)
                 model.eval()
                 # logits = model(batch_images)
                 if args.states == 0:
@@ -1115,36 +1239,51 @@ def main():
                     logits = model(batch_images, states)
 
                 del image_batch
+                b_size = logits.shape[0]
+
+                if args.num_controls > 1:
+                    classifier = logits[:, :model.classifier].reshape(-1, model.classifier).to(device)
+                    logits = logits[:, model.classifier:]
+                    val_classifier_loss = F.cross_entropy(classifier, batch['phase'].long().to(device))
+                    temp_accuracy = phase_accuracy(batch['phase'], classifier)
+                    val_phase_accuracy += temp_accuracy
+                    phase = np.array(batch['phase'].to('cpu'))
+                else:
+                    phase = np.zeros(b_size)
+
                 if not args.regression:
                     if not args.yaw_only:
-                        logits = logits.view(-1,6,model.num_points,model.bins)
+                        logits = logits.view(-1,6,model.num_points,model.bins*args.num_controls)
                     else:
-                        logits = logits.view(-1,4,model.num_points,model.bins)
-                    logits_x = logits[:,0,:,:]
-                    logits_y = logits[:,1,:,:]
-                    logits_z = logits[:,2,:,:]
-                    logits_yaw = logits[:,3,:,:]
+                        logits = logits.view(-1,4,model.num_points,model.bins*args.num_controls)
+
+                    loss_x = [0. for t in range(model.num_points)]
+                    loss_y = [0. for t in range(model.num_points)]
+                    loss_z = [0. for t in range(model.num_points)]
+
                     if not args.yaw_only:
-                        logits_p = logits[:,4,:,:]
-                        logits_r = logits[:,5,:,:]
+                        loss_r = [0. for t in range(model.num_points)]
+                        loss_p = [0. for t in range(model.num_points)]
 
+                    loss_yaw = [0. for t in range(model.num_points)]
+
+                    
                     point_batch = batch['points'].to(device)
-                    for temp in range(model.num_points):
-                        val_loss[0] += F.cross_entropy(logits_x[:,temp,:],point_batch[:,temp,0])
-                        val_loss[1] += F.cross_entropy(logits_y[:,temp,:],point_batch[:,temp,1])
-                        val_loss[2] += F.cross_entropy(logits_z[:,temp,:],point_batch[:,temp,2])
-                        val_loss[3] += F.cross_entropy(logits_yaw[:,temp,:],point_batch[:,temp,3])
-                        if not args.yaw_only:
-                            val_loss[4] += F.cross_entropy(logits_p[:,temp,:],point_batch[:,temp,4])
-                            val_loss[5] += F.cross_entropy(logits_r[:,temp,:],point_batch[:,temp,5])
-                        # for v_loss in val_loss:
-                        #     if torch.any(torch.isnan(v_loss)):
-                        #         print(v_loss)
-                        #         print(temp)
-                        #         print(logits_x[0,temp,:])
-                        #         print(point_batch[0,temp,:])
+                    elements_accessed = np.arange(b_size)
+                    for temp in range(model.num_points):                     
+                        val_loss[0] += F.cross_entropy(logits[elements_accessed,0,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,0])
+                        val_loss[1] += F.cross_entropy(logits[elements_accessed,1,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,1])
+                        val_loss[2] += F.cross_entropy(logits[elements_accessed,2,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,2])
+                        val_loss[3] += F.cross_entropy(logits[elements_accessed,3,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,3])
 
-                    val_acc_list = acc_metric(args,logits.cpu(),point_batch.cpu(), args.yaw_only,sphere_flag = args.spherical)
+                        if not args.yaw_only:
+                            val_loss[4] += F.cross_entropy(logits[elements_accessed,4,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,4])
+                            val_loss[5] += F.cross_entropy(logits[elements_accessed,5,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,5])
+
+                    val_acc_list = acc_metric(args,logits.cpu(),point_batch.cpu(), args.yaw_only,phase,ranges,sphere_flag = args.spherical)
+
+                    if args.num_controls > 1:
+                        val_acc_list, extra_val_acc_list = val_acc_list
     
                 else:
                     logits = logits.view(-1,model.num_points,6)
@@ -1165,14 +1304,37 @@ def main():
                 #print(logits.shape)
                 #resnet_output = np.concatenate((resnet_output,logits), axis=0)
                 #print(resnet_output.shape)
-                b_size = logits.shape[0]
-                for ii, acc in enumerate(val_acc_list):
-                    for jj, acc_j in enumerate(acc):
-                        val_acc[ii][jj] += acc_j
-                        epoch_acc[ii][jj].append(acc_j)
+
+                for phase_num in range(args.num_controls):
+                    phase_i = len(np.argwhere(phase==phase_num))
+                    val_elements[phase_num] += phase_i
+                    if phase_num == 0:
+                        for ii, acc in enumerate(val_acc_list):
+                            for jj, acc_j in enumerate(acc):
+                                val_acc[ii][jj] += phase_i * acc_j
+                                epoch_acc[ii][jj].append(acc_j)
+                    else:
+                        for ii, acc in enumerate(extra_val_acc_list[phase_num-1]):
+                            for jj, acc_j in enumerate(acc):
+                                extra_val_acc[phase_num-1][ii][jj] += phase_i * acc_j
+                                extra_epoch_acc[phase_num-1][ii][jj].append(acc_j)
+
                 del point_batch
+                
+                if args.states != 0:
+                    del states
+
                 model = model.to('cpu')
-        val_acc = val_acc/len(val_loader)
+        
+        if val_elements[0] != 0.:
+            val_acc = val_acc/val_elements[0]
+        if args.num_controls > 1:
+            val_phase_accuracy /= len(val_loader)
+            for i in range(len(extra_val_acc)):
+                phase_i = val_elements[i+1]
+                if phase_i != 0:
+                    extra_val_acc[i] /= phase_i
+
         if args.traj and False:
             for ii in plotting_data['idx']:
                 plotting_data['data'][ii].append(resnet_output[ii,:,:,:])
@@ -1186,7 +1348,10 @@ def main():
             else:
                 val_loss = [val_loss[temp].item()/len(val_loader) for temp in range(4)]
             
-            writer.add_scalar('val_loss',sum(val_loss),(epoch+1)*len(train_loader))
+            if val_classifier_loss is None:
+                writer.add_scalar('val_loss',sum(val_loss),(epoch+1)*len(train_loader))
+            else:
+                writer.add_scalar('val_loss',sum(val_loss)+val_classifier_loss,(epoch+1)*len(train_loader))
             writer.add_scalar('val_loss_x',val_loss[0],(epoch+1)*len(train_loader))
             writer.add_scalar('val_loss_y',val_loss[1],(epoch+1)*len(train_loader))
             writer.add_scalar('val_loss_z',val_loss[2],(epoch+1)*len(train_loader))
@@ -1198,6 +1363,10 @@ def main():
             writer.add_scalar('val_acc_'+str(ii),acc[0],(epoch+1)*len(train_loader))
         print('Val Cross-Entropy Loss: ', val_loss)
         print('Val Accuracy: ',val_acc)
+        if args.num_controls > 1:
+            print("Val Phase Loss:", val_classifier_loss)
+            print("Val Phase Accuracy:", val_phase_accuracy)
+            print("Val Extra Accuracy:", extra_val_acc)
         #NOTE: Experimental --- might be bad
         if args.use_error_sampler and epoch % sampler_n_epochs == 0:
             #print(type(error_weights))
@@ -1279,15 +1448,29 @@ def main():
             print("Saving variables")
             save_model(epoch)
 
-        epoch_acc = np.array(epoch_acc)
-        mean_str = ""
-        var_str = ""
-        for i in range(len(epoch_acc)):
-            for j in range(len(epoch_acc[i])):
-                mean_str += (str(np.mean(epoch_acc[i][j])) + "\t")
-                var_str += (str(np.std(epoch_acc[i][j])) + "\t")
-        print(mean_str)
-        print(var_str)
+        for ii in range(args.num_controls):
+            print("Phase:", ii)
+            if ii == 0:
+                epoch_acc = np.array(epoch_acc)
+                mean_str = ""
+                var_str = ""
+                for i in range(len(epoch_acc)):
+                    for j in range(len(epoch_acc[i])):
+                        mean_str += (str(np.mean(epoch_acc[i][j])) + "\t")
+                        var_str += (str(np.std(epoch_acc[i][j])) + "\t")
+                print(mean_str)
+                print(var_str)
+            else:
+                extra_epoch_acc = np.array(extra_epoch_acc)
+                mean_str = ""
+                var_str = ""
+                for i in range(len(extra_epoch_acc[ii-1])):
+                    for j in range(len(extra_epoch_acc[ii-1][i])):
+                        mean_str += (str(np.mean(extra_epoch_acc[ii-1][i][j])) + "\t")
+                        var_str += (str(np.std(extra_epoch_acc[ii-1][i][j])) + "\t")
+                print(mean_str)
+                print(var_str)
+
     writer.close()
     print("Done")
 
