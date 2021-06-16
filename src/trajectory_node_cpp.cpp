@@ -284,6 +284,8 @@ message is skipped and a warning is printed.
 */
 void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
 {
+// Add in a tf getter here.  
+//  tf = ...
 //  ROS_INFO_STREAM("CALLBACK: " << ctr);
   if (!odom_update) {
     ROS_INFO_STREAM("Stale odometry value, retrying");
@@ -482,6 +484,7 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
       joint_point.accelerations.push_back(0);
       joint_point.accelerations.push_back(0);
     }
+    joint_point.time_from_start = ros::Duration(tf*ii/N);
     joint_msg.points.push_back(joint_point);
   }
   path_pub.publish(pa);
