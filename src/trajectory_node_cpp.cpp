@@ -285,7 +285,14 @@ message is skipped and a warning is printed.
 void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
 {
 // Add in a tf getter here.  
-//  tf = ...
+  double new_tf = msg->header.stamp.toSec();
+  if (new_tf != tf) {
+    ROS_INFO_STREAM("NEW TF " << new_tf);
+    tf = new_tf;
+    N = (int) hz*tf;
+    xs.resize(N+1);
+    us.resize(N);
+  }
 //  ROS_INFO_STREAM("CALLBACK: " << ctr);
   if (!odom_update) {
     ROS_INFO_STREAM("Stale odometry value, retrying");
@@ -559,7 +566,7 @@ TrajectoryNode(): lis(tfBuffer)
   joint_pub = n.advertise<trajectory_msgs::JointTrajectory>(joint_topic,1);
   sub = n.subscribe(goal_topic,1,&TrajectoryNode::callback,this);
   odom_sub = n.subscribe(odom_topic,1,&TrajectoryNode::odom_callback,this);
-  int hz = 20;
+  hz = 20;
   N = (int) hz*tf;
   x0.p << 0, 0, 0;
   x0.R << 1, 0, 0,
@@ -588,6 +595,7 @@ TrajectoryNode(): lis(tfBuffer)
   }*/
 }
 
+int hz;
 int N;
 tf2_ros::Buffer tfBuffer;
 tf2_ros::TransformListener lis;
