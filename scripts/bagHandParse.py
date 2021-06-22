@@ -155,11 +155,16 @@ def anglewrap(x):
         x += 2*np.pi
     return x - np.pi
 
-def createTrajectory(odom, orange_p, orange_R):
+def createTrajectory(odom, old_odom, dt, orange_p, orange_R):
     start_p = np.array((odom.transform.translation.x, odom.transform.translation.y, odom.transform.translation.z))
     start_R = R.from_quat([odom.transform.rotation.x, odom.transform.rotation.y,
                         odom.transform.rotation.z, odom.transform.rotation.w])
     start_yaw = start_R.as_euler('ZYX')[0]
+    prev_p = np.array((old_odom.transform.translation.x, old_odom.transform.translation.y, old_odom.transform.translation.z))
+    prev_R = R.from_quat([old_odom.transform.rotation.x, old_odom.transform.rotation.y,
+                        old_odom.transform.rotation.z, old_odom.transform.rotation.w])
+    prev_yaw = prev_R.as_euler('ZYX')[0]
+    v_py = np.hstack(((start_p - prev_p),anglewrap(start_yaw-prev_yaw)))/dt
     orange_yaw = orange_R.as_euler('ZYX')[0]
     max_v = 0.15
     min_tf = 4.0
@@ -187,6 +192,10 @@ def createTrajectory(odom, orange_p, orange_R):
     constraints[0,1] = error_p[1]
     constraints[0,2] = error_p[2]
     constraints[0,3] = error_yaw
+    constraints[1,0] = v_py[0]
+    constraints[2,1] = v_py[1]
+    constraints[3,2] = v_py[2]
+    constraints[4,3] = v_py[3]
     basis[0:5,:] = basisMatrix(tf)
     basis[5:,:] = basisMatrix(0)
     coeff = np.linalg.solve(basis,constraints)
@@ -300,6 +309,9 @@ def main():
         end_time = None
         drop_ctr = 0
         drop_reset_thresh = 10
+        odom_t = None
+        prev_t = None
+        prev_odom = None
 
         for topic, msg, t in bag.read_messages(topics=[vrpn_topic, img_topic, depth_topic]):
 
@@ -321,7 +333,9 @@ def main():
                     if drop_ctr > drop_reset_thresh:
                         print("Dropped " + str(drop_ctr)),
                     drop_ctr = 0
+                    prev_odom = odom
                     odom = msg
+                    prev_t = odom_t
                 odom_t = t
 
             if topic == img_topic:
@@ -332,17 +346,19 @@ def main():
                 dimg = msg
                 dimg_t = t
 
-            if (img is not None)and (odom is not None):# and (dimg is not None):
+            if (img is not None) and (odom is not None) and (prev_odom is not None):# and (dimg is not None):
                 start_p = np.array((odom.transform.translation.x, odom.transform.translation.y, odom.transform.translation.z))
                 start_R = np.array([odom.transform.rotation.x, odom.transform.rotation.y, odom.transform.rotation.z, odom.transform.rotation.w])
                 odom_data = [start_p, start_R]
                 odom_list.append(odom_data)
-                coeff_list.append(createTrajectory(odom,orange_p,orange_R))
+                dt = (odom_t - prev_t).secs + (odom_t - prev_t).nsecs/1e9
+                coeff_list.append(createTrajectory(odom,prev_odom,dt,orange_p,orange_R))
                 img_np = np_from_image(img)
                 img_list.append(img_np)
                 bag_events += 1
                 img_np = None
                 odom = None
+                prev_odom = None
                 img = None
                 dimg = None
                 if start_time is None:

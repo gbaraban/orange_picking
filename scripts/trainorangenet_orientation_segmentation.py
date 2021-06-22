@@ -473,30 +473,30 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('data', help='data folder')
     parser.add_argument('--load', help='model to load')
-    parser.add_argument('--epochs', type=int, default=150, help='number of epochs to train for')
+    parser.add_argument('--epochs', type=int, default=150, help='max number of epochs to train for/but also controls how fast learning rate decays')
     parser.add_argument('--seed', type=int, default=0, help='random seed')
     parser.add_argument('--resample', action='store_true', help='resample data')
     parser.add_argument('--gpu', help='gpu to use')
     parser.add_argument('--num_images', type=int, default=1, help='number of input images')
-    parser.add_argument('--batch_size', type=int, default=65, help='batch size')
-    parser.add_argument('--val_batch_size', type=int, default=65, help='batch size')
-    parser.add_argument('--learning_rate', type=float, default=5e-3, help='batch size')
+    parser.add_argument('--batch_size', type=int, default=100, help='batch size')
+    parser.add_argument('--val_batch_size', type=int, default=100, help='batch size for validation')
+    parser.add_argument('--learning_rate', type=float, default=5e-3, help='starting learning rate')
     parser.add_argument('--num_pts', type=int, default=3, help='number of output waypoints')
     parser.add_argument('--capacity', type=float, default=1, help='network capacity')
-    parser.add_argument('--min', type=tuple, default=(0,-0.5,-0.5), help='minimum xyz ')
-    parser.add_argument('--max', type=tuple, default=(1,0.5,0.5), help='maximum xyz')
-    parser.add_argument('--bins', type=int, default=30, help='number of bins per coordinate')
+    parser.add_argument('--min', type=tuple, default=(0,-0.5,-0.5), help='minimum xyz/barely used and overwritten later')
+    parser.add_argument('--max', type=tuple, default=(1,0.5,0.5), help='maximum xyz/barely used and overwritten later')
+    parser.add_argument('--bins', type=int, default=100, help='number of bins per coordinate')
     parser.add_argument('-j', type=int, default=8, help='number of loader workers')
     parser.add_argument('--traj', type=int, default=1, help='train trajectories')
     parser.add_argument('--real', type=int, default=0, help='real world imgs (0: sim data, 1: orange tracking data, else: normal real world data')
     parser.add_argument('--val', type=float, default=0.10, help='validation percentage')
-    parser.add_argument('--resnet18', type=int, default=0, help='ResNet18')
+    parser.add_argument('--resnet18', type=int, default=0, help='ResNet18 or ResNet8')
     parser.add_argument('--yaw_only', type=int, default=0, help='yaw only')
-    parser.add_argument('--custom', type=str, default="", help='custom parser: Run18/no_parse')
-    parser.add_argument('--test_arch', type=int, default=100, help='testing architectures')
+    parser.add_argument('--custom', type=str, default="", help='custom parser: Run18/no_parse (used in sim data and normal real world, Run18/no_parse allows to read unparsed future waypoint data)')
+    parser.add_argument('--test_arch', type=int, default=100, help='testing architectures, 100 loads default, other numbers loads orangenetarch from architecture folder, added to keep track of older data')
     parser.add_argument('--train', type=int, default=1, help='train or test')
     parser.add_argument('--data_aug_flip',type=int,default=1, help='Horizontal flipping on/off')
-    parser.add_argument('--real_test',type=int,default=0,help='self.h = 380/480')
+    parser.add_argument('--real_test',type=int,default=0,help='self.h = 380/480' )
     parser.add_argument('--freeze',type=str,default="",help='layer to freeze while training, linear or conv')
     parser.add_argument('--plot_data',type=int,default=0,help="plot data for accuracy")
     parser.add_argument('--input_size',type=float,default=1,help='input size change')
@@ -504,20 +504,24 @@ def main():
     parser.add_argument('--use_error_sampler',type=bool,default=False,help='adaptive error based sampling')
     parser.add_argument('--custom_loss',type=bool,default=False,help='custom loss for training')
     parser.add_argument('--depth',type=bool,default=False,help='use depth channel')
-    parser.add_argument('--seg',type=bool,default=False,help='use segmentation channel')
-    parser.add_argument('--temp_seg',type=bool,default=False,help='use segmentation channel')
-    parser.add_argument('--seg_only',type=bool,default=False,help='use segmentation channel')
-    parser.add_argument('--save_variables',type=int,default=20,help="save after every x epochs")
-    parser.add_argument('--mean_seg',type=str,default='data/depth_data/data/mean_seg.npy',help='mean segmentation image') # data/depth_data/data/mean_seg.npy #data/mean_imgv2_data_seg_Run24.npy
+    parser.add_argument('--seg',type=bool,default=False,help='use segmentation channel, don\'t use mostly')
+    parser.add_argument('--temp_seg',type=bool,default=False,help='use segmentation channel, use this')
+    parser.add_argument('--seg_only',type=bool,default=False,help='use segmentation channel, don\'t use mostly')
+    parser.add_argument('--save_variables',type=int,default=5,help="save after every x epochs")
+    parser.add_argument('--mean_seg',type=str,default='data/depth_data/data/mean_seg.npy',help='mean segmentation image, two options for real and sim world in comments') # data/depth_data/data/mean_seg.npy #data/mean_imgv2_data_seg_Run24.npy
     parser.add_argument('--segload', help='segment model to load')
-    parser.add_argument('--retrain_off_seg',type=bool,default=False,help='retrain segmentation off')
+    parser.add_argument('--retrain_off_seg',type=bool,default=False,help='retrain of segmentation off')
     parser.add_argument('--relative_pose', type=bool, default=False,help='relative pose of points')
     parser.add_argument('--regression', type=bool, default=False,help='Use regression loss (MSE)')
     parser.add_argument('--spherical', type=bool, default=False,help='Use spherical coordinates')
     parser.add_argument('--pred_dt',type=float, default=1.0, help="Space between predicted points")
     parser.add_argument('--image_dt',type=float,default=1.0, help="Space between images provided to network")
-    parser.add_argument('--states',type=int,default=0,help="states to use with network")
-    parser.add_argument('--num_controls',type=int,default=1,help="states to use with network")
+    parser.add_argument('--states',type=int,default=0,help="states to use with network, options: (1, 2), check get_states function to see which version uses which states")
+    parser.add_argument('--num_controls',type=int,default=1,help="to divide data into multiple scenarios, to teach a different control strategy for each")
+    parser.add_argument('--reduce_n', type=bool, default=False,help='Remove last few events from staging dataset')
+    parser.add_argument('--extra_dt', nargs="+", type=float, default=None, help='pred_dt for extra phases')
+    parser.add_argument('--relabel', type=bool, default=False,help='Relabel last few events from staging')
+    parser.add_argument('--mix_labels', type=bool, default=False,help='Mix labels last few events from staging')
 
 
     args = parser.parse_args()
@@ -539,6 +543,16 @@ def main():
         args.traj = False
     else:
         args.traj = True
+
+    if args.reduce_n == 0:
+        args.reduce_n = False
+    else:
+        args.reduce_n = True
+
+    if args.relabel == 0:
+        args.relabel = False
+    else:
+        args.relabel = True
 
     if args.real == 0:
         from customDatasetsOrientation import OrangeSimDataSet, SubSet
@@ -587,8 +601,13 @@ def main():
               #args.max = [(0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1), (0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1), (0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1)]
               #args.min = [(-0.25, -0.25, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.25, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.25, -0.25, -np.pi/2, -0.1, -0.1)]
               #args.max = [(0.45, 0.45, 0.25, np.pi/2, 0.1, 0.1), (0.45, 0.45, 0.25, np.pi/2, 0.1, 0.1), (0.45, 0.45, 0.25, np.pi/2, 0.1, 0.1)]
-              args.min = [(-0.10, -0.15, -0.10, -0.25, -0.075, -0.075), (-0.10, -0.15, -0.10, -0.25, -0.075, -0.075), (-0.10, -0.15, -0.10, -0.25, -0.075, -0.075)]
-              args.max = [(0.30, 0.15, 0.10, 0.25, 0.075, 0.075), (0.30, 0.15, 0.10, 0.25, 0.075, 0.075), (0.30, 0.15, 0.10, 0.25, 0.075, 0.075)]
+              if args.pred_dt <= 0.5:
+                  print("Pred DT: 0.5")
+                  args.min = [(-0.03, -0.1, -0.04, -0.12, -0.04, -0.04), (-0.03, -0.1, -0.04, -0.12, -0.04, -0.04), (-0.03, -0.1, -0.04, -0.12, -0.04, -0.04)]
+                  args.max = [(0.20, 0.1, 0.04, 0.12, 0.04, 0.04), (0.20, 0.1, 0.04, 0.12, 0.04, 0.04), (0.20, 0.1, 0.04, 0.12, 0.04, 0.04)]
+              else:
+                  args.min = [(-0.10, -0.15, -0.10, -0.25, -0.075, -0.075), (-0.10, -0.15, -0.10, -0.25, -0.075, -0.075), (-0.10, -0.15, -0.10, -0.25, -0.075, -0.075)]
+                  args.max = [(0.30, 0.15, 0.10, 0.25, 0.075, 0.075), (0.30, 0.15, 0.10, 0.25, 0.075, 0.075), (0.30, 0.15, 0.10, 0.25, 0.075, 0.075)]
 
           else:
               #args.min = [(0.,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.,-1.,-0.15,-np.pi,-np.pi/2,-np.pi),(0.,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.,-2.,-0.3,-np.pi,-np.pi/2,-np.pi),(0.,-3.,-0.5,-np.pi,-np.pi/2,-np.pi)]
@@ -612,8 +631,21 @@ def main():
               args.max = [(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.5,1.0,0.5,np.pi,np.pi,np.pi),(2.0,1.0,0.75,np.pi,np.pi,np.pi)]
 
     if args.num_controls > 1:
-        args.extra_mins = [[(-0.05, -0.05, -0.075, -0.10, -0.03, -0.03), (-0.05, -0.05, -0.075, -0.10, -0.03, -0.03), (-0.05, -0.05, -0.075, -0.10, -0.03, -0.03)]]
-        args.extra_maxs = [[(0.15, 0.05, 0.075, 0.10, 0.03, 0.03), (0.15, 0.05, 0.075, 0.10, 0.03, 0.03), (0.15, 0.05, 0.075, 0.10, 0.03, 0.03)]]
+        if args.extra_dt == [0.25] or (len(args.extra_dt) == 1 and args.extra_dt[0] <= 0.25):
+            print("Extra dt 0.25")
+            if args.mix_labels:
+                args.extra_mins = [[(-0.030, -0.05, -0.01, -0.08, -0.02, -0.025), (-0.030, -0.05, -0.01, -0.08, -0.02, -0.025), (-0.030, -0.05, -0.01, -0.08, -0.02, -0.025)]]
+                args.extra_maxs = [[(0.035, 0.05, 0.03, 0.08, 0.02, 0.025), (0.035, 0.05, 0.03, 0.08, 0.02, 0.025), (0.035, 0.05, 0.03, 0.08, 0.02, 0.025)]]
+            else:
+                args.extra_mins = [[(-0.01, -0.02, -0.01, -0.03, -0.02, -0.02), (-0.01, -0.02, -0.01, -0.03, -0.02, -0.02), (-0.01, -0.02, -0.01, -0.03, -0.02, -0.02)]]
+                args.extra_maxs = [[(0.03, 0.02, 0.03, 0.03, 0.02, 0.02), (0.03, 0.02, 0.03, 0.03, 0.02, 0.02), (0.03, 0.02, 0.03, 0.03, 0.02, 0.02)]]
+        elif args.extra_dt == [0.5] or (len(args.extra_dt) == 1 and args.extra_dt[0] <= 0.5):
+            print("Extra dt 0.5")
+            args.extra_mins = [[(-0.05, -0.02, -0.01, -0.05, -0.03, -0.03), (-0.05, -0.02, -0.01, -0.05, -0.03, -0.03), (-0.05, -0.02, -0.01, -0.05, -0.03, -0.03)]]
+            extra_maxs = [[( 0.05,  0.02,  0.035,  0.05,  0.03,  0.03), ( 0.05,  0.02,  0.035,  0.05,  0.03,  0.03), ( 0.05,  0.02,  0.035,  0.05,  0.03,  0.03)]]
+        else:
+            args.extra_mins = [[(-0.05, -0.05, -0.075, -0.10, -0.03, -0.03), (-0.05, -0.05, -0.075, -0.10, -0.03, -0.03), (-0.05, -0.05, -0.075, -0.10, -0.03, -0.03)]]
+            args.extra_maxs = [[(0.15, 0.05, 0.075, 0.10, 0.03, 0.03), (0.15, 0.05, 0.075, 0.10, 0.03, 0.03), (0.15, 0.05, 0.075, 0.10, 0.03, 0.03)]]
     else:
         args.extra_mins = None
         args.extra_maxs = None
@@ -659,7 +691,7 @@ def main():
 
     #TOCHECK
     if args.real == 1:
-        dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, depth=args.depth, rel_pose=args.relative_pose, pred_dt = args.pred_dt, img_dt=args.image_dt)
+        dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, depth=args.depth, rel_pose=args.relative_pose, pred_dt = args.pred_dt, img_dt=args.image_dt, reduce_N=args.reduce_n, extra_dt=args.extra_dt, relabel=args.relabel, mix_labels=args.mix_labels)
     else:
         dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, custom_dataset=args.custom, input=args.input_size, depth=args.depth, seg=args.seg, temp_seg=args.temp_seg, seg_only=args.seg_only, rel_pose=args.relative_pose, pred_dt = args.pred_dt, dt=args.image_dt)
 

@@ -294,6 +294,9 @@ def parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info):
     no_events = stage_len
     no_points = odom_len
     folder_time = stage_duration.secs + (stage_duration.nsecs/1e9)
+    if folder_time < 1:
+        print("Short Time... Skipping")
+        return
 
     orange_pose = []
     
@@ -391,7 +394,7 @@ def main():
     args = parser.parse_args()
 
     folder_list = os.listdir(args.bag_dir)
-    bag_list = []
+    bag_list = folder_list
     for folder_name in folder_list:
         if not os.path.isdir(args.bag_dir + folder_name):
             continue
@@ -406,8 +409,12 @@ def main():
             continue
         print(str(bag_ctr) + ": " + bag_name),
         fname = args.bag_dir + "/" + bag_name
-        bag = rosbag.Bag(fname)
-
+        try:
+            bag = rosbag.Bag(fname)
+        except:
+            print(fname + " is not loadable")
+            continue
+        
         bag_save_folder = args.bag_dir + 'real_world_traj_bag/bag' + str(bag_ctr)
         if os.path.isdir(bag_save_folder):
             shutil.rmtree(bag_save_folder)
@@ -444,7 +451,7 @@ def main():
         success_num_thresh = 4
 
         for topic, msg, t in bag.read_messages(topics=[vrpn_topic, img_topic, status_topic, success_topic, depth_topic]):
-            # print(status)
+            #print(status)
             if topic == success_topic:
                 if np.linalg.norm(msg.data) > success_thresh:
                     success_ctr += 1
@@ -453,15 +460,27 @@ def main():
                 if (success_ctr >= success_num_thresh) and (status is not "ResetTrial") and (status is not "Manual"):
                     print("Magnet Success"),
                     status = "ResetTrial"
-                    stage_info = (stage_odom,stage_img,stage_time,stage_dimg)
-                    fr_info = (fr_odom,fr_img,final_time,fr_dimg)
-                    reset_info = (resets,reset_times)
-                    parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info)
-                    if bag_time is None:
-                        bag_time = (stage_time[1] - stage_time[0]) + (final_time[1] - final_time[0])
+                    if (stage_time[0] is not None) and (stage_time[1] is not None):
+                        if (stage_time[1] - stage_time[0]).secs > 1:
+                            stage_info = (stage_odom,stage_img,stage_time,stage_dimg)
+                        else:
+                            stage_info = None
                     else:
-                        bag_time += (stage_time[1] - stage_time[0]) + (final_time[1] - final_time[0])
-                    trial_ctr += 1 
+                        stage_info = None
+                    if stage_info is not None:
+                        if (final_time[1] is None) or (final_time[0] is None):
+                            fr_info = None
+                        else:
+                            fr_info = (fr_odom,fr_img,final_time,fr_dimg)
+                        reset_info = (resets,reset_times)
+                        parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info)
+                        if bag_time is None:
+                            bag_time = (stage_time[1] - stage_time[0])
+                        else:
+                            bag_time += (stage_time[1] - stage_time[0])
+                        if (final_time[1] is not None) and (final_time[0] is not None):
+                            bag_time += (final_time[1] - final_time[0])
+                        trial_ctr += 1 
                     stage_odom = []
                     stage_img = []
                     stage_dimg = []
@@ -490,26 +509,44 @@ def main():
                     #if status is "Stage":
                     if status is "Final":
                         if not stageFlag:
-                            stage_info = (stage_odom,stage_img,stage_time,stage_dimg)
-                            fr_info = None
-                            reset_info = (resets,reset_times)
-                            parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info)
-                            trial_ctr += 1
-                            if bag_time is None:
-                                bag_time = stage_time[1] - stage_time[0]
+                            if (stage_time[0] is not None) and (stage_time[1] is not None):
+                                if (stage_time[1] - stage_time[0]).secs > 1:
+                                    stage_info = (stage_odom,stage_img,stage_time,stage_dimg)
+                                else:
+                                    stage_info = None
                             else:
-                                bag_time += (stage_time[1] - stage_time[0])
+                                stage_info = None
+                            if stage_info is not None:
+                                fr_info = None
+                                reset_info = (resets,reset_times)
+                                parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info)
+                                if bag_time is None:
+                                    bag_time = (stage_time[1] - stage_time[0])
+                                else:
+                                    bag_time += (stage_time[1] - stage_time[0])
+                                if (final_time[1] is not None) and (final_time[0] is not None):
+                                    bag_time += (final_time[1] - final_time[0])
+                                trial_ctr += 1
                     if status is "Reset":
                         if not stageFlag:
-                            stage_info = (stage_odom,stage_img,stage_time,stage_dimg)
-                            fr_info = None
-                            reset_info = (resets,reset_times)
-                            parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info)
-                            trial_ctr += 1
-                            if bag_time is None:
-                                bag_time = stage_time[1] - stage_time[0]
+                            if (stage_time[0] is not None) and (stage_time[1] is not None):
+                                if (stage_time[1] - stage_time[0]).secs > 1:
+                                    stage_info = (stage_odom,stage_img,stage_time,stage_dimg)
+                                else:
+                                    stage_info = None
                             else:
-                                bag_time += (stage_time[1] - stage_time[0])
+                                stage_info = None
+                            if stage_info is not None:
+                                fr_info = None
+                                reset_info = (resets,reset_times)
+                                parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info)
+                                if bag_time is None:
+                                    bag_time = (stage_time[1] - stage_time[0])
+                                else:
+                                    bag_time += (stage_time[1] - stage_time[0])
+                                if (final_time[1] is not None) and (final_time[0] is not None):
+                                    bag_time += (final_time[1] - final_time[0])
+                                trial_ctr += 1
                     #if status is "ResetTrial":
                     if status is not "Manual":
                         print("Manual"),
@@ -570,15 +607,27 @@ def main():
                 if "ResetTrial" in msg.data:
                     #if status is "Manual":
                     if (status is "Stage") or (status is "Final") or (status is "Reset"):
-                        stage_info = (stage_odom,stage_img,stage_time,stage_dimg)
-                        fr_info = (fr_odom,fr_img,final_time,fr_dimg)
-                        reset_info = (resets,reset_times)
-                        parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info)
-                        if bag_time is None:
-                            bag_time = (stage_time[1] - stage_time[0]) + (final_time[1] - final_time[0])
+                        if (stage_time[0] is not None) and (stage_time[1] is not None):
+                            if (stage_time[1] - stage_time[0]).secs > 1:
+                                stage_info = (stage_odom,stage_img,stage_time,stage_dimg)
+                            else:
+                                stage_info = None
                         else:
-                            bag_time += (stage_time[1] - stage_time[0]) + (final_time[1] - final_time[0])
-                        trial_ctr += 1 
+                            stage_info = None
+                        if stage_info is not None:
+                            if (final_time[1] is None) or (final_time[0] is None):
+                                fr_info = None
+                            else:
+                                fr_info = (fr_odom,fr_img,final_time,fr_dimg)
+                            reset_info = (resets,reset_times)
+                            parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info)
+                            if bag_time is None:
+                                bag_time = (stage_time[1] - stage_time[0])
+                            else:
+                                bag_time += (stage_time[1] - stage_time[0])
+                            if (final_time[1] is not None) and (final_time[0] is not None):
+                                bag_time += (final_time[1] - final_time[0])
+                            trial_ctr += 1 
                         stage_odom = []
                         stage_img = []
                         stage_dimg = []
@@ -656,15 +705,12 @@ def main():
                 if status is "Stage" and stageFlag:
                     dimg_np = depthnp_from_compressed_image(dimg)
                     stage_dimg.append(dimg_np)
-                    bag_events += 1
                 if status is "Final":
                     dimg_np = depthnp_from_compressed_image(dimg)
                     fr_dimg.append(dimg_np)
-                    bag_events += 1
                 if status is "Reset":
                     dimg_np = depthnp_from_compressed_image(dimg)
                     reset_dimg.append(dimg_np)
-                    bag_events += 1
                 dimg_np = None
 
             if (img is not None) and (dimg is not None) and (odom is not None):
@@ -685,14 +731,24 @@ def main():
                 dimg = None
 
         if not stageFlag:
-            stage_info = (stage_odom,stage_img,stage_time,stage_dimg)
-            fr_info = None
-            reset_info = (resets,reset_times)
-            parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info)
-            if bag_time is None:
-                bag_time = stage_time[1] - stage_time[0]
+            if (stage_time[0] is not None) and (stage_time[1] is not None):
+                if (stage_time[1] - stage_time[0]).secs > 1:
+                    stage_info = (stage_odom,stage_img,stage_time,stage_dimg)
+                else:
+                    stage_info = None
             else:
-                bag_time += (stage_time[1] - stage_time[0])
+                stage_info = None
+            if stage_info is not None:
+                fr_info = None
+                reset_info = (resets,reset_times)
+                parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info)
+                if bag_time is None:
+                    bag_time = (stage_time[1] - stage_time[0])
+                else:
+                    bag_time += (stage_time[1] - stage_time[0])
+                if (final_time[1] is not None) and (final_time[0] is not None):
+                    bag_time += (final_time[1] - final_time[0])
+                trial_ctr += 1 
         print("")
         print(bag_ctr, bag_time.secs, bag_time.nsecs, bag_events)
         bag_ctr += 1

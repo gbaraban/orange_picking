@@ -71,7 +71,7 @@ class SubSet(Dataset):
         return self.ds[self.idx[i]]
 
 class OrangeSimDataSet(Dataset):
-    def __init__(self, root_dir, num_images, num_pts, pt_trans, img_trans, img_dt=1.0, pred_dt=1.0, reduce_N = False, depth=False, rel_pose=False, gaussian_pts=False, use_resets = False):
+    def __init__(self, root_dir, num_images, num_pts, pt_trans, img_trans, img_dt=1.0, pred_dt=1.0, reduce_N = False, depth=False, rel_pose=False, gaussian_pts=False, use_resets = False, extra_dt=None, relabel=False, mix_labels=True):
         self.run_dir = root_dir
         self.num_images = num_images
         self.num_pts = num_pts
@@ -79,6 +79,7 @@ class OrangeSimDataSet(Dataset):
         self.image_transform = img_trans
         self.img_dt = img_dt
         self.pred_dt = pred_dt
+        self.extra_dt = extra_dt
         self.reduce_N = reduce_N
         self.depth = depth
         self.mean_seg = np.load("data/mean_imgv2_data_seg_real_world_traj_bag.npy")
@@ -91,7 +92,15 @@ class OrangeSimDataSet(Dataset):
         self.resets = use_resets
         self.coeff_exists = False
         self.phase_dict = {"staging": 0, "final": 1, "reset": 2}
-
+        self.final_thresh_x = float('-inf')
+        self.final_thresh_r = float('-inf')
+        self.relabel = relabel
+        self.mix_labels = mix_labels
+        self.final_reclassify_time = 2.5
+        if relabel or mix_labels:
+            self.final_thresh_x = 1.2
+            self.final_thresh_r = 0.6
+        
         self.np_dir = root_dir.rstrip("/") + "_np/"
         #if seg or seg_only: #temp_seg
         #    self.trial_list = os.listdir(root_dir + "../seg_mask_real_np/")
@@ -108,10 +117,12 @@ class OrangeSimDataSet(Dataset):
         self.event_list = []
         self.traj_count = 0
         self.num_samples_dir = {}
+        phase_ctr = {}
+        phase_time_list = {}
         for trial in trial_list:
             trial_subfolders = os.listdir(self.run_dir + "/" + trial)
             if os.path.exists(self.run_dir + "/" + trial + "/data.pickle_no_parse"):
-                ret_val = self.parseSubFolder(self.run_dir+"/"+trial+"/")
+                ret_val, folder_info = self.parseSubFolder(self.run_dir+"/"+trial+"/")
                 if ret_val:
                     temp_dict = {}
                     temp_dict["start"] = len(self.event_list)
@@ -119,24 +130,42 @@ class OrangeSimDataSet(Dataset):
                     temp_dict["end"] = len(self.event_list)
                     self.num_samples_dir[self.traj_count] = temp_dict
                     self.traj_count += 1
+                    if folder_info[0] not in phase_ctr.keys():
+                        phase_ctr[folder_info[0]] = 0
+                        phase_time_list[folder_info[0]] = []
+                    phase_ctr[folder_info[0]] += 1
+                    phase_time_list[folder_info[0]].append(folder_info[1])
             else:
                 for subfolder in trial_subfolders:
                     temp_dict = {}
                     temp_dict["start"] = len(self.event_list)
                     if ("staging" in subfolder) or ("final" in subfolder):
-                        ret_val = self.parseSubFolder(self.run_dir+"/"+trial+"/"+subfolder+"/")
+                        ret_val, folder_info = self.parseSubFolder(self.run_dir+"/"+trial+"/"+subfolder+"/")
                         if ret_val:
                             self.event_list = self.event_list+ret_val
                             temp_dict["end"] = len(self.event_list)
                             self.num_samples_dir[self.traj_count] = temp_dict
                             self.traj_count += 1
+                            if folder_info[0] not in phase_ctr.keys():
+                                phase_ctr[folder_info[0]] = 0
+                                phase_time_list[folder_info[0]] = []
+                            phase_ctr[folder_info[0]] += 1
+                            phase_time_list[folder_info[0]].append(folder_info[1])
                     if self.resets and ("reset" in subfolder):
-                        ret_val = self.parseSubFolder(self.run_dir+"/"+trial+"/"+subfolder+"/")
+                        ret_val, folder_info = self.parseSubFolder(self.run_dir+"/"+trial+"/"+subfolder+"/")
                         if ret_val:
                             self.event_list = self.event_list+ret_val
                             temp_dict["end"] = len(self.event_list)
                             self.num_samples_dir[self.traj_count] = temp_dict
                             self.traj_count += 1
+                            if folder_info[0] not in phase_ctr.keys():
+                                phase_ctr[folder_info[0]] = 0
+                                phase_time_list[folder_info[0]] = []
+                            phase_ctr[folder_info[0]] += 1
+                            phase_time_list[folder_info[0]].append(folder_info[1])
+        for phase in phase_ctr.keys():
+            print("Phase: " + str(phase) + " time data")
+            print(str(phase_ctr[phase]) + " folders.  Average Length: " + str(np.mean(phase_time_list[phase])))
 
 
     def __len__(self):
@@ -212,11 +241,18 @@ class OrangeSimDataSet(Dataset):
                 #print(np.array(temp_points))
                 pass
             points = np.array(temp_points)
+        
+        phase = None
+        if "phase" in dict_i:
+            if type(dict_i["phase"]) is list and len(dict_i["phase"]) > 1:
+                phase = np.random.choice(dict_i["phase"])
+            else:
+                phase = dict_i["phase"]
 
         if self.point_transform:
             point_dict = {}
             point_dict['points'] = points
-            point_dict['phase'] = dict_i["phase"]
+            point_dict['phase'] = phase
             points = self.point_transform(point_dict)
         else:
             points = np.array(points).astype(np.float64)
@@ -225,7 +261,7 @@ class OrangeSimDataSet(Dataset):
         return_dict = {'image':image, 'points':points, "flipped":flipped, "time_frac": time_frac, "rp": rp.astype("float32")}
 
         if "phase" in dict_i:
-            return_dict["phase"] = dict_i["phase"]
+            return_dict["phase"] = phase
 
         if "bodyV" in dict_i and not self.coeff_exists:
             return_dict["body_v"] = dict_i["bodyV"].astype("float32")
@@ -324,21 +360,36 @@ class OrangeSimDataSet(Dataset):
 
             if folder_time < 1.0:
                 print(str(no_events) + " " + str(no_points) + " " + subfolder)        
-                return None
+                return None, None
             image_hz = no_events/float(folder_time)
             image_offset = int(self.img_dt*image_hz)
             point_hz = float(no_points)/folder_time
-            point_offset = int(self.pred_dt*point_hz)
+            if self.phase_dict[phase] == 0 or self.extra_dt is None: #TODO Fix time problem if mix_labels phase
+                future_pred_dt = self.pred_dt
+            else:
+                future_pred_dt = self.extra_dt[self.phase_dict[phase]-1]
+            point_offset = int(future_pred_dt*point_hz)
             for ii in range(no_events):
                 dict_i = {}
                 dict_i["image"] = []
 
+                dict_i["phase"] = self.phase_dict[phase]
                 if folder_orange_pose is not None:
                     if folder_orange_pose[ii] is not None:
                         if np.any(np.isnan(folder_orange_pose[ii][0])) or np.any(np.isnan(folder_orange_pose[ii][1])):
                             dict_i["orange_pose"] = np.array([0., 0., 0., 0., 0., 0.])
                         else:
-                            dict_i["orange_pose"] = np.concatenate((folder_orange_pose[ii][0], R.from_quat(folder_orange_pose[ii][1]).as_euler('ZYX'))) 
+                            orange_p = folder_orange_pose[ii][0]
+                            orange_q = folder_orange_pose[ii][1]
+                            dict_i["orange_pose"] = np.concatenate((orange_p, R.from_quat(orange_q).as_euler('ZYX'))) 
+                            if (phase is "staging") and (orange_p[0] < self.final_thresh_x) and (np.linalg.norm(orange_p[1:]) < self.final_thresh_r):
+                                if self.relabel:
+                                    dict_i["phase"] = self.phase_dict["final"]
+                                elif self.mix_labels:
+                                    dict_i["phase"] = [self.phase_dict["staging"], self.phase_dict["final"]]
+                            if (phase is "final") and (ii <= image_hz*self.final_reclassify_time) and self.mix_labels:
+                                dict_i["phase"] = [self.phase_dict["staging"], self.phase_dict["final"]]
+
                     else:
                         dict_i["orange_pose"] = np.array([0., 0., 0., 0., 0., 0.])
                 else:
@@ -368,7 +419,8 @@ class OrangeSimDataSet(Dataset):
                 for point_ctr in range(self.num_pts):
                     temp_idx = point_idx + (point_ctr+1)*point_offset
                     #print(temp_idx)
-                    if self.reduce_N and temp_idx > no_points:
+                    if self.reduce_N and temp_idx > no_points and (phase is not "final"):
+                        #print("Skipping the rest of " + phase + ": " + str(temp_idx) + " of " + str(no_points))
                         break_flag = True
                         break
                     temp_idx = min(temp_idx,len(folder_odom)-1)
@@ -392,7 +444,7 @@ class OrangeSimDataSet(Dataset):
                         R0 = Ri
                 #print(point_idx, p0, R0, point_list)
                 if break_flag:
-                    continue
+                    break#continue
     #            if max(point_list[0]) > 1.5:
     #                print(subfolder)
     #                print(point_list)
@@ -407,7 +459,6 @@ class OrangeSimDataSet(Dataset):
     #                make_step_plot(folder_odom[point_idx:point_idx+point_offset])
     #                make_step_plot(point_list)
                 dict_i["points"] = point_list
-                dict_i["phase"] = self.phase_dict[phase]
                 forward_v = self.getBodyVelocity(folder_odom,point_idx,point_idx+1,point_hz)
                 backward_v = self.getBodyVelocity(folder_odom,point_idx-1,point_idx,point_hz)
                 if (forward_v is None) and (backward_v is None):
@@ -420,7 +471,7 @@ class OrangeSimDataSet(Dataset):
                 else:
                     dict_i["bodyV"] = 0.5*backward_v + 0.5*forward_v
                 dict_list.append(dict_i)
-        return dict_list
+        return dict_list, (self.phase_dict[phase],folder_time)
     
     def interpolateOdom(self,folder_odom,none_idx):
         back_idx = 0
@@ -453,7 +504,16 @@ class OrangeSimDataSet(Dataset):
         else:
             phi = np.arccos(arg)
         sphi = np.sin(phi)
+        if abs(sphi) < 1e-30:
+            return np.zeros(3)
         temp = float(phi/(2.0*sphi))*(R-R.T)
+        if np.any(np.isnan(temp)):
+            print("logR NaN")
+            print(R)
+            print(arg)
+            print(phi)
+            print(sphi)
+            print(temp)
         return np.array([temp[2,1],temp[0,2],temp[1,0]])
 
     def getBodyVelocity(self,odom_list,a,b,hz):
@@ -466,7 +526,13 @@ class OrangeSimDataSet(Dataset):
         v = (odom_list[b][0:3] - odom_list[a][0:3])*hz
         R_b = R.from_euler('ZYX', odom_list[b][3:6]).as_dcm()
         R_a = R.from_euler('ZYX', odom_list[a][3:6]).as_dcm()
+        v = (R_b.T).dot(v)
         w = (R_b.T).dot(self.logR(R_a.T.dot(R_b)))*hz
+        if np.any(np.isnan(w)):
+            print("w Nan:")
+            #print(w)
+            #print(R_a)
+            #print(R_b)
         return np.hstack((v,w))
 
     def basisMatrix(self,time):
