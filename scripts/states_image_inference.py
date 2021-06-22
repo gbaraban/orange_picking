@@ -28,10 +28,14 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from pytransform3d.rotations import *
 
+import math
+
 enable_multi_control = True 
 enable_seg = True
 enable_depth = False
 enable_states = True
+enable_multi_image = False
+num_images = 1
 states_version = 1
 
 
@@ -41,6 +45,46 @@ elif enable_states:
     from orangenetarchstates import *
 else:
     from orangenetarch import *
+
+
+img_hz = 6
+queue_time = 0.5
+queue_N = int(math.ceil(img_hz*queue_time))
+queue = [-1 for i in range(queue_N)]
+queue_ptr = 0
+queue_empty = True
+
+def set_queued_imgs(curr):
+        global queue_ptr, queue
+	#retVal = (img,queue[(queue_ptr + queue_N/2)%queue_N],queue[queue_ptr])
+	queue[queue_ptr] = curr #cat
+	queue_ptr = (queue_ptr + 1)%queue_N
+	#torch.cat(retVal,1)#change to numpy h/v stack depending on image object type
+
+def get_queued_imgs(seg_image, num_imgs=3):
+	global queue_empty
+	#print("getting")
+	#img = image.cpu().detach().numpy().reshape(3,h,w)
+	curr = seg_image.cpu().detach().numpy()
+	#print(image.shape, seg_img.shape)
+	msg = curr.copy()
+	#print(msg.shape)
+
+	for i in range(num_imgs-2, -1, -1):
+		if queue_empty:
+			msg = np.concatenate((msg, curr))
+
+		else:
+			loc = (queue_ptr - (img_hz * i))%queue_N
+			while queue[loc] is -1:
+				loc -= 1
+			#print("loc:", loc)
+			msg = np.concatenate((msg, queue[loc]))
+
+	set_queued_imgs(curr)
+	queue_empty = False
+
+	return msg
 
 name_to_dtypes = {
 	"rgb8":    (np.uint8,  3),
@@ -130,12 +174,14 @@ class Rotations:
 
 class BaselineOrangeFinder:
     def __init__(self, image_topic='/d400/color/image_raw', depth_topic='/d400/aligned_depth_to_color/image_raw', gcop_topic="/gcop_odom"):
-        global enable_multi_control, enable_depth, enable_states, enable_seg, states_version
+        global enable_multi_control, enable_depth, enable_states, enable_seg, states_version, enable_multi_image, num_images
         self.enable_multi_control = enable_multi_control
         self.enable_depth = enable_depth
         self.enable_states = enable_states
         self.enable_seg = enable_seg
         self.states_version = states_version
+        self.enable_multi_image = enable_multi_image
+        self.num_images = num_images
         
         print(image_topic, depth_topic)
         self.image_sub = message_filters.Subscriber(image_topic, Image)
@@ -247,15 +293,8 @@ class BaselineOrangeFinder:
     def __params(self, gpu=True, relative=True):
         self.__num_images = 1
         self.__segload = "/home/matricex/matrice_ws/src/orange_picking/model/model_seg145.pth.tar"
-        self.__modelload = "/home/matricex/matrice_ws/src/orange_picking/model/depth_jun11/model23.pth.tar"
-        self.__modelload = "/home/matricex/matrice_ws/src/orange_picking/model/states_jun14/model11.pth.tar"
-        self.__modelload = "/home/matricex/matrice_ws/src/orange_picking/model/multi_control_jun14/modelLast.pth.tar"
-        self.__modelload = "/home/matricex/matrice_ws/src/orange_picking/model/multi_control_depth_jun14/model20.pth.tar"
-        self.__modelload = "/home/matricex/matrice_ws/src/orange_picking/model/reduceN_jun16/model14.pth.tar"
-        self.__modelload = "/home/matricex/matrice_ws/src/orange_picking/model/depth_reduceN_jun16/model8.pth.tar"
-        self.__modelload = "/home/matricex/matrice_ws/src/orange_picking/model/fine_dt_jun17/model14.pth.tar"
-        
-        
+        self.__modelload = "/home/matricex/matrice_ws/src/orange_picking/model/best_fine_dt_025_jun22/model15.pth.tar"
+                
         self.__mean_image_loc = "/home/matricex/matrice_ws/src/orange_picking/data/mean_imgv2_data_data_collection4_real_world_traj_bag.npy"
         self.__seg_mean = "data/depth_data/data/mean_seg.npy"
         self.__mean_depth_loc = "/home/matricex/matrice_ws/src/orange_picking/data/mean_depth_imgv2.npy"
@@ -268,13 +307,14 @@ class BaselineOrangeFinder:
         self.__w = 640
 
         self.__capacity = 1.0
-        self.__num_images = 1
+        self.__num_images = self.num_images
         self.__num_channels = 3
         if self.enable_seg:
             self.__num_channels += 1
 
         if self.enable_depth:
             self.__num_channels += 1
+
         self.__num_pts = 3
         self.__bins = 100
         self.__outputs = 6
@@ -293,11 +333,14 @@ class BaselineOrangeFinder:
         if self.enable_multi_control:
             self.__num_controls = 2
         
-        self.waypoint_secs = [3.0, 1.5]
+        self.waypoint_secs = [3.0, .75]
         # self.__mins = [(-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1)]
         # self.__maxs = [(0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1), (0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1), (0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1)]
         self.__mins = [(-0.10, -0.15, -0.10, -0.25, -0.075, -0.075), (-0.10, -0.15, -0.10, -0.25, -0.075, -0.075), (-0.10, -0.15, -0.10, -0.25, -0.075, -0.075)]
         self.__maxs = [(0.30, 0.15, 0.10, 0.25, 0.075, 0.075), (0.30, 0.15, 0.10, 0.25, 0.075, 0.075), (0.30, 0.15, 0.10, 0.25, 0.075, 0.075)]
+
+        #self.__extra_mins = [[(-0.05, -0.02, -0.01, -0.05, -0.03, -0.03), (-0.05, -0.02, -0.01, -0.05, -0.03, -0.03), (-0.05, -0.02, -0.01, -0.05, -0.03, -0.03)]]
+        #self.__extra_maxs = [[( 0.05,  0.02,  0.035,  0.05,  0.03,  0.03), ( 0.05,  0.02,  0.035,  0.05,  0.03,  0.03), ( 0.05,  0.02,  0.035,  0.05,  0.03,  0.03)]]
 
         self.__extra_mins = [[(-0.05, -0.05, -0.075, -0.10, -0.03, -0.03), (-0.05, -0.05, -0.075, -0.10, -0.03, -0.03), (-0.05, -0.05, -0.075, -0.10, -0.03, -0.03)]]
         self.__extra_maxs = [[(0.15, 0.05, 0.075, 0.10, 0.03, 0.03), (0.15, 0.05, 0.075, 0.10, 0.03, 0.03), (0.15, 0.05, 0.075, 0.10, 0.03, 0.03)]]
@@ -430,6 +473,18 @@ class BaselineOrangeFinder:
         # data = data[:,:,0].astype(np.float64)
         # cm_from_pixel = 0.095
         # return data #*cm_from_pixel
+    
+    def _getBodyV(self, odom, rot):
+        rotMat = R.from_quat(rot).as_dcm()
+        body_v = []
+        body_v.append(odom.twist.twist.linear.x)
+        body_v.append(odom.twist.twist.linear.y)
+        body_v.append(odom.twist.twist.linear.z)
+        body_v = list(np.matmul(rotMat.T, np.array(body_v)))
+        body_v.append(odom.twist.twist.angular.x)
+        body_v.append(odom.twist.twist.angular.y)
+        body_v.append(odom.twist.twist.angular.z)
+        return np.array(body_v)
 
     def __getCentroid(self, seg_image):
         centroid = ndimage.measurements.center_of_mass(seg_np)
@@ -881,7 +936,7 @@ class BaselineOrangeFinder:
         return data[np.multiply(np.multiply(np.abs(data[:, 0] - np.median(data[:, 0])) < m * np.std(data[:, 0]), np.abs(data[:,1] - np.median(data[:,1])) < m * np.std(data[:,1])), np.abs(data[:,2] - np.median(data[:,2])) < m * np.std(data[:,2]))]
     
 
-    def callback(self, image_data, depth_image_data):
+    def callback(self, image_data, depth_image_data, odom):
         print("Reaching callbazck")
         self.t += 1
         t1 = time.time()
@@ -983,17 +1038,29 @@ class BaselineOrangeFinder:
                 return
 
             rp = R.from_quat(rot).as_euler("ZYX")[1:]
-            states = torch.tensor(np.concatenate((mean_pt, orientation, rp))).to(self.__device)
+            if self.enable_states and self.states_version == 2:
+                body_v = self._getBodyV(odom, rot)
+                states = torch.tensor(np.concatenate((body_v, mean_pt, orientation, rp))).to(self.__device)
+            else:    
+                states = torch.tensor(np.concatenate((mean_pt, orientation, rp))).to(self.__device)
             states = torch.reshape(states, (1, states.shape[0]))
             states = states.type(torch.FloatTensor).to(self.__device)
         # """
 
-        depth_image = None
         if self.enable_depth:
             depth_image /= 10000.
             depth_image -= self.__mean_depth_image
+        else:
+            depth_image = None
 
         seg_tensor_image = self.__process4InfModel(image_tensor, segimages, depth_image)
+
+        if self.enable_multi_image:
+            seg_tensor_image = get_queued_imgs(seg_tensor_image, self.__num_images)
+    	    seg_tensor_image = seg_tensor_image.reshape((1,self.__num_channels*self.__num_images,self.__h,self.__w))
+            seg_tensor_image = torch.tensor(seg_tensor_image)
+            seg_tensor_image = seg_tensor_image.to(self.__device,dtype=torch.float)
+
         if self.enable_multi_control:
             prediction, max_pred = self.__predictionInferenceMultiControl(seg_tensor_image, states)
             print("State:", "Staging" if max_pred == 0 else "Final")
@@ -1011,7 +1078,7 @@ def main():
     bof = BaselineOrangeFinder(image_topic="/camera/color/image_raw/uncompressed", depth_topic="/camera/aligned_depth_to_color/image_raw/uncompressed")
     #bof = BaselineOrangeFinder(image_topic="/d400/color/image_raw", depth_topic="/d400/aligned_depth_to_color/image_raw")
     if enable_states or enable_depth:
-        ts = message_filters.ApproximateTimeSynchronizer([bof.image_sub, bof.depth_sub], queue_size=2, slop=1.0,  allow_headerless=True)
+        ts = message_filters.ApproximateTimeSynchronizer([bof.image_sub, bof.depth_sub, bof.odom_node], queue_size=2, slop=1.0,  allow_headerless=True)
     else:
         ts = message_filters.ApproximateTimeSynchronizer([bof.image_sub], queue_size=2, slop=1.0,  allow_headerless=True)
     ts.registerCallback(bof.callback)
