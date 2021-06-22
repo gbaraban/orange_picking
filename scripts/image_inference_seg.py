@@ -37,7 +37,10 @@ else:
 #load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/cd4_dilated_spherical/model17.pth.tar"
 #load = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/cd4_rel/model5.pth.tar"
 # load = "/home/siddharth/Desktop/orange_picking/model/may31_2021_traj/model4.pth.tar"
-load = "/home/matricex/matrice_ws/src/orange_picking/model/jun3_handParsed/model4.pth.tar"
+# load = "/home/matricex/matrice_ws/src/orange_picking/model/jun3_handParsed/model4.pth.tar"
+load = "/home/matricex/matrice_ws/src/orange_picking/model/basic_jun4_2/modelLast.pth.tar"
+load = "/home/matricex/matrice_ws/src/orange_picking/model/handParsed_jun7/model14.pth.tar"
+load = "/home/matricex/matrice_ws/src/orange_picking/model/handParsed_jun10/model23.pth.tar"
 
 
 # segload = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model_seg99.pth.tar"
@@ -57,8 +60,21 @@ segload = "/home/matricex/matrice_ws/src/orange_picking/model/model_seg145.pth.t
 #maxs = [(0.7, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2), (1.2, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2), (1.7, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2)]
 
 
-mins = [(-0.1, -0.4, -0.1, -np.pi/2, -0.1, -0.1), (-0.2, -0.8, -.15, -np.pi/2, -0.1, -0.1), (-0.3, -1.2, -0.25, -np.pi/2, -0.1, -0.1)]
-maxs = [(0.5, 0.5, 0.2, np.pi/2, 0.1, 0.1), (1.0, 0.8, 0.4, np.pi/2, 0.1, 0.1), (1.5, 1.2, 0.55, np.pi/2, 0.1, 0.1)]
+# mins = [(-0.1, -0.4, -0.1, -np.pi/2, -0.1, -0.1), (-0.2, -0.8, -.15, -np.pi/2, -0.1, -0.1), (-0.3, -1.2, -0.25, -np.pi/2, -0.1, -0.1)]
+# maxs = [(0.5, 0.5, 0.2, np.pi/2, 0.1, 0.1), (1.0, 0.8, 0.4, np.pi/2, 0.1, 0.1), (1.5, 1.2, 0.55, np.pi/2, 0.1, 0.1)]
+
+# mins = [(-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1)]
+# maxs = [(0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1), (0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1), (0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1)]
+
+# mins = [(-0.1, -0.4, -0.1, -np.pi/2, -0.1, -0.1), (-0.2, -0.8, -.15, -np.pi/2, -0.1, -0.1), (-0.3, -1.2, -0.25, -np.pi/2, -0.1, -0.1)]
+# maxs = [(0.5, 0.5, 0.2, np.pi/2, 0.1, 0.1), (1.0, 0.8, 0.4, np.pi/2, 0.1, 0.1), (1.5, 1.2, 0.55, np.pi/2, 0.1, 0.1)]
+# 
+
+#mins = [(-0.075, -0.075, -0.05, -0.15, -0.05, -0.05), (-0.075, -0.075, -0.05, -0.15, -0.05, -0.05), (-0.075, -0.075, -0.05, -0.15, -0.05, -0.05)]
+#maxs = [(0.30, 0.15, 0.075, 0.25, 0.05, 0.05), (0.30, 0.15, 0.075, 0.25, 0.05, 0.05), (0.30, 0.15, 0.075, 0.25, 0.05, 0.05)]
+mins = [(-0.10, -0.15, -0.10, -0.25, -0.075, -0.075), (-0.10, -0.15, -0.10, -0.25, -0.075, -0.075), (-0.10, -0.15, -0.10, -0.25, -0.075, -0.075)]
+maxs = [(0.30, 0.15, 0.10, 0.25, 0.075, 0.075), (0.30, 0.15, 0.10, 0.25, 0.075, 0.075), (0.30, 0.15, 0.10, 0.25, 0.075, 0.075)]
+
 
 if not resnet18:
 	model = OrangeNet8(capacity,num_images,num_pts,bins,mins,maxs,n_outputs=outputs,num_channels=4)
@@ -177,7 +193,7 @@ def inference_node_callback(data):
 	pub_seg.publish(bridge.cv2_to_imgmsg(pub_np,"passthrough"))
 	print(np.sum(seg_np), w*h, float(np.sum(seg_np))/(float(w) * float(h)))
         segimages = segimages.type(torch.FloatTensor).to(device)
-	if np.sum(seg_np) >= (stop_thresh * w * h):
+	if np.sum(seg_np) >= (stop_thresh * w * h) and False:
 		msg = PoseArray()
 		msg_stop = Bool()
 
@@ -205,8 +221,8 @@ def inference_node_callback(data):
 		#goal = np.array(goal)
 		return
 
-	elif np.sum(seg_np) < 0.0001:
-		return
+	elif np.sum(seg_np) < 0.0001 and False:
+		
 		msg = PoseArray()
 		spin = np.pi/18
 		for pt in range(model.num_points):
@@ -240,14 +256,15 @@ def inference_node_callback(data):
 
 	seg_tensor_image = torch.cat((image_tensor, segimages), 1)
 	#print(segimages.shape, batch_imgs.shape)
-	# logits = model(seg_tensor_image)
+	logits = model(seg_tensor_image)
 
 	logits = model(seg_tensor_image)
 	logits = logits.cpu()
 	logits = logits.view(1,model.outputs,model.num_points,model.bins).detach().numpy()
 	t_in2 = time.time()
 	predict = np.argmax(logits,axis=3)
-	#print("Predict: ", predict)
+	# predict = np.array([[[2, 2, 2],[2, 2, 2],[2, 2, 2],[2, 2, 2],[2, 2, 2],[2, 2, 2]]])
+	print("Predict: ", predict)
 	goal = []
 	msg = PoseArray()
 	for pt in range(model.num_points):
@@ -272,7 +289,12 @@ def inference_node_callback(data):
 		pt_pose.position.x = point[0]
 		pt_pose.position.y = point[1]
 		pt_pose.position.z = point[2]
-		R_quat = R.from_euler('ZYX', point[3:6]).as_quat()
+		if len(point) == 4:
+			temp_angle = np.array([point[3], 0., 0.])
+		else:
+			temp_angle = np.array(point[3:6])
+
+		R_quat = R.from_euler('ZYX', temp_angle).as_quat()
 		pt_pose.orientation.x = R_quat[0]
 		pt_pose.orientation.y = R_quat[1]
 		pt_pose.orientation.z = R_quat[2]
@@ -284,7 +306,7 @@ def inference_node_callback(data):
 	t_out2 = time.time()
 	time_proc = t_out2 - t_out1
 	time_infer = t_in2 - t_in1
-	#print(goal)
+	print(goal)
 	#print(time_proc)
 	#Publish
 

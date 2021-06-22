@@ -667,9 +667,9 @@ class BaselineOrangeFinder:
             return
 
         if trans is None or rot is None:
+            print("tf None")
             return
 
-        # print(area.shape)
         if area.shape[0] > 30:
             # print("In orange: ")
             mean_pt = self.publishData(depth_image, camera_intrinsics, area, self.__pointcloud_publisher, Trans=trans, Rot=rot, tracker=False)

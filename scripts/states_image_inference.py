@@ -21,12 +21,26 @@ import message_filters
 from open3d import geometry
 from open3d import open3d
 
+import torch.nn as nn
+import torch.nn.functional as F
+
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from pytransform3d.rotations import *
 
-from orangenetarchstates import *
+enable_multi_control = True 
+enable_seg = True
+enable_depth = False
+enable_states = True
+states_version = 1
 
+
+if enable_multi_control:
+    from orangenetarchmulticontrol import *
+elif enable_states:
+    from orangenetarchstates import *
+else:
+    from orangenetarch import *
 
 name_to_dtypes = {
 	"rgb8":    (np.uint8,  3),
@@ -116,6 +130,13 @@ class Rotations:
 
 class BaselineOrangeFinder:
     def __init__(self, image_topic='/d400/color/image_raw', depth_topic='/d400/aligned_depth_to_color/image_raw', gcop_topic="/gcop_odom"):
+        global enable_multi_control, enable_depth, enable_states, enable_seg, states_version
+        self.enable_multi_control = enable_multi_control
+        self.enable_depth = enable_depth
+        self.enable_states = enable_states
+        self.enable_seg = enable_seg
+        self.states_version = states_version
+        
         print(image_topic, depth_topic)
         self.image_sub = message_filters.Subscriber(image_topic, Image)
         self.depth_sub = message_filters.Subscriber(depth_topic, Image)
@@ -127,7 +148,8 @@ class BaselineOrangeFinder:
 
         self.__segmodel = SegmentationNet()
         if not self.__resnet18:
-            self.__model = OrangeNet8(self.__capacity,self.__num_images,self.__num_pts,self.__bins,self.__mins,self.__maxs,n_outputs=self.__outputs,num_channels=self.__num_channels, state_count=self.__state_count)
+            # self.__model = OrangeNet8(self.__capacity,self.__num_images,self.__num_pts,self.__bins,self.__mins,self.__maxs,n_outputs=self.__outputs,num_channels=self.__num_channels)
+            self.__model = OrangeNet8(self.__capacity,self.__num_images,self.__num_pts,self.__bins,self.__mins,self.__maxs,n_outputs=self.__outputs,num_channels=self.__num_channels, state_count=self.__state_count, num_controls=self.__num_controls)
         else:
             pass
             print("Not Supported Yet")
@@ -217,15 +239,26 @@ class BaselineOrangeFinder:
             print('mean image file found')
             self.__mean_image = np.load(self.__mean_image_loc)
 
+        self.__mean_depth_image = np.load(self.__mean_depth_loc)/10000.
+
         self.__seg_mean_image = torch.tensor(np.load(self.__seg_mean)).to('cuda')
 
         
     def __params(self, gpu=True, relative=True):
         self.__num_images = 1
         self.__segload = "/home/matricex/matrice_ws/src/orange_picking/model/model_seg145.pth.tar"
-        self.__modelload = "/home/matricex/matrice_ws/src/orange_picking/model/states_jun3/model29.pth.tar"
+        self.__modelload = "/home/matricex/matrice_ws/src/orange_picking/model/depth_jun11/model23.pth.tar"
+        self.__modelload = "/home/matricex/matrice_ws/src/orange_picking/model/states_jun14/model11.pth.tar"
+        self.__modelload = "/home/matricex/matrice_ws/src/orange_picking/model/multi_control_jun14/modelLast.pth.tar"
+        self.__modelload = "/home/matricex/matrice_ws/src/orange_picking/model/multi_control_depth_jun14/model20.pth.tar"
+        self.__modelload = "/home/matricex/matrice_ws/src/orange_picking/model/reduceN_jun16/model14.pth.tar"
+        self.__modelload = "/home/matricex/matrice_ws/src/orange_picking/model/depth_reduceN_jun16/model8.pth.tar"
+        self.__modelload = "/home/matricex/matrice_ws/src/orange_picking/model/fine_dt_jun17/model14.pth.tar"
+        
+        
         self.__mean_image_loc = "/home/matricex/matrice_ws/src/orange_picking/data/mean_imgv2_data_data_collection4_real_world_traj_bag.npy"
         self.__seg_mean = "data/depth_data/data/mean_seg.npy"
+        self.__mean_depth_loc = "/home/matricex/matrice_ws/src/orange_picking/data/mean_depth_imgv2.npy"
         if torch.cuda.is_available() and gpu:
             self.__gpu = 0
         else:
@@ -236,17 +269,38 @@ class BaselineOrangeFinder:
 
         self.__capacity = 1.0
         self.__num_images = 1
-        self.__num_channels = 5
+        self.__num_channels = 3
+        if self.enable_seg:
+            self.__num_channels += 1
+
+        if self.enable_depth:
+            self.__num_channels += 1
         self.__num_pts = 3
         self.__bins = 100
         self.__outputs = 6
-        self.__state_count = 9
+        
+        
+        state_dict = {1: 8, 2: 14}
+        if self.enable_states:
+            self.__state_count = state_dict[self.states_version]
+        else:
+            self.__state_count = 0
         self.__resnet18 = False
         self.__spherical = False
         self.__regression = False
+
+        self.__num_controls = 1
+        if self.enable_multi_control:
+            self.__num_controls = 2
         
-        self.__mins = [(-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1)]
-        self.__maxs = [(0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1), (0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1), (0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1)]
+        self.waypoint_secs = [3.0, 1.5]
+        # self.__mins = [(-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1)]
+        # self.__maxs = [(0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1), (0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1), (0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1)]
+        self.__mins = [(-0.10, -0.15, -0.10, -0.25, -0.075, -0.075), (-0.10, -0.15, -0.10, -0.25, -0.075, -0.075), (-0.10, -0.15, -0.10, -0.25, -0.075, -0.075)]
+        self.__maxs = [(0.30, 0.15, 0.10, 0.25, 0.075, 0.075), (0.30, 0.15, 0.10, 0.25, 0.075, 0.075), (0.30, 0.15, 0.10, 0.25, 0.075, 0.075)]
+
+        self.__extra_mins = [[(-0.05, -0.05, -0.075, -0.10, -0.03, -0.03), (-0.05, -0.05, -0.075, -0.10, -0.03, -0.03), (-0.05, -0.05, -0.075, -0.10, -0.03, -0.03)]]
+        self.__extra_maxs = [[(0.15, 0.05, 0.075, 0.10, 0.03, 0.03), (0.15, 0.05, 0.075, 0.10, 0.03, 0.03), (0.15, 0.05, 0.075, 0.10, 0.03, 0.03)]]
         
         self.__stop_thresh = 0.0255
 
@@ -293,27 +347,53 @@ class BaselineOrangeFinder:
 
         return seg_np, segimages
 
-    def __process4InfModel(self,image_tensor, segimages, depth_image):
-        depth_tensor = torch.tensor(depth_image)
-        depth_tensor = torch.reshape(depth_tensor, (1, 1, depth_tensor.shape[0], depth_tensor.shape[1]))
-        depth_tensor = depth_tensor.type(torch.FloatTensor).to(self.__device)
+    def __process4InfModel(self,image_tensor, segimages, depth_image=None):
+        if depth_image is not None:
+            depth_tensor = torch.tensor(depth_image)
+            depth_tensor = torch.reshape(depth_tensor, (1, 1, depth_tensor.shape[0], depth_tensor.shape[1]))
+            depth_tensor = depth_tensor.type(torch.FloatTensor).to(self.__device)
 
         segimages = segimages.type(torch.FloatTensor).to(self.__device)
         segimages -= self.__seg_mean_image
         segimages = torch.reshape(segimages, (segimages.shape[0], 1, segimages.shape[1], segimages.shape[2]))
 
-        seg_tensor_image = torch.cat((image_tensor, depth_tensor, segimages), 1)
+        if depth_image is not None:
+            seg_tensor_image = torch.cat((image_tensor, depth_tensor, segimages), 1)
+        else:
+            seg_tensor_image = torch.cat((image_tensor, segimages), 1)
 
         return seg_tensor_image
 
 
-    def __predictionInferene(self, seg_tensor_image, states):
-        logits = self.__model(seg_tensor_image, states)
+    def __predictionInference(self, seg_tensor_image, states=None):
+        if states is None:
+            logits = self.__model(seg_tensor_image)
+        else:
+            logits = self.__model(seg_tensor_image, states)
         logits = logits.cpu()
         logits = logits.view(1,self.__model.outputs,self.__model.num_points,self.__model.bins).detach().numpy()
         predict = np.argmax(logits,axis=3)
 
         return predict
+
+    def __predictionInferenceMultiControl(self, seg_tensor_image, states=None):
+        if states is None:
+            logits = self.__model(seg_tensor_image)
+        else:
+            logits = self.__model(seg_tensor_image, states)
+        logits = logits.cpu()
+        classifier_logits = logits[:, :self.__num_controls]
+        logits = logits[:, self.__num_controls:]
+        softmax = nn.Softmax(dim=1)
+        predicted_phases = softmax(classifier_logits).to('cpu').detach().numpy()
+        max_pred = np.argmax(predicted_phases, axis=1)[0]
+
+        logits = logits.view(1,self.__model.outputs,self.__model.num_points,self.__model.bins*self.__num_controls).detach().numpy()
+        logits = logits[:, :, :, np.arange(self.__bins*max_pred, self.__bins*(max_pred+1))]
+
+        predict = np.argmax(logits,axis=3)
+
+        return predict, max_pred
 
     def __depthnpFromImage(self, msg):
         #Stolen from https://github.com/eric-wieser/ros_numpy/blob/master/src/ros_numpy/image.py
@@ -476,9 +556,58 @@ class BaselineOrangeFinder:
         Trans = np.matmul(np.linalg.inv(rot.as_dcm()), (self.world2orange_pos - np.array(trans)))
         return Rot, Trans
 
-    def _publsihWaypoints(self, predict):
+    def _publishWaypointsMultiControl(self, predict, max_pred):
         goal = []
         msg = PoseArray()
+        header = std_msgs.msg.Header()
+        if max_pred == 0:
+            bin_min = self.__mins
+            bin_max = self.__maxs
+            num_bins = self.__bins
+            time_secs = self.waypoint_secs[max_pred]
+        else:
+            bin_min = self.__extra_mins[max_pred-1]
+            bin_max = self.__extra_maxs[max_pred-1]
+            num_bins = self.__bins
+            time_secs = self.waypoint_secs[max_pred]
+
+        for pt in range(self.__model.num_points):
+            point = []
+            for coord in range(self.__model.outputs):
+                if not self.__regression:
+                    bin_size = (bin_max[pt][coord] - bin_min[pt][coord])/float(num_bins)
+                    point.append(bin_min[pt][coord] + bin_size*predict[0,coord,pt])
+                else:
+                    point.append(logits[0,pt, coord])
+            if self.__spherical:
+                pointList = [np.array(point)]
+                pl = sphericalToXYZ().__call__(pointList)
+                print("Before: ", pl.shape)
+                point = pl.flatten()
+                print("After: ", point.shape)
+
+            point = np.array(point)
+            #print(point)
+            goal.append(point)
+            pt_pose = Pose()
+            pt_pose.position.x = point[0]
+            pt_pose.position.y = point[1]
+            pt_pose.position.z = point[2]
+            R_quat = R.from_euler('ZYX', point[3:6]).as_quat()
+            pt_pose.orientation.x = R_quat[0]
+            pt_pose.orientation.y = R_quat[1]
+            pt_pose.orientation.z = R_quat[2]
+            pt_pose.orientation.w = R_quat[3]
+            msg.poses.append(pt_pose)
+        #exit()
+        header.stamp = rospy.Duration(time_secs) 
+        msg.header = header
+        self.__pub.publish(msg)
+
+    def _publishWaypoints(self, predict):
+        goal = []
+        msg = PoseArray()
+        header = std_msgs.msg.Header()
         for pt in range(self.__model.num_points):
             point = []
             for coord in range(self.__model.outputs):
@@ -508,6 +637,8 @@ class BaselineOrangeFinder:
             pt_pose.orientation.w = R_quat[3]
             msg.poses.append(pt_pose)
         #exit()
+        header.stamp = rospy.Duration(self.waypoint_secs[0]) 
+        msg.header = header
         self.__pub.publish(msg)
 
     def _publsihConstantWaypoints(self, point=[0., 0., 0., 0., 0., 0.], print_msg="STOP STOP STOP"):
@@ -762,107 +893,127 @@ class BaselineOrangeFinder:
 
         seg_np, segimages = self.__segmentationInference(image_tensor)
 
-        
         #centroid = self.__getCentroid(seg_np)
 
         camera_intrinsics = CameraIntrinsics()
         area = np.argwhere(seg_np == 1)
         pre_area = area.copy()
         # print("Orignal shape: ", area.shape)
-        if area.shape[0] < 30:
-            print("Early return??", area.shape)
-            return
-        
-        area = self.reject_outliers(area)
-        # print("No outlier shape: ", area.shape)
+        # """
+        states = None
+        if self.enable_states:
+            if area.shape[0] > 30:
+                # print("Early return??", area.shape)
+                # return
+            
+                area = self.reject_outliers(area)
+                # print("No outlier shape: ", area.shape)
 
-        mean_x, mean_y = np.mean(area, axis=0)
+                mean_x, mean_y = np.mean(area, axis=0)
 
-        min_ = np.min(area, axis=0)
-        max_ = np.max(area, axis=0)
-        min_x, min_y = min_[0], min_[1]
-        max_x, max_y = max_[0], max_[1]
-        size_x = np.abs(max_x - min_x)
-        size_y = np.abs(max_y - min_y)
-        size_ = np.max((size_x, size_y))
-        # mult_x, mult_y = 1.5, 1.5
-        #extra_min_x, extra_max_x = np.max((0, min_x-int(mult_x*size_x))), np.min((seg_np.shape[0], max_x+int(mult_x*size_)))
-        #extra_min_y, extra_max_y = np.max((0, min_y-int(mult_y*size_y))), np.min((seg_np.shape[1], max_y+int(mult_y*size_)))
-        mult_x, mult_y = 2., 2.
-        extra_min_x, extra_max_x = np.max((0, mean_x-int(mult_x*size_x))), np.min((seg_np.shape[0], mean_x+int(mult_x*size_)))
-        extra_min_y, extra_max_y = np.max((0, mean_y-int(mult_y*size_y))), np.min((seg_np.shape[1], mean_y+int(mult_y*size_)))
-        
-        nx = np.linspace(extra_min_x, extra_max_x-1, extra_max_x - extra_min_x, dtype=np.int32)
-        ny = np.linspace(extra_min_y, extra_max_y-1, extra_max_y - extra_min_y, dtype=np.int32)
-        extra_area = np.transpose([np.tile(nx, len(ny)), np.repeat(ny, len(nx))])
-        
-        trans, rot = None, None
-        try:
-            # (trans,rot) = self.listener.lookupTransform('world', 'camera_depth_optical_frame_filtered', rospy.Time(0))
-            (trans,rot) = self.listener.lookupTransform('world', 'camera_depth_optical_frame', rospy.Time(0))
-        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-            return
+                min_ = np.min(area, axis=0)
+                max_ = np.max(area, axis=0)
+                min_x, min_y = min_[0], min_[1]
+                max_x, max_y = max_[0], max_[1]
+                size_x = np.abs(max_x - min_x)
+                size_y = np.abs(max_y - min_y)
+                size_ = np.max((size_x, size_y))
+                # mult_x, mult_y = 1.5, 1.5
+                #extra_min_x, extra_max_x = np.max((0, min_x-int(mult_x*size_x))), np.min((seg_np.shape[0], max_x+int(mult_x*size_)))
+                #extra_min_y, extra_max_y = np.max((0, min_y-int(mult_y*size_y))), np.min((seg_np.shape[1], max_y+int(mult_y*size_)))
+                mult_x, mult_y = 2., 2.
+                extra_min_x, extra_max_x = np.max((0, mean_x-int(mult_x*size_x))), np.min((seg_np.shape[0], mean_x+int(mult_x*size_)))
+                extra_min_y, extra_max_y = np.max((0, mean_y-int(mult_y*size_y))), np.min((seg_np.shape[1], mean_y+int(mult_y*size_)))
+                
+                nx = np.linspace(extra_min_x, extra_max_x-1, extra_max_x - extra_min_x, dtype=np.int32)
+                ny = np.linspace(extra_min_y, extra_max_y-1, extra_max_y - extra_min_y, dtype=np.int32)
+                extra_area = np.transpose([np.tile(nx, len(ny)), np.repeat(ny, len(nx))])
+                
 
-        if trans is None or rot is None:
-            return
-
-        mean_pt = np.array([0., 0., 0.])
-        orientation = np.array([0., 0., 0., 0.])
-
-
-        # print(area.shape)
-        if area.shape[0] > 30:
-            # print("In orange: ")
-            mean_pt, _ = self.publishData(depth_image, camera_intrinsics, area, self.__pointcloud_publisher, Trans=trans, Rot=rot, tracker=False)
-            if mean_pt is None:
+            trans, rot = None, None
+            try:
+                # (trans,rot) = self.listener.lookupTransform('world', 'camera_depth_optical_frame_filtered', rospy.Time(0))
+                (trans,rot) = self.listener.lookupTransform('world', 'camera_depth_optical_frame', rospy.Time(0))
+            except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
                 return
-            # print("In extra orange ")
-            mean_pt, orientation = self.publishData(depth_image, camera_intrinsics, extra_area, self.__pointcloud_publisher_extra, Trans=trans, Rot=rot, mean_pt=mean_pt, norm_tracker=True, tracker=True)
 
-            orientation = R.from_quat(orientation).as_euler("ZYX")
+            if trans is None or rot is None:
+                return
+
+            mean_pt = np.array([0., 0., 0.])
+            orientation = np.array([0., 0., 0.])
+
+
             # print(area.shape)
-            # x, y, z = self.__convert_depth_frame_to_pointcloud(depth_image, camera_intrinsics, area)
-            # #print(x.shape, y.shape, z.shape)
-            # if np.any(np.isnan(x)) or np.any(np.isnan(y)) or np.any(np.isnan(z)):
-            #     return 
-            # print(np.mean(x), np.mean(y), np.mean(z))
-            # # print(np.min(x),np.max(x),np.min(y),np.max(y), np.min(z),np.max(z))
-            # # print("\n\n\n")
-            # self.__publishPointCloud(x, y, z, step=20)
-            # #self.__find_plane(x, y, z)
-            # self._publishGoalPoints(x, y, z, odom_data=None)
-            print("Plane fit time", time.time()-t1)
-        else:
-            print("Left pre-area check", area.shape, pre_area.shape)
+            if area.shape[0] > 30:
+                # print("In orange: ")
+                mean_pt = self.publishData(depth_image, camera_intrinsics, area, self.__pointcloud_publisher, Trans=trans, Rot=rot, tracker=False)
+                if mean_pt is None:
+                    return
+                else:
+                    mean_pt, _ = mean_pt
+                # print("In extra orange ")
+                mean_pt, orientation = self.publishData(depth_image, camera_intrinsics, extra_area, self.__pointcloud_publisher_extra, Trans=trans, Rot=rot, mean_pt=mean_pt, norm_tracker=True, tracker=True)
 
-        
-        if np.sum(seg_np) >= (self.__stop_thresh * self.__w * self.__h):
-            self._publsihConstantWaypoints()
-            self._publishStopMsg()
-            return
+                orientation = R.from_quat(orientation).as_euler("ZYX")
+                # print(area.shape)
+                # x, y, z = self.__convert_depth_frame_to_pointcloud(depth_image, camera_intrinsics, area)
+                # #print(x.shape, y.shape, z.shape)
+                # if np.any(np.isnan(x)) or np.any(np.isnan(y)) or np.any(np.isnan(z)):
+                #     return 
+                # print(np.mean(x), np.mean(y), np.mean(z))
+                # # print(np.min(x),np.max(x),np.min(y),np.max(y), np.min(z),np.max(z))
+                # # print("\n\n\n")
+                # self.__publishPointCloud(x, y, z, step=20)
+                # #self.__find_plane(x, y, z)
+                # self._publishGoalPoints(x, y, z, odom_data=None)
+                print("Plane fit time", time.time()-t1)
+            else:
+                print("Left pre-area check", area.shape, pre_area.shape)
 
-        elif np.sum(seg_np) < 0.0001:
-            spin = np.pi/18
-            self._publsihConstantWaypoints([0., 0., 0., spin, 0., 0.], "SPIN SPIN SPIN")
-            return
+            
+            if np.sum(seg_np) >= (self.__stop_thresh * self.__w * self.__h) and False:
+                self._publsihConstantWaypoints()
+                self._publishStopMsg()
+                return
 
-        rp = R.from_quat(rot).as_euler("ZYX")[1:]
-        states = torch.tensor(np.concatenate((mean_pt, orientation, rp))).to(self.__device)
-        states = torch.reshape(states, (1, states.shape[0]))
-        states = states.type(torch.FloatTensor).to(self.__device)
+            elif np.sum(seg_np) < 0.0001 and False:
+                spin = np.pi/18
+                self._publsihConstantWaypoints([0., 0., 0., spin, 0., 0.], "SPIN SPIN SPIN")
+                return
 
+            rp = R.from_quat(rot).as_euler("ZYX")[1:]
+            states = torch.tensor(np.concatenate((mean_pt, orientation, rp))).to(self.__device)
+            states = torch.reshape(states, (1, states.shape[0]))
+            states = states.type(torch.FloatTensor).to(self.__device)
+        # """
+
+        depth_image = None
+        if self.enable_depth:
+            depth_image /= 10000.
+            depth_image -= self.__mean_depth_image
 
         seg_tensor_image = self.__process4InfModel(image_tensor, segimages, depth_image)
-        prediction = self.__predictionInferene(seg_tensor_image, states)
-        self._publsihWaypoints(prediction)
+        if self.enable_multi_control:
+            prediction, max_pred = self.__predictionInferenceMultiControl(seg_tensor_image, states)
+            print("State:", "Staging" if max_pred == 0 else "Final")
+            # self._publishWaypoints(prediction)
+            self._publishWaypointsMultiControl(prediction, max_pred)
+        else:
+            prediction = self.__predictionInference(seg_tensor_image, states)
+            self._publishWaypoints(prediction)
         print("Total time", time.time()-t1)
 
 
 def main():
+    global enable_depth, enable_states
     rospy.init_node('baseline_inference')
     bof = BaselineOrangeFinder(image_topic="/camera/color/image_raw/uncompressed", depth_topic="/camera/aligned_depth_to_color/image_raw/uncompressed")
     #bof = BaselineOrangeFinder(image_topic="/d400/color/image_raw", depth_topic="/d400/aligned_depth_to_color/image_raw")
-    ts = message_filters.ApproximateTimeSynchronizer([bof.image_sub, bof.depth_sub], queue_size=2, slop=1.0,  allow_headerless=True)
+    if enable_states or enable_depth:
+        ts = message_filters.ApproximateTimeSynchronizer([bof.image_sub, bof.depth_sub], queue_size=2, slop=1.0,  allow_headerless=True)
+    else:
+        ts = message_filters.ApproximateTimeSynchronizer([bof.image_sub], queue_size=2, slop=1.0,  allow_headerless=True)
     ts.registerCallback(bof.callback)
     rospy.spin()
 
