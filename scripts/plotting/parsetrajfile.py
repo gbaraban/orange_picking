@@ -94,7 +94,11 @@ def make_step_plot(goals,states,saveFolder=None,name=None):
 def extractStates(statefile,tree=None,rot_flag = False):
   r_xyz = None
   rot_list = []
+  print(len(statefile))
   for state in statefile:
+    if state is None:
+      continue
+    #print(state)
     (x,y,z,roll,pitch,yaw,yd,yawc,logR) = parse_state(state)
     xyz = np.array((x,y,z))
     if tree is not None:
@@ -151,6 +155,19 @@ def plotTrajData(fig,ax,states,rots = None, color=None,marker=None):
   ax.set_xlim(mid[0]-max_range/2.0,mid[0]+max_range/2.0)
   ax.set_ylim(mid[1]-max_range/2.0,mid[1]+max_range/2.0)
   ax.set_zlim(max(0,mid[2]-max_range/2.0),mid[2]+max_range/2.0)
+
+def plotTimeData(ts,states):
+  states = np.array(states)
+  x = states[:,0]
+  y = states[:,1]
+  z = states[:,2]
+  fig, axs = plt.subplots(3)
+  axs[0].plot(ts,x)
+  #axs[0].set_title('x')
+  axs[1].plot(ts,y)
+  #axs[1].set_title('y')
+  axs[2].plot(ts,z)
+  #axs[2].set_title('z')
 
 def make_full_plots(ts,states, targ=None, cyl_o=None, cyl_r=0.6, cyl_h=1.6, saveFolder=None, truth=None):
   x_list = []
@@ -279,30 +296,42 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser()
   parser.add_argument('fname', nargs="+", help='pickle file')
   args = parser.parse_args()
-  fig = plt.figure()
-  ax = plt.axes(projection='3d')
+  #fig = plt.figure()
+  #ax = plt.axes(projection='3d')
   for fname in args.fname:
-    if os.path.isfile(fname+'/metadata.pickle'):
-      with open(fname+'/metadata.pickle','rb') as f:
-        metadata = pickle.load(f)
-      plotMetaData(fig,ax,metadata,tree_compensate=(len(args.fname) > 1))
-      tree_flag = metadata['tree'] if (len(args.fname) > 1) else None
-    else:
-      tree_flag = None
-      plotMetaData(fig,ax,None,False)
-    if os.path.isfile(fname+'/traj_data.pickle'):
-      with open(fname+'/traj_data.pickle','rb') as f:
-        trajdata = pickle.load(f)
-      with open(fname+'/ref_traj.pickle','rb') as f:
-        refdata = pickle.load(f)
-      ref_states = extractStates(refdata,tree = tree_flag)
-      plotTrajData(fig,ax,ref_states,color="green")
-    else:
-      with open(fname+'/traj_data_no_orange.pickle','rb') as f:
-        trajdata = pickle.load(f)
+    #if os.path.isfile(fname+'/metadata.pickle'):
+    #  with open(fname+'/metadata.pickle','rb') as f:
+    #    metadata = pickle.load(f)
+    #  plotMetaData(fig,ax,metadata,tree_compensate=(len(args.fname) > 1))
+    #  tree_flag = metadata['tree'] if (len(args.fname) > 1) else None
+    #else:
+    #  tree_flag = None
+    #  plotMetaData(fig,ax,None,False)
+    #if os.path.isfile(fname+'/traj_data.pickle'):
+    #  with open(fname+'/traj_data.pickle','rb') as f:
+    #    trajdata = pickle.load(f)
+    #  with open(fname+'/ref_traj.pickle','rb') as f:
+    #    refdata = pickle.load(f)
+    #  ref_states = extractStates(refdata,tree = tree_flag)
+    #  plotTrajData(fig,ax,ref_states,color="green")
+    #else:
+    #  with open(fname+'/traj_data_no_orange.pickle','rb') as f:
+    #    trajdata = pickle.load(f)
     #(traj_states,traj_rot) = extractStates(trajdata,tree = tree_flag,rot_flag = True)
-    traj_states,traj_rot = (extractStates(trajdata,tree = tree_flag,rot_flag = False),None)
-    plotTrajData(fig,ax,traj_states,rots = traj_rot)
+    staging_name = fname + "/trial0/staging"
+    with open(staging_name + '/data.pickle_no_parse','rb') as f:
+        stage_data = pickle.load(f)
+    trajdata = stage_data['data']
+    no_odom = stage_data['nOdom']
+    print("Extracting States")
+    traj_states, rots = extractStates(trajdata, rot_flag = True)
+    #plotTrajData(fig,ax,traj_states,rots = rots)
+    print(len(traj_states))
+    time = stage_data["time_secs"] + (stage_data["time_nsecs"]/1e9)
+    time = np.linspace(0,time,len(traj_states))
+    print("Plotting")
+    plotTimeData(time,traj_states)
+  print("Plot")
   plt.show()
     #make_full_plots(ts,trajdata,cyl_o = (0,0,0),truth = refdata)#targ,metadata['cyl_o'],metadata['cyl_r'],metadata['h'],None)
   #targ = metadata['xf']

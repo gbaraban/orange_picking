@@ -71,7 +71,7 @@ class SubSet(Dataset):
         return self.ds[self.idx[i]]
 
 class OrangeSimDataSet(Dataset):
-    def __init__(self, root_dir, num_images, num_pts, pt_trans, img_trans, img_dt=1.0, pred_dt=1.0, reduce_N = False, depth=False, rel_pose=False, gaussian_pts=False, use_resets = False, extra_dt=None, relabel=False, mix_labels=True):
+    def __init__(self, root_dir, num_images, num_pts, pt_trans, img_trans, img_dt=1.0, pred_dt=1.0, reduce_N = False, depth=False, rel_pose=False, gaussian_pts=False, use_resets = False, extra_dt=None, relabel=False, mix_labels=True, body_v_dt = None, use_magnet=False, remove_hover=None):
         self.run_dir = root_dir
         self.num_images = num_images
         self.num_pts = num_pts
@@ -97,6 +97,14 @@ class OrangeSimDataSet(Dataset):
         self.relabel = relabel
         self.mix_labels = mix_labels
         self.final_reclassify_time = 2.5
+        self.body_v_dt = body_v_dt
+        self.use_magnet = use_magnet
+        self.data_folder = "real_world_traj_bag"
+        self.remove_hover = remove_hover
+        if self.remove_hover and (type(self.remove_hover) is not type(tuple())):
+            self.remove_hover = (self.remove_hover,self.remove_hover)
+        if self.use_magnet:
+            self.data_folder = "real_world_traj_mag_bag"
         if relabel or mix_labels:
             self.final_thresh_x = 1.2
             self.final_thresh_r = 0.6
@@ -174,8 +182,8 @@ class OrangeSimDataSet(Dataset):
     def getTrajLen(self):
         pass
 
-    def __getitem__(self,i):
-        dict_i = self.event_list[i]
+    def __getitem__(self,arg_index):
+        dict_i = self.event_list[arg_index]
         points = np.array(dict_i["points"])
 
         if self.gaussian_pts:
@@ -192,7 +200,7 @@ class OrangeSimDataSet(Dataset):
         rp = dict_i["rp"]
         image = None
         for ii, image_loc in enumerate(image_loc_list):
-            image_np_loc = image_loc.replace("real_world_traj_bag","real_world_traj_bag_np").replace("png","npy")
+            image_np_loc = image_loc.replace(self.data_folder, self.data_folder + "_np").replace("png","npy")
             if os.path.isfile(image_np_loc):
                 temp_image = np.load(image_np_loc)
             else:
@@ -217,9 +225,9 @@ class OrangeSimDataSet(Dataset):
         # TODO Add augmentation
         point_list = []
         rot_list = []
-        for i in range(self.num_pts):
-            point_list.append(points[i, :3])
-            rot_list.append(R.from_euler("ZYX", points[i, 3:6]).as_dcm())
+        for ii in range(self.num_pts):
+            point_list.append(points[ii, :3])
+            rot_list.append(R.from_euler("ZYX", points[ii, 3:6]).as_dcm())
 
         if self.image_transform:
              data = {}
@@ -266,6 +274,9 @@ class OrangeSimDataSet(Dataset):
         if "bodyV" in dict_i and not self.coeff_exists:
             return_dict["body_v"] = dict_i["bodyV"].astype("float32")
 
+        if "magnet" in dict_i:
+            return_dict["magnet"] = (dict_i["magnet"]/4096.).astype(np.float32)
+
         if orange_pose is not None and not self.coeff_exists:
             return_dict["orange_pose"] = orange_pose
         #print(return_dict)
@@ -282,6 +293,7 @@ class OrangeSimDataSet(Dataset):
             phase = None
             print("phase not found in " + subfolder)
         dict_list = []
+        # print(subfolder)
         with open(subfolder + "data.pickle_no_parse",'rb') as f:
             folder_data = pickle.load(f, encoding="latin1")
         if "coeff" in folder_data:
@@ -292,7 +304,7 @@ class OrangeSimDataSet(Dataset):
             folder_time = folder_data["time"]
             no_events = len(folder_coeff)
             image_hz = no_events/float(folder_time)
-            image_offset = int(self.img_dt*image_hz)
+            image_offset = round(self.img_dt*image_hz)
             for ii, (odom, coeff) in enumerate(zip(folder_odom,folder_coeff)):
                 dict_i = {}
                 dict_i["image"] = []
@@ -353,6 +365,10 @@ class OrangeSimDataSet(Dataset):
             folder_time = folder_data["time_secs"] + (folder_data["time_nsecs"]/1e9)
             folder_odom = folder_data["data"]
 
+            folder_magnet = None
+            no_magnets = None
+            magnet_hz = None
+
             #print(no_events, no_points, folder_time, folder_data)
             folder_orange_pose = None
             if "orange_pose" in folder_data:
@@ -361,19 +377,26 @@ class OrangeSimDataSet(Dataset):
             if folder_time < 1.0:
                 print(str(no_events) + " " + str(no_points) + " " + subfolder)        
                 return None, None
+
+            if ("mag" in folder_data) and (self.use_magnet):
+                folder_magnet = folder_data["mag"]
+                no_magnets = folder_data["nMag"]
+                magnet_hz = float(no_magnets)/float(folder_time)
+
             image_hz = no_events/float(folder_time)
-            image_offset = int(self.img_dt*image_hz)
+            image_offset = round(self.img_dt*image_hz)
             point_hz = float(no_points)/folder_time
             if self.phase_dict[phase] == 0 or self.extra_dt is None: #TODO Fix time problem if mix_labels phase
                 future_pred_dt = self.pred_dt
             else:
                 future_pred_dt = self.extra_dt[self.phase_dict[phase]-1]
-            point_offset = int(future_pred_dt*point_hz)
+            point_offset = round(future_pred_dt*point_hz)
             for ii in range(no_events):
                 dict_i = {}
                 dict_i["image"] = []
 
                 dict_i["phase"] = self.phase_dict[phase]
+                
                 if folder_orange_pose is not None:
                     if folder_orange_pose[ii] is not None:
                         if np.any(np.isnan(folder_orange_pose[ii][0])) or np.any(np.isnan(folder_orange_pose[ii][1])):
@@ -393,6 +416,7 @@ class OrangeSimDataSet(Dataset):
                     else:
                         dict_i["orange_pose"] = np.array([0., 0., 0., 0., 0., 0.])
                 else:
+                    print("No orange_pose in:", subfolder)
                     dict_i["orange_pose"] = None
 
                 if self.depth:
@@ -407,7 +431,17 @@ class OrangeSimDataSet(Dataset):
                         depth_loc = subfolder + "depth_image" + str(image_idx) + ".npy"
                         dict_i["depth"].append(depth_loc)
                 dict_i["time_frac"] = float(ii)/no_events
-                point_idx = int(dict_i["time_frac"]*no_points)
+                point_idx = round(dict_i["time_frac"]*no_points)
+
+                if folder_magnet is not None:
+                    magnet_idx = round(dict_i["time_frac"]*no_magnets)
+                    # print(len(folder_magnet), magnet_idx, dict_i["time_frac"])
+                    if folder_magnet[magnet_idx] is not None:
+                        dict_i["magnet"] = np.array(folder_magnet[magnet_idx])
+                    else:
+                        print("Issuee!! Magnet data not available")
+                        dict_i["magnet"] = np.array([0., 0., 0.])
+
                 break_flag = False
                 point_list = []
                 if folder_odom[point_idx] is None: #TODO Ask gabe to check
@@ -445,6 +479,9 @@ class OrangeSimDataSet(Dataset):
                 #print(point_idx, p0, R0, point_list)
                 if break_flag:
                     break#continue
+                if (phase is not "final") and self.remove_hover:
+                    if np.all([(np.linalg.norm(point[0:3]) < self.remove_hover[0]) and (np.linalg.norm(point[3:]) < self.remove_hover[1]) for point in point_list]):
+                        continue
     #            if max(point_list[0]) > 1.5:
     #                print(subfolder)
     #                print(point_list)
@@ -459,8 +496,12 @@ class OrangeSimDataSet(Dataset):
     #                make_step_plot(folder_odom[point_idx:point_idx+point_offset])
     #                make_step_plot(point_list)
                 dict_i["points"] = point_list
-                forward_v = self.getBodyVelocity(folder_odom,point_idx,point_idx+1,point_hz)
-                backward_v = self.getBodyVelocity(folder_odom,point_idx-1,point_idx,point_hz)
+                if self.body_v_dt is None:
+                    body_v_offset = 1
+                else:
+                    body_v_offset = round(self.body_v_dt*point_hz)
+                forward_v = self.getBodyVelocity(folder_odom,point_idx,point_idx+body_v_offset,point_hz)
+                backward_v = self.getBodyVelocity(folder_odom,point_idx-body_v_offset,point_idx,point_hz)
                 if (forward_v is None) and (backward_v is None):
                     print("Double None found")
                     continue
@@ -523,16 +564,12 @@ class OrangeSimDataSet(Dataset):
             b = len(odom_list) - 1
         if (odom_list[a] is None) or (odom_list[b] is None):
             return None
-        v = (odom_list[b][0:3] - odom_list[a][0:3])*hz
+        dt = (a-b)*hz
+        v = (odom_list[b][0:3] - odom_list[a][0:3])*dt
         R_b = R.from_euler('ZYX', odom_list[b][3:6]).as_dcm()
         R_a = R.from_euler('ZYX', odom_list[a][3:6]).as_dcm()
         v = (R_b.T).dot(v)
-        w = (R_b.T).dot(self.logR(R_a.T.dot(R_b)))*hz
-        if np.any(np.isnan(w)):
-            print("w Nan:")
-            #print(w)
-            #print(R_a)
-            #print(R_b)
+        w = (R_b.T).dot(self.logR(R_a.T.dot(R_b)))*dt
         return np.hstack((v,w))
 
     def basisMatrix(self,time):

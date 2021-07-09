@@ -8,17 +8,18 @@ args = sys.argv
 
 dirs = args[1:]
 
-mean_img = np.load("mean_imgv2_data_Run24.npy")
+#mean_img = np.load("mean_imgv2_data_Run24.npy")
+mean_img = np.load("v1_flights/mean_imgv2_data_real_world_traj_bag.npy")
 depth_mean_img = None #np.load("depth_mean_imgv2_data_real_world_traj_bag.npy")
 
-data_loc = "Run24"
+data_loc = "v1_flights/v1/real_world_traj_bag/"
 np_data_loc = "/mnt/corsair/gabe/" + data_loc.rstrip("/") + "_np"
 if not os.path.exists(np_data_loc):
-    os.mkdir(np_data_loc)
+    os.makedirs(np_data_loc)
 
 
 w = 640
-h = 380
+h = 480
 t = time.time()
 #dirs = os.listdir(data_loc)
 for d in dirs:#files:

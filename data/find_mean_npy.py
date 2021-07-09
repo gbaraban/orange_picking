@@ -18,5 +18,5 @@ for dirs in os.listdir(base_dir):
 
 			i += 1
 
-np.save("mean_img_bag_v3_np.npy", mean_img)
+np.save("mean_depth_img.npy", mean_img)
 

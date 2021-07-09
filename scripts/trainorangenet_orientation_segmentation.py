@@ -408,35 +408,58 @@ def acc_metric(args,logits,point_batch,yaw_only,phase,ranges,sphere_flag = False
         return acc_list, extra_acc_list
     return acc_list
 
-def acc_metric_regression(args, logits, point_batch, sphere_flag = False):
+def acc_metric_regression(args, logits, point_batch, phases, sphere_flag = False):
     acc_list = []
+    extra_acc_list = [[] for i in range(args.num_controls-1)]
     shape = logits.size()
     logits = logits.detach()
     if sphere_flag:
         logits = sphericalToXYZ()(logits)
-    for pt in range(shape[1]):
+    for pt in range(args.num_pts):
         batch_list = []
-        ang_d = 0
+        extra_batch_list = [[] for i in range(args.num_controls-1)]
+        ang_d = []
+        extra_ang_d = [[] for i in range(args.num_controls-1)]
         for ii in range(shape[0]):
+            phase = phases[ii]
             coord_list = []
             for coord in range(3):
-                pred = logits[ii,pt,coord]
-                d = pred - point_batch[ii, pt, coord]
+                pred = logits[ii,(pt*6)+coord]
+                d = pred - point_batch[ii,(pt*6)+coord]
                 coord_list.append(d)
             d = np.vstack([coord_list[0],coord_list[1],coord_list[2]])
-            batch_list.append(np.linalg.norm(d))
+            if phase > 0:
+                extra_batch_list[phase-1].append(np.linalg.norm(d))
+            else:
+                batch_list.append(np.linalg.norm(d))
 
             true_angle = []
             pred_angle = []
             for coord in range(3,6):
-                pred = logits[ii,pt,coord]
-                true_angle.append(point_batch[ii, pt, coord])
+                pred = logits[ii,(pt*6)+coord]
+                true_angle.append(point_batch[ii, (pt*6)+coord])
                 pred_angle.append(pred)
-            ang_d = angle_dist(true_angle, pred_angle)
-        
-        batch_mean = np.mean(batch_list)
-        batch_mean = [batch_mean, ang_d]
+            if phase > 0:
+                extra_ang_d[phase-1].append(angle_dist(true_angle,pred_angle))
+            else:
+                ang_d.append(angle_dist(true_angle, pred_angle))
+
+        if len(batch_list) != 0:
+            batch_mean = np.mean(batch_list)
+            batch_mean = [batch_mean, np.mean(ang_d)]
+        else:
+            batch_mean = [0., 0.]
         acc_list.append(batch_mean)
+        for i in range(len(extra_batch_list)):
+            if len(extra_batch_list[i]) != 0:
+                temp_batch_mean = np.mean(extra_batch_list[i])
+                temp_batch_mean = [temp_batch_mean, np.mean(extra_ang_d[i])]
+            else:
+                temp_batch_mean = [0., 0.]
+            extra_acc_list[i].append(temp_batch_mean)
+
+    if args.num_controls > 1:
+        return acc_list,extra_acc_list
     return acc_list
 
 def get_state_data(state_config, data):
@@ -454,6 +477,23 @@ def get_state_data(state_config, data):
         rp_data = data["rp"]
         states_data = torch.cat((body_v_data, orange_pose_data, rp_data), 1)
         return states_data
+    elif state_config == 3:
+        magnet_data = data["magnet"]
+        orange_pose_data = data["orange_pose"]
+        rp_data = data["rp"]
+        states_data = torch.cat((magnet_data, orange_pose_data, rp_data), 1)
+        return states_data
+
+    elif state_config == 4:
+        rp_data = data["rp"]
+        states_data = torch.Tensor(rp_data)
+        return states_data
+
+    elif state_config == 5:
+        orange_pose_data = data["orange_pose"]
+        states_data = torch.Tensor(orange_pose_data)
+        return states_data
+
     else:
         return None
 
@@ -473,14 +513,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('data', help='data folder')
     parser.add_argument('--load', help='model to load')
-    parser.add_argument('--epochs', type=int, default=150, help='max number of epochs to train for/but also controls how fast learning rate decays')
+    parser.add_argument('--epochs', type=int, default=1000, help='max number of epochs to train for/but also controls how fast learning rate decays')
     parser.add_argument('--seed', type=int, default=0, help='random seed')
     parser.add_argument('--resample', action='store_true', help='resample data')
     parser.add_argument('--gpu', help='gpu to use')
     parser.add_argument('--num_images', type=int, default=1, help='number of input images')
     parser.add_argument('--batch_size', type=int, default=100, help='batch size')
     parser.add_argument('--val_batch_size', type=int, default=100, help='batch size for validation')
-    parser.add_argument('--learning_rate', type=float, default=5e-3, help='starting learning rate')
+    parser.add_argument('--learning_rate', type=float, default=5e-4, help='starting learning rate')
     parser.add_argument('--num_pts', type=int, default=3, help='number of output waypoints')
     parser.add_argument('--capacity', type=float, default=1, help='network capacity')
     parser.add_argument('--min', type=tuple, default=(0,-0.5,-0.5), help='minimum xyz/barely used and overwritten later')
@@ -488,11 +528,11 @@ def main():
     parser.add_argument('--bins', type=int, default=100, help='number of bins per coordinate')
     parser.add_argument('-j', type=int, default=8, help='number of loader workers')
     parser.add_argument('--traj', type=int, default=1, help='train trajectories')
-    parser.add_argument('--real', type=int, default=0, help='real world imgs (0: sim data, 1: orange tracking data, else: normal real world data')
+    parser.add_argument('--real', type=int, default=1, help='real world imgs (0: sim data, 1: orange tracking data, else: normal real world data')
     parser.add_argument('--val', type=float, default=0.10, help='validation percentage')
     parser.add_argument('--resnet18', type=int, default=0, help='ResNet18 or ResNet8')
     parser.add_argument('--yaw_only', type=int, default=0, help='yaw only')
-    parser.add_argument('--custom', type=str, default="", help='custom parser: Run18/no_parse (used in sim data and normal real world, Run18/no_parse allows to read unparsed future waypoint data)')
+    parser.add_argument('--custom', type=str, default="no_parse", help='custom parser: Run18/no_parse (used in sim data and normal real world, Run18/no_parse allows to read unparsed future waypoint data)')
     parser.add_argument('--test_arch', type=int, default=100, help='testing architectures, 100 loads default, other numbers loads orangenetarch from architecture folder, added to keep track of older data')
     parser.add_argument('--train', type=int, default=1, help='train or test')
     parser.add_argument('--data_aug_flip',type=int,default=1, help='Horizontal flipping on/off')
@@ -505,23 +545,26 @@ def main():
     parser.add_argument('--custom_loss',type=bool,default=False,help='custom loss for training')
     parser.add_argument('--depth',type=bool,default=False,help='use depth channel')
     parser.add_argument('--seg',type=bool,default=False,help='use segmentation channel, don\'t use mostly')
-    parser.add_argument('--temp_seg',type=bool,default=False,help='use segmentation channel, use this')
+    parser.add_argument('--temp_seg',type=bool,default=True,help='use segmentation channel, use this')
     parser.add_argument('--seg_only',type=bool,default=False,help='use segmentation channel, don\'t use mostly')
-    parser.add_argument('--save_variables',type=int,default=5,help="save after every x epochs")
+    parser.add_argument('--save_variables',type=int,default=2,help="save after every x epochs")
     parser.add_argument('--mean_seg',type=str,default='data/depth_data/data/mean_seg.npy',help='mean segmentation image, two options for real and sim world in comments') # data/depth_data/data/mean_seg.npy #data/mean_imgv2_data_seg_Run24.npy
-    parser.add_argument('--segload', help='segment model to load')
-    parser.add_argument('--retrain_off_seg',type=bool,default=False,help='retrain of segmentation off')
-    parser.add_argument('--relative_pose', type=bool, default=False,help='relative pose of points')
+    parser.add_argument('--segload', type=str, default="model/segmentation/logs/variable_log/2021-01-31_13-25-31/model_seg145.pth.tar", help='segment model to load')
+    parser.add_argument('--retrain_off_seg',type=bool,default=True,help='retrain of segmentation off')
+    parser.add_argument('--relative_pose', type=bool, default=True,help='relative pose of points')
     parser.add_argument('--regression', type=bool, default=False,help='Use regression loss (MSE)')
     parser.add_argument('--spherical', type=bool, default=False,help='Use spherical coordinates')
     parser.add_argument('--pred_dt',type=float, default=1.0, help="Space between predicted points")
     parser.add_argument('--image_dt',type=float,default=1.0, help="Space between images provided to network")
-    parser.add_argument('--states',type=int,default=0,help="states to use with network, options: (1, 2), check get_states function to see which version uses which states")
-    parser.add_argument('--num_controls',type=int,default=1,help="to divide data into multiple scenarios, to teach a different control strategy for each")
-    parser.add_argument('--reduce_n', type=bool, default=False,help='Remove last few events from staging dataset')
-    parser.add_argument('--extra_dt', nargs="+", type=float, default=None, help='pred_dt for extra phases')
+    parser.add_argument('--states',type=int,default=1,help="states to use with network, options: (1, 2, 3), check get_states function to see which version uses which states")
+    parser.add_argument('--num_controls',type=int,default=3,help="to divide data into multiple scenarios, to teach a different control strategy for each")
+    parser.add_argument('--reduce_n', type=bool, default=True,help='Remove last few events from staging dataset')
+    parser.add_argument('--extra_dt', nargs="+", type=float, default=[0.25, 0.25], help='pred_dt for extra phases')
     parser.add_argument('--relabel', type=bool, default=False,help='Relabel last few events from staging')
     parser.add_argument('--mix_labels', type=bool, default=False,help='Mix labels last few events from staging')
+    parser.add_argument('--resets', type=bool, default=True,help='Reset data used for training')
+    parser.add_argument('--body_v_dt', type=float, default=None,help='Average body v over longer dts')
+    parser.add_argument('--remove_hover', nargs="+", type=float, default=None,help='Threshold to remove equilibrium staging points')
 
 
     args = parser.parse_args()
@@ -553,6 +596,14 @@ def main():
         args.relabel = False
     else:
         args.relabel = True
+
+    if args.states in [3]:
+        args.magnet = True
+    else:
+        args.magnet = False
+
+    if args.remove_hover is not None:
+        args.remove_hover = tuple(args.remove_hover) 
 
     if args.real == 0:
         from customDatasetsOrientation import OrangeSimDataSet, SubSet
@@ -606,8 +657,8 @@ def main():
                   args.min = [(-0.03, -0.1, -0.04, -0.12, -0.04, -0.04), (-0.03, -0.1, -0.04, -0.12, -0.04, -0.04), (-0.03, -0.1, -0.04, -0.12, -0.04, -0.04)]
                   args.max = [(0.20, 0.1, 0.04, 0.12, 0.04, 0.04), (0.20, 0.1, 0.04, 0.12, 0.04, 0.04), (0.20, 0.1, 0.04, 0.12, 0.04, 0.04)]
               else:
-                  args.min = [(-0.10, -0.15, -0.10, -0.25, -0.075, -0.075), (-0.10, -0.15, -0.10, -0.25, -0.075, -0.075), (-0.10, -0.15, -0.10, -0.25, -0.075, -0.075)]
-                  args.max = [(0.30, 0.15, 0.10, 0.25, 0.075, 0.075), (0.30, 0.15, 0.10, 0.25, 0.075, 0.075), (0.30, 0.15, 0.10, 0.25, 0.075, 0.075)]
+                  args.min = [(-0.10, -0.20, -0.10, -0.25, -0.075, -0.075), (-0.10, -0.15, -0.10, -0.25, -0.075, -0.075), (-0.10, -0.15, -0.10, -0.25, -0.075, -0.075)]
+                  args.max = [(0.30, 0.20, 0.10, 0.25, 0.075, 0.075), (0.30, 0.15, 0.10, 0.25, 0.075, 0.075), (0.30, 0.15, 0.10, 0.25, 0.075, 0.075)]
 
           else:
               #args.min = [(0.,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.,-1.,-0.15,-np.pi,-np.pi/2,-np.pi),(0.,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.,-2.,-0.3,-np.pi,-np.pi/2,-np.pi),(0.,-3.,-0.5,-np.pi,-np.pi/2,-np.pi)]
@@ -631,14 +682,18 @@ def main():
               args.max = [(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.5,1.0,0.5,np.pi,np.pi,np.pi),(2.0,1.0,0.75,np.pi,np.pi,np.pi)]
 
     if args.num_controls > 1:
-        if args.extra_dt == [0.25] or (len(args.extra_dt) == 1 and args.extra_dt[0] <= 0.25):
+        if (args.extra_dt == [0.25] or (len(args.extra_dt) == 1 and args.extra_dt[0] <= 0.25)):
             print("Extra dt 0.25")
             if args.mix_labels:
                 args.extra_mins = [[(-0.030, -0.05, -0.01, -0.08, -0.02, -0.025), (-0.030, -0.05, -0.01, -0.08, -0.02, -0.025), (-0.030, -0.05, -0.01, -0.08, -0.02, -0.025)]]
                 args.extra_maxs = [[(0.035, 0.05, 0.03, 0.08, 0.02, 0.025), (0.035, 0.05, 0.03, 0.08, 0.02, 0.025), (0.035, 0.05, 0.03, 0.08, 0.02, 0.025)]]
             else:
-                args.extra_mins = [[(-0.01, -0.02, -0.01, -0.03, -0.02, -0.02), (-0.01, -0.02, -0.01, -0.03, -0.02, -0.02), (-0.01, -0.02, -0.01, -0.03, -0.02, -0.02)]]
-                args.extra_maxs = [[(0.03, 0.02, 0.03, 0.03, 0.02, 0.02), (0.03, 0.02, 0.03, 0.03, 0.02, 0.02), (0.03, 0.02, 0.03, 0.03, 0.02, 0.02)]]
+                #args.extra_mins = [[(-0.030, -0.05, -0.01, -0.08, -0.02, -0.025), (-0.030, -0.05, -0.01, -0.08, -0.02, -0.025), (-0.030, -0.05, -0.01, -0.08, -0.02, -0.025)]]
+                #args.extra_maxs = [[(0.035, 0.05, 0.03, 0.08, 0.02, 0.025), (0.035, 0.05, 0.03, 0.08, 0.02, 0.025), (0.035, 0.05, 0.03, 0.08, 0.02, 0.025)]]
+                args.extra_mins = [[(-0.05, -0.05, -0.075, -0.10, -0.03, -0.03), (-0.05, -0.05, -0.075, -0.10, -0.03, -0.03), (-0.05, -0.05, -0.075, -0.10, -0.03, -0.03)]]
+                args.extra_maxs = [[(0.15, 0.05, 0.075, 0.10, 0.03, 0.03), (0.15, 0.05, 0.075, 0.10, 0.03, 0.03), (0.15, 0.05, 0.075, 0.10, 0.03, 0.03)]]
+                #args.extra_mins = [[(-0.01, -0.02, -0.01, -0.03, -0.02, -0.02), (-0.01, -0.02, -0.01, -0.03, -0.02, -0.02), (-0.01, -0.02, -0.01, -0.03, -0.02, -0.02)]]
+                #args.extra_maxs = [[(0.03, 0.02, 0.03, 0.03, 0.02, 0.02), (0.03, 0.02, 0.03, 0.03, 0.02, 0.02), (0.03, 0.02, 0.03, 0.03, 0.02, 0.02)]]
         elif args.extra_dt == [0.5] or (len(args.extra_dt) == 1 and args.extra_dt[0] <= 0.5):
             print("Extra dt 0.5")
             args.extra_mins = [[(-0.05, -0.02, -0.01, -0.05, -0.03, -0.03), (-0.05, -0.02, -0.01, -0.05, -0.03, -0.03), (-0.05, -0.02, -0.01, -0.05, -0.03, -0.03)]]
@@ -646,6 +701,10 @@ def main():
         else:
             args.extra_mins = [[(-0.05, -0.05, -0.075, -0.10, -0.03, -0.03), (-0.05, -0.05, -0.075, -0.10, -0.03, -0.03), (-0.05, -0.05, -0.075, -0.10, -0.03, -0.03)]]
             args.extra_maxs = [[(0.15, 0.05, 0.075, 0.10, 0.03, 0.03), (0.15, 0.05, 0.075, 0.10, 0.03, 0.03), (0.15, 0.05, 0.075, 0.10, 0.03, 0.03)]]
+
+        if len(args.extra_dt) == 2:
+            args.extra_mins.append([(-0.1, -0.05, -0.03, -0.075, -0.03, -0.03), (-0.1, -0.05, -0.03, -0.075, -0.03, -0.03), (-0.1, -0.05, -0.03, -0.075, -0.03, -0.03)])
+            args.extra_maxs.append([(0.01, 0.05, 0.01, 0.075, 0.03, 0.03), (0.01, 0.05, 0.01, 0.075, 0.03, 0.03), (0.01, 0.05, 0.01, 0.075, 0.03, 0.03)])
     else:
         args.extra_mins = None
         args.extra_maxs = None
@@ -691,9 +750,9 @@ def main():
 
     #TOCHECK
     if args.real == 1:
-        dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, depth=args.depth, rel_pose=args.relative_pose, pred_dt = args.pred_dt, img_dt=args.image_dt, reduce_N=args.reduce_n, extra_dt=args.extra_dt, relabel=args.relabel, mix_labels=args.mix_labels)
+        dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, depth=args.depth, rel_pose=args.relative_pose, pred_dt = args.pred_dt, img_dt=args.image_dt, reduce_N=args.reduce_n, use_resets=args.resets, extra_dt=args.extra_dt, relabel=args.relabel, mix_labels=args.mix_labels, body_v_dt = args.body_v_dt, remove_hover = args.remove_hover, use_magnet=args.magnet)
     else:
-        dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, custom_dataset=args.custom, input=args.input_size, depth=args.depth, seg=args.seg, temp_seg=args.temp_seg, seg_only=args.seg_only, rel_pose=args.relative_pose, pred_dt = args.pred_dt, dt=args.image_dt)
+        dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, custom_dataset=args.custom, input=args.input_size, depth=args.depth, seg=args.seg, temp_seg=args.temp_seg, seg_only=args.seg_only, rel_pose=args.relative_pose, pred_dt = args.pred_dt, dt=args.image_dt, body_v_dt = args.body_v_dt, remove_hover = args.remove_hover)
 
     #Break up into validation and training
     #val_perc = 0.07
@@ -792,6 +851,12 @@ def main():
                 state_count += 6 + 2
             elif args.states == 2:
                 state_count += 6 + 6 + 2
+            elif args.states == 3:
+                state_count += 3 + 6 + 2
+            elif args.states == 4:
+                state_count += 2
+            elif args.states == 5:
+                state_count += 6
             if args.num_controls > 1:
                 model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,retrain_off=args.freeze,input=args.input_size, num_channels = n_channels, real=args.real, state_count = state_count, num_controls=args.num_controls, extra_mins=args.extra_mins, extra_maxs=args.extra_maxs)
             else:
@@ -876,7 +941,7 @@ def main():
         plotting_data = dict()
         data_loc = copy.deepcopy(args.data)
         val_outputs_x, val_outputs_y, val_outputs_z, val_outputs_yaw, val_outputs_p, val_outputs_r = loadData(val_idx,dataclass.num_list,data_loc,model,dataclass.traj_list,args.real,dataclass,args)
-        print(len(val_idx))
+        #print(len(val_idx))
         plotting_data['idx'] = range(len(val_idx))
 
         if not args.yaw_only:
@@ -921,7 +986,7 @@ def main():
         #Train
         #gc.collect()
         epoch_acc = [[[], []], [[], []], [[], []]]
-        extra_epoch_acc = [[[[], []], [[], []], [[], []]]]
+        extra_epoch_acc = [[[[], []], [[], []], [[], []]] for i in range(args.num_controls-1)]
         acc_total = [[0., 0.], [0., 0.], [0., 0.]]
         extra_acc_total = [[[0., 0.], [0., 0.], [0., 0.]] for i in range(args.num_controls-1)]
         extra_elements = [0. for i in range(args.num_controls-1)]
@@ -1006,7 +1071,7 @@ def main():
                     train_phase_accuracy = ((elements * train_phase_accuracy) + (b_size * temp_accuracy))/(elements + b_size)
                     phase = np.array(batch['phase'].to('cpu'))
                 else:
-                    phase = np.zeros(b_size)
+                    phase = np.zeros(b_size).astype(int)
 
                 if not args.regression:
                     if not args.yaw_only:
@@ -1050,22 +1115,12 @@ def main():
                             arg2 = 4
                             logits = logits.view(-1,4,model.num_points,model.bins)
                         idx_batch = batch['idx'].to('cpu')
-                        #label_batch = batch['time_frac']
-                        #print(logits.shape)
-                        #print(idx_batch)
                         for ii, idx in enumerate(idx_batch):
                             temp_logits = (logits.cpu()[ii]).view(1, arg2, model.num_points,model.bins)
                             temp_point_batch = (point_batch.cpu()[ii]).view(1, model.num_points, arg2)
                             acc_list = acc_metric(args, temp_logits, temp_point_batch, args.yaw_only,sphere_flag = args.spherical)
-                            #ele = np.where(train_idx == np.int(idx))
-                            #print(idx, ele)
-                            #print(train_idx)
-                            #if len(ele) != 1:
-                            #    print(idx, ele)
-                            #print(idx)
                             eps = 1e-6
                             error_weights[int(train_loc[int(idx)])] = np.sum(np.array(acc_list)) + eps
-                            #print(error_weights[batch['idx'][ii]])
 
                     acc_list = acc_metric(args,logits,point_batch,args.yaw_only,phase,ranges,sphere_flag = args.spherical)
                     if args.num_controls > 1:
@@ -1104,26 +1159,32 @@ def main():
                         batch_loss += classifier_loss
  
                 else:
-                    logits = logits.view(-1,model.num_points,6)
                     logits = logits.to(device).double()
                     point_batch = point_batch.to(device).double()
-                    # print((point_batch)[:,0, 0])
-                    # s0, s1, s2 = len(point_batch), len(point_batch[0]), len(point_batch[0][0])
-                    # pb = torch.Tensor(s0, s1, s2)
-                    # print(s0, s1, s2)
-                    # list_pb = []
-                    # for ele_s0 in range(s0):
-                    #     list_list_pb = torch.Tensor(s1, s2)
-                    #     torch.cat(point_batch[ele_s0], out=list_list_pb)
-                    #     list_pb.append(list_list_pb)
-                    # print(pb.shape)
-                    # torch.cat(list_pb, out=pb)
+                    if not args.yaw_only:
+                        logits = logits.view(-1,args.num_controls,model.num_points*6)
+                        temp_point_batch = point_batch.view(-1,model.num_points*6)
+                    else:
+                        logits = logits.view(-1,args.num_controls,model.num_points*4)
+                        temp_point_batch = point_batch.view(-1,model.num_points*4)
+                    elements_accessed = np.arange(b_size)
+                    batch_loss = 0
+                    if (args.num_controls > 1):
+                        batch_loss += classifier_loss
                     if args.spherical:
                         temp_transform = sphericalToXYZ()
-                        batch_loss = F.mse_loss(temp_transform(logits),point_batch)#TODO: make sure this works
+                        batch_loss += F.mse_loss(temp_transform(logits[elements_accessed,phase,:]),temp_point_batch)
                     else:
-                        batch_loss = F.mse_loss(logits, point_batch)
-                    acc_list = acc_metric_regression(args, logits.cpu(), point_batch.cpu(),sphere_flag = args.spherical)
+                        batch_loss += F.mse_loss(logits[elements_accessed,phase,:],temp_point_batch)
+
+                    #if args.spherical:
+                    #    temp_transform = sphericalToXYZ()
+                    #    batch_loss = F.mse_loss(temp_transform(logits),point_batch)#TODO: make sure this works
+                    #else:
+                    #    batch_loss = F.mse_loss(logits, point_batch)
+                    acc_list = acc_metric_regression(args, logits[elements_accessed,phase,:].cpu(), temp_point_batch.cpu(),phase,sphere_flag = args.spherical)
+                    if args.num_controls > 1:
+                        acc_list, extra_acc_list = acc_list
 
                 #print(batch_loss)
                 #batch_loss.to_cpu()
@@ -1161,8 +1222,8 @@ def main():
                 if args.states != 0:
                     del states
 
+                writer.add_scalar('train_loss',batch_loss,ctr+epoch*len(train_loader))
                 if not args.regression:
-                    writer.add_scalar('train_loss',batch_loss,ctr+epoch*len(train_loader))
                     writer.add_scalar('train_loss_x',torch.sum(torch.tensor(loss_x)),ctr+epoch*len(train_loader))
                     writer.add_scalar('train_loss_y',torch.sum(torch.tensor(loss_y)),ctr+epoch*len(train_loader))
                     writer.add_scalar('train_loss_z',torch.sum(torch.tensor(loss_z)),ctr+epoch*len(train_loader))
@@ -1281,8 +1342,9 @@ def main():
                     val_phase_accuracy += temp_accuracy
                     phase = np.array(batch['phase'].to('cpu'))
                 else:
-                    phase = np.zeros(b_size)
+                    phase = np.zeros(b_size).astype(int)
 
+                point_batch = batch['points'].to(device)
                 if not args.regression:
                     if not args.yaw_only:
                         logits = logits.view(-1,6,model.num_points,model.bins*args.num_controls)
@@ -1299,8 +1361,6 @@ def main():
 
                     loss_yaw = [0. for t in range(model.num_points)]
 
-                    
-                    point_batch = batch['points'].to(device)
                     elements_accessed = np.arange(b_size)
                     for temp in range(model.num_points):                     
                         val_loss[0] += F.cross_entropy(logits[elements_accessed,0,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,0])
@@ -1318,20 +1378,27 @@ def main():
                         val_acc_list, extra_val_acc_list = val_acc_list
     
                 else:
-                    logits = logits.view(-1,model.num_points,6)
                     logits = logits.to(device).double()
-                    point_batch = batch['points'].to(device).double()
-                    # s0, s1, s2 = len(point_batch), len(point_batch[0]), len(point_batch[0][0])
-                    # pb = torch.Tensor(s0, s1, s2)
-                    # list_pb = []
-                    # for ele_s0 in range(s0):
-                    #     list_list_pb = torch.Tensor(s1, s2)
-                    #     torch.cat(point_batch[ele_s0], out=list_list_pb)
-                    #     list_pb.append(list_list_pb)
-                    # torch.cat(list_pb, out=pb)
-                    # batch_loss = F.mse_loss(logits, pb)
-                    val_loss = F.mse_loss(logits, point_batch)
-                    val_acc_list = acc_metric_regression(args, logits.cpu(), point_batch.cpu(),sphere_flag = args.spherical)
+                    point_batch = point_batch.to(device).double()
+                    if not args.yaw_only:
+                        logits = logits.view(-1,args.num_controls,model.num_points*6)
+                        temp_point_batch = point_batch.view(-1,model.num_points*6)
+                    else:
+                        logits = logits.view(-1,args.num_controls,model.num_points*4)
+                        temp_point_batch = point_batch.view(-1,model.num_points*6)
+                    elements_accessed = np.arange(b_size)
+                    val_loss = [0]
+                    if (args.num_controls > 1):
+                        val_loss[0] += val_classifier_loss
+                    if args.spherical:
+                        temp_transform = sphericalToXYZ()
+                        val_loss[0] += F.mse_loss(temp_transform(logits[elements_accessed,phase,:]),temp_point_batch)
+                    else:
+                        val_loss[0] += F.mse_loss(logits[elements_accessed,phase,:],temp_point_batch)
+
+                    val_acc_list = acc_metric_regression(args, logits[elements_accessed,phase,:].cpu(), temp_point_batch.cpu(),phase,sphere_flag = args.spherical)
+                    if args.num_controls > 1:
+                        val_acc_list, extra_val_acc_list = val_acc_list
                 logits = logits.to('cpu')
                 #print(logits.shape)
                 #resnet_output = np.concatenate((resnet_output,logits), axis=0)
@@ -1374,25 +1441,24 @@ def main():
             if args.plot_data:
                 with open(plot_data_path+'/data.pickle','wb') as f:
                     pickle.dump(plotting_data,f,pickle.HIGHEST_PROTOCOL)
+        if val_classifier_loss is None:
+            writer.add_scalar('val_loss',sum(val_loss),(epoch+1)*len(val_loader))
+        else:
+            writer.add_scalar('val_loss',sum(val_loss)+val_classifier_loss,(epoch+1)*len(val_loader))
         if not args.regression:
             if not args.yaw_only:
                 val_loss = [val_loss[temp].item()/len(val_loader) for temp in range(6)]
             else:
                 val_loss = [val_loss[temp].item()/len(val_loader) for temp in range(4)]
-            
-            if val_classifier_loss is None:
-                writer.add_scalar('val_loss',sum(val_loss),(epoch+1)*len(train_loader))
-            else:
-                writer.add_scalar('val_loss',sum(val_loss)+val_classifier_loss,(epoch+1)*len(train_loader))
-            writer.add_scalar('val_loss_x',val_loss[0],(epoch+1)*len(train_loader))
-            writer.add_scalar('val_loss_y',val_loss[1],(epoch+1)*len(train_loader))
-            writer.add_scalar('val_loss_z',val_loss[2],(epoch+1)*len(train_loader))
-            writer.add_scalar('val_loss_yaw',val_loss[3],(epoch+1)*len(train_loader))
+            writer.add_scalar('val_loss_x',val_loss[0],(epoch+1)*len(val_loader))
+            writer.add_scalar('val_loss_y',val_loss[1],(epoch+1)*len(val_loader))
+            writer.add_scalar('val_loss_z',val_loss[2],(epoch+1)*len(val_loader))
+            writer.add_scalar('val_loss_yaw',val_loss[3],(epoch+1)*len(val_loader))
             if not args.yaw_only:
-                writer.add_scalar('val_loss_p',val_loss[4],(epoch+1)*len(train_loader))
-                writer.add_scalar('val_loss_r',val_loss[5],(epoch+1)*len(train_loader))
+                writer.add_scalar('val_loss_p',val_loss[4],(epoch+1)*len(val_loader))
+                writer.add_scalar('val_loss_r',val_loss[5],(epoch+1)*len(val_loader))
         for ii, acc in enumerate(val_acc):
-            writer.add_scalar('val_acc_'+str(ii),acc[0],(epoch+1)*len(train_loader))
+            writer.add_scalar('val_acc_'+str(ii),acc[0],(epoch+1)*len(val_loader))
         print('Val Cross-Entropy Loss: ', val_loss)
         print('Val Accuracy: ',val_acc)
         if args.num_controls > 1:

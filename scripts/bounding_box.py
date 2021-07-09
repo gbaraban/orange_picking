@@ -52,6 +52,9 @@ def make_phase_lists(phase_name,num_pts):
     ret_val["body_w_1"] = []
     ret_val["body_w_2"] = []
     ret_val["body_w_3"] = []
+    ret_val["body_mag_x"] = []
+    ret_val["body_mag_y"] = []
+    ret_val["body_mag_z"] = []
     for ii in range(num_pts):
         ret_val["x_list"].append([])
         ret_val["y_list"].append([])
@@ -74,7 +77,12 @@ def main():
     parser.add_argument('--relative',type=bool,default=False,help='use relative pose')
     parser.add_argument('--reduce_N',type=bool,default=False,help='remove final window')
     parser.add_argument('--extra_dt', nargs="+", type=float, default=None, help='pred_dt for extra phases')
+    parser.add_argument('--remove_hover', nargs="+", type=float, default=None,help='Threshold to remove equilibrium staging points')
+    parser.add_argument('--magnet', type=bool, default=False, help='Use magnet data')
     args = parser.parse_args()
+
+    if args.remove_hover is not None:
+        args.remove_hover = tuple(args.remove_hover)
 
     #args.min = [(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.75,-0.75,-0.5,-np.pi,-np.pi,-np.pi),(-1.0,-1.0,-0.75,-np.pi,-np.pi,-np.pi)]
     #args.max = [(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.5,1.0,0.5,np.pi,np.pi,np.pi),(2.0,1.0,0.75,np.pi,np.pi,np.pi)]
@@ -110,7 +118,7 @@ def main():
         #    from customDatasetsOrientation import OrangeSimDataSet, SubSet
         from customDatasetv1 import OrangeSimDataSet
 
-        dataclass = OrangeSimDataSet(args.data, 1, args.num_pts, pt_trans, img_trans, img_dt=1,pred_dt=args.pred_dt, reduce_N = args.reduce_N,depth=args.depth, rel_pose = args.relative, gaussian_pts=False,use_resets=args.resets,extra_dt = args.extra_dt, relabel=False, mix_labels=False)
+        dataclass = OrangeSimDataSet(args.data, 1, args.num_pts, pt_trans, img_trans, img_dt=1,pred_dt=args.pred_dt, reduce_N = args.reduce_N,depth=args.depth, rel_pose = args.relative, gaussian_pts=False,use_resets=args.resets,extra_dt = args.extra_dt, relabel=False, mix_labels=False, remove_hover=args.remove_hover, use_magnet=args.magnet)
         dataloader = DataLoader(dataclass, batch_size=args.batch_size, num_workers=args.j)
 
         phase_dict = {}
@@ -120,6 +128,8 @@ def main():
             phase = data["phase"]
             points = data['points']
             vels = data["body_v"]
+            if args.magnet:
+                mags = data["magnet"]
             #print(points[0][0])
             #points = torch.tensor(points)
             #print(len(points), len(points[0]), len(points[0][0]))
@@ -146,6 +156,23 @@ def main():
                     print("Vel Exception Found")
                     print(e)
                     print(vel)
+                if args.magnet:
+                    mag = np.array(mags[batch_ii])
+                else:
+                    mag = None
+                try:
+                    if mag is not None:
+                        if not np.any(np.isnan(mag)):
+                            phase_dict[phase_ii]["body_mag_x"].append(float(mag[0]))
+                            phase_dict[phase_ii]["body_mag_y"].append(float(mag[1]))
+                            phase_dict[phase_ii]["body_mag_z"].append(float(mag[2]))
+                        else:
+                            print("NaNs in mag")
+                            print(mag)
+                except Exception as e:
+                    print("Mag Exception Found")
+                    print(e)
+                    print(mag)
                 for point_ii in range(args.num_pts):
                         #print(batch_ii, point_ii)
                         x = np.array(float(points[batch_ii][point_ii][0]))
@@ -251,6 +278,10 @@ def main():
         print("Min/max w1: " + str(min(phase_dict[phase]["body_w_1"])) + " " + str(max(phase_dict[phase]["body_w_1"])))
         print("Min/max w2: " + str(min(phase_dict[phase]["body_w_2"])) + " " + str(max(phase_dict[phase]["body_w_2"])))
         print("Min/max w3: " + str(min(phase_dict[phase]["body_w_3"])) + " " + str(max(phase_dict[phase]["body_w_3"])))
+        if args.magnet:
+            print("Min/max/avg magx: " + str(min(phase_dict[phase]["body_mag_x"])) + " " + str(max(phase_dict[phase]["body_mag_x"])) + " " + str(np.mean(phase_dict[phase]["body_mag_x"])))
+            print("Min/max/avg magy: " + str(min(phase_dict[phase]["body_mag_y"])) + " " + str(max(phase_dict[phase]["body_mag_y"])) + " " + str(np.mean(phase_dict[phase]["body_mag_y"])))
+            print("Min/max/avg magz: " + str(min(phase_dict[phase]["body_mag_z"])) + " " + str(max(phase_dict[phase]["body_mag_z"])) + " " + str(np.mean(phase_dict[phase]["body_mag_z"])))
         print(phase_dict[phase]["nan_count"])
     plt.show()
        

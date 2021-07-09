@@ -2,7 +2,7 @@ import os
 import subprocess
 
 num_procs = 10
-data_loc = "Run24"
+data_loc = "v1_flights/v1/real_world_traj_bag/"
 dirs = os.listdir(data_loc)
 
 #print(dirs)
@@ -25,7 +25,7 @@ print(size)
 
 pr = ""
 for i, dir in enumerate(proc_dir):
-	procs = " python3 preprocess_data_multi_proc.py "
+	procs = " python3 preprocess_data_multi_proc_orange_tracker.py "
 	for d in dir:
 		procs += (d + " ")
 	if i+1 != len(proc_dir):
