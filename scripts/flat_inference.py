@@ -36,8 +36,8 @@ enable_depth = False
 enable_states = True
 enable_multi_image = False
 num_images = 1
-states_version = 1
-state_count = 5
+states_version = 4
+state_count = 2
 
 
 if enable_multi_control:
@@ -184,7 +184,7 @@ class FlatNode:
         self.enable_multi_image = enable_multi_image
         self.num_images = num_images
         self.state_count = state_count
-        self.yaw_only = True
+        self.yaw_only = False
         
         print(image_topic, depth_topic)
         self.image_sub = message_filters.Subscriber(image_topic, Image)
@@ -289,11 +289,12 @@ class FlatNode:
         self.__num_images = 1
 #        self.__segload = "/home/matricex/matrice_ws/src/orange_picking/model/model_seg145.pth.tar"
         self.__segload = "model/segmentation/model_seg145.pth.tar"
-        self.__modelload = "/home/matricex/matrice_ws/src/orange_picking/model/best_fine_dt_025_jun22/model15.pth.tar"
+#        self.__modelload = "/home/matricex/matrice_ws/src/orange_picking/model/best_fine_dt_025_jun22/model15.pth.tar"
+        self.__modelload = "/mnt/samsung/gabe/save_models/variable_log/2021-08-09_22-38-15/model9.pth.tar"
                 
-        self.__mean_image_loc = "/home/matricex/matrice_ws/src/orange_picking/data/mean_imgv2_data_data_collection4_real_world_traj_bag.npy"
+        self.__mean_image_loc = "data/mean_imgv2_data_data_collection4_real_world_traj_bag.npy"
         self.__seg_mean = "data/depth_data/data/mean_seg.npy"
-        self.__mean_depth_loc = "/home/matricex/matrice_ws/src/orange_picking/data/mean_depth_imgv2.npy"
+        self.__mean_depth_loc = "data/mean_depth_imgv2.npy"
         if torch.cuda.is_available() and gpu:
             self.__gpu = 0
         else:
@@ -1002,8 +1003,8 @@ def main():
     global enable_depth, enable_states
     rospy.init_node('flat_inference')
     node = FlatNode(image_topic="/camera/color/image_raw/uncompressed", depth_topic="/camera/aligned_depth_to_color/image_raw/uncompressed")
-    ts = message_filters.ApproximateTimeSynchronizer([bof.image_sub, bof.depth_sub, bof.odom_node], queue_size=2, slop=1.0,  allow_headerless=True)
-    ts.registerCallback(bof.callback)
+    ts = message_filters.ApproximateTimeSynchronizer([node.image_sub, node.depth_sub, node.odom_node], queue_size=2, slop=1.0,  allow_headerless=True)
+    ts.registerCallback(node.callback)
     rospy.spin()
 
 
