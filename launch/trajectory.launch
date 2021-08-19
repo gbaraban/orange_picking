@@ -1,6 +1,7 @@
 <?xml version="1.0"?>
 <launch>
   <param name="path_topic" type="string" value="path" />
+  <!--param name="goal_topic" type="string" value="baseline_wp" /-->
   <param name="goal_topic" type="string" value="goal_points" />
   <param name="matrice_name" type="string" value="matrice" />
   <param name="world_name" type="string" value="world" />

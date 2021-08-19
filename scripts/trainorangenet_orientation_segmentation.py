@@ -104,7 +104,7 @@ def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass,args):
     #R0 = np.array(traj_data[trial_idx][idx][1])
     points = []
 
-    if not args.real:
+    if args.real == 0:
         p0 = np.array(traj_data[trial_idx][idx][0])
         R0 = np.array(traj_data[trial_idx][idx][1])
 
@@ -116,7 +116,7 @@ def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass,args):
                 p = np.array(p)
                 p = list(np.matmul(R0.T,p-p0))
                 Ri = np.matmul(R0.T,Ri)
-                Ri_zyx = list(R.from_dcm(Ri).as_euler('zyx'))
+                Ri_zyx = list(R.from_dcm(Ri).as_euler('ZYX'))
                 p.extend(Ri_zyx)
                 points.append(p)
         elif dataclass.custom_dataset == "Run18":
@@ -154,7 +154,7 @@ def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass,args):
                 Ri = np.array(traj_data[trial_idx][ii][1])
                 p = list(np.matmul(R0.T,p-p0))
                 Ri = np.matmul(R0.T,Ri)
-                Ri_zyx = list(R.from_dcm(Ri).as_euler('zyx'))
+                Ri_zyx = list(R.from_dcm(Ri).as_euler('ZYX'))
                 p.extend(Ri_zyx)
                 points.append(p)
 
@@ -184,7 +184,7 @@ def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass,args):
         elif dataclass.custom_dataset == "no_parse":
             point = np.array(dataclass.traj_list[trial_idx][idx])
             p0 = np.array(point[0:3])
-            R0 = R.from_euler('zyx', point[3:6]).as_dcm()
+            R0 = R.from_euler('ZYX', point[3:6]).as_dcm()
             points = []
             h = (float(dataclass.nEvents[trial_idx])/dataclass.time_secs[trial_idx])
             indices = np.floor(np.add(np.array([1, 2, 3]) * h, idx)).astype(int)
@@ -205,7 +205,7 @@ def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass,args):
                 #print(ii, dataclass.num_list[trial_idx])
                 pt = np.array(dataclass.traj_list[trial_idx][ii])
                 p = np.array(pt[0:3])
-                Ri = R.from_euler('zyx', pt[3:6]).as_dcm()
+                Ri = R.from_euler('ZYX', pt[3:6]).as_dcm()
                 point_list.append(p)
                 rot_list.append(Ri)
 
@@ -228,7 +228,7 @@ def parseFiles(idx,num_list,run_dir,model,traj_data,real,dataclass,args):
                 #print(p)
                 p = list(np.matmul(R0.T,p-p0))
                 Ri = np.matmul(R0.T,Ri)
-                Ri_zyx = list(R.from_dcm(Ri).as_euler('zyx'))
+                Ri_zyx = list(R.from_dcm(Ri).as_euler('ZYX'))
 
                 p.extend(Ri_zyx)
                 points.append(p)
@@ -293,10 +293,10 @@ def skew2axis(mat):
 	return [-mat[1,2], mat[0,2], -mat[0,1]]
 
 def angle_dist(true_angle, pred_angle):
-	Rot0 = R.from_euler('zyx', [true_angle[0], true_angle[1], true_angle[2]]) #[np.pi/3, np.pi/6, np.pi/4])
+	Rot0 = R.from_euler('ZYX', [true_angle[0], true_angle[1], true_angle[2]]) #[np.pi/3, np.pi/6, np.pi/4])
 	R0 = Rot0.as_dcm()
 
-	Rot1 = R.from_euler('zyx', [pred_angle[0], pred_angle[1], pred_angle[2]]) #[np.pi/3 + 1, np.pi/6, np.pi/4])
+	Rot1 = R.from_euler('ZYX', [pred_angle[0], pred_angle[1], pred_angle[2]]) #[np.pi/3 + 1, np.pi/6, np.pi/4])
 	R1 = Rot1.as_dcm()
 
 	R2 = np.matmul(R0.T,R1)
@@ -305,105 +305,205 @@ def angle_dist(true_angle, pred_angle):
 
 	return dist
 
-def acc_metric(args,logits,point_batch,yaw_only, sphere_flag = False):
+def acc_metric(args,logits,point_batch,yaw_only,phase,ranges,sphere_flag = False):
     #TODO: Add diff accuracy for angles
     softmax = nn.Softmax(dim=0)
     shape = logits.size()#.item()
     acc_list = []
+    extra_acc_list = [[] for i in range(args.num_controls-1)]
     logits = logits.detach()
     for pt in range(shape[2]):
         batch_list = []
-        ang_d = 0
+        extra_batch_list = [[] for i in range(args.num_controls-1)]
+        ang_d = []
+        extra_ang_d = [[] for i in range(args.num_controls-1)]
         for ii in range(shape[0]):
             coord_list = []
+            if phase[ii] == 0:
+                bin_min = args.min
+                bin_max = args.max
+                n_bins = args.bins
+            else:
+                bin_min = args.extra_mins[phase[ii]-1]
+                bin_max = args.extra_maxs[phase[ii]-1]
+                n_bins = args.bins
+                                
             if sphere_flag:
                 r_theta_phi = [0.,0.,0.,0.,0.,0.]
                 r_theta_phi_true = [0.,0.,0.,0.,0.,0.]
                 for coord in range(3):
-                    prob = np.array(softmax(logits[ii,coord,pt,:]))#.numpy()
+                    prob = np.array(softmax(logits[ii,coord,pt,ranges[phase[ii]]]))#.numpy()
                     idx = np.argmax(prob)
                     true_idx = np.array(point_batch[ii,pt,coord])
-                    bin_size = (args.max[pt][coord] - args.min[pt][coord])/float(args.bins)
-                    r_theta_phi[coord] = idx*bin_size + args.min[pt][coord]
-                    r_theta_phi_true[coord] = true_idx*bin_size + args.min[pt][coord]
+                    bin_size = (bin_max[pt][coord] - bin_min[pt][coord])/float(n_bins)
+                    r_theta_phi[coord] = idx*bin_size + bin_min[pt][coord]
+                    r_theta_phi_true[coord] = true_idx*bin_size + bin_min[pt][coord]
                 (xyz,xyz_true) = sphericalToXYZ()([r_theta_phi,r_theta_phi_true])
                 d = (xyz - xyz_true)
-                batch_list.append(np.linalg.norm(d))
+                if phase[ii] == 0:
+                    batch_list.append(np.linalg.norm(d))
+                else:
+                    extra_batch_list[phase[ii]-1].append(np.linalg.norm(d))
 
             else:
                 for coord in range(3):
-                    prob = np.array(softmax(logits[ii,coord,pt,:]))#.numpy()
+                    prob = np.array(softmax(logits[ii,coord,pt,ranges[phase[ii]]]))#.numpy()
                     max_pred = np.argmax(prob)
                     #true_pred = np.argmax(point_batch[ii,pt,coord,:])
                     true_pred = np.array(point_batch[ii,pt,coord])
-                    bin_size = (args.max[pt][coord] - args.min[pt][coord])/float(args.bins)
+                    bin_size = (bin_max[pt][coord] - bin_min[pt][coord])/float(n_bins)
                     d = (true_pred - max_pred)*bin_size
                     coord_list.append(d)
                 d = np.vstack([coord_list[0],coord_list[1],coord_list[2]])
-                batch_list.append(np.linalg.norm(d))
+                if phase[ii] == 0:
+                    batch_list.append(np.linalg.norm(d))
+                else:
+                    extra_batch_list[phase[ii]-1].append(np.linalg.norm(d))                    
 
             if not yaw_only:
                 true_angle = []
                 pred_angle = []
                 for coord in range(3,6):
-                    prob = np.array(softmax(logits[ii,coord,pt,:]))#.numpy()
+                    prob = np.array(softmax(logits[ii,coord,pt,ranges[phase[ii]]]))#.numpy()
                     max_pred = np.argmax(prob)
                     #true_pred = np.argmax(point_batch[ii,pt,coord,:])
                     true_pred = np.array(point_batch[ii,pt,coord])
-                    bin_size = (args.max[pt][coord] - args.min[pt][coord])/float(args.bins)
+                    bin_size = (bin_max[pt][coord] - bin_min[pt][coord])/float(n_bins)
                     true_angle.append(true_pred * bin_size)
                     pred_angle.append(max_pred * bin_size)
-
-                ang_d = angle_dist(true_angle, pred_angle)
+                if phase[ii] == 0:
+                    ang_d.append(angle_dist(true_angle, pred_angle))
+                else:
+                    extra_ang_d[phase[ii]-1].append(angle_dist(true_angle, pred_angle))
 
             else:
-                prob = np.array(softmax(logits[ii,3,pt,:]))#.numpy()
+                prob = np.array(softmax(logits[ii,3,pt,ranges[phase[ii]]]))#.numpy()
                 max_pred = np.argmax(prob)
                 #true_pred = np.argmax(point_batch[ii,pt,coord,:])
                 true_pred = np.array(point_batch[ii,pt,3])
-                bin_size = (args.max[pt][coord] - args.min[pt][coord])/float(args.bins)
+                bin_size = (bin_max[pt][coord] - bin_min[pt][coord])/float(n_bins)
                 true_angle = (true_pred * bin_size)
                 pred_angle = (max_pred * bin_size)
 
-                ang_d = norm((true_angle - pred_angle))
+                if phase[ii] == 0:
+                    ang_d.append(norm((true_angle - pred_angle)))
+                else:
+                    extra_ang_d[phase[ii]-1].append(norm((true_angle - pred_angle)))
 
-        batch_mean = np.mean(batch_list)
-        batch_mean = [batch_mean, ang_d]
+        if len(batch_list) != 0:
+            batch_mean = np.mean(batch_list)
+            batch_mean = [batch_mean, np.mean(ang_d)]
+        else:
+            batch_mean = [0., 0.]
         acc_list.append(batch_mean)
+        for i in range(len(extra_batch_list)):
+            if len(extra_batch_list[i]) != 0:
+                temp_batch_mean = np.mean(extra_batch_list[i])
+                temp_batch_mean = [temp_batch_mean, np.mean(extra_ang_d[i])]
+            else:
+                temp_batch_mean = [0., 0.]
+            extra_acc_list[i].append(temp_batch_mean)
+
+    if args.num_controls > 1:
+        return acc_list, extra_acc_list
     return acc_list
 
-def acc_metric_regression(args, logits, point_batch, sphere_flag = False):
+def acc_metric_regression(args, logits, point_batch, phases, sphere_flag = False):
     acc_list = []
+    extra_acc_list = [[] for i in range(args.num_controls-1)]
     shape = logits.size()
     logits = logits.detach()
     if sphere_flag:
         logits = sphericalToXYZ()(logits)
-    for pt in range(shape[1]):
+    for pt in range(args.num_pts):
         batch_list = []
-        ang_d = 0
+        extra_batch_list = [[] for i in range(args.num_controls-1)]
+        ang_d = []
+        extra_ang_d = [[] for i in range(args.num_controls-1)]
         for ii in range(shape[0]):
+            phase = phases[ii]
             coord_list = []
             for coord in range(3):
-                pred = logits[ii,pt,coord]
-                d = pred - point_batch[ii, pt, coord]
+                pred = logits[ii,(pt*6)+coord]
+                d = pred - point_batch[ii,(pt*6)+coord]
                 coord_list.append(d)
             d = np.vstack([coord_list[0],coord_list[1],coord_list[2]])
-            batch_list.append(np.linalg.norm(d))
+            if phase > 0:
+                extra_batch_list[phase-1].append(np.linalg.norm(d))
+            else:
+                batch_list.append(np.linalg.norm(d))
 
             true_angle = []
             pred_angle = []
             for coord in range(3,6):
-                pred = logits[ii,pt,coord]
-                true_angle.append(point_batch[ii, pt, coord])
+                pred = logits[ii,(pt*6)+coord]
+                true_angle.append(point_batch[ii, (pt*6)+coord])
                 pred_angle.append(pred)
-            ang_d = angle_dist(true_angle, pred_angle)
-        
-        batch_mean = np.mean(batch_list)
-        batch_mean = [batch_mean, ang_d]
+            if phase > 0:
+                extra_ang_d[phase-1].append(angle_dist(true_angle,pred_angle))
+            else:
+                ang_d.append(angle_dist(true_angle, pred_angle))
+
+        if len(batch_list) != 0:
+            batch_mean = np.mean(batch_list)
+            batch_mean = [batch_mean, np.mean(ang_d)]
+        else:
+            batch_mean = [0., 0.]
         acc_list.append(batch_mean)
+        for i in range(len(extra_batch_list)):
+            if len(extra_batch_list[i]) != 0:
+                temp_batch_mean = np.mean(extra_batch_list[i])
+                temp_batch_mean = [temp_batch_mean, np.mean(extra_ang_d[i])]
+            else:
+                temp_batch_mean = [0., 0.]
+            extra_acc_list[i].append(temp_batch_mean)
+
+    if args.num_controls > 1:
+        return acc_list,extra_acc_list
     return acc_list
 
+def get_state_data(state_config, data):
+    if state_config == 1:
+        # print("State 1")
+        orange_pose_data = data["orange_pose"]
+        # print("RP State")
+        rp_data = data["rp"]
+        states_data = torch.cat((orange_pose_data, rp_data), 1)
+        return states_data
 
+    elif state_config == 2:
+        body_v_data = data["body_v"]
+        orange_pose_data = data["orange_pose"]
+        rp_data = data["rp"]
+        states_data = torch.cat((body_v_data, orange_pose_data, rp_data), 1)
+        return states_data
+    elif state_config == 3:
+        magnet_data = data["magnet"]
+        orange_pose_data = data["orange_pose"]
+        rp_data = data["rp"]
+        states_data = torch.cat((magnet_data, orange_pose_data, rp_data), 1)
+        return states_data
+
+    elif state_config == 4:
+        rp_data = data["rp"]
+        states_data = torch.Tensor(rp_data)
+        return states_data
+
+    elif state_config == 5:
+        orange_pose_data = data["orange_pose"]
+        states_data = torch.Tensor(orange_pose_data)
+        return states_data
+
+    else:
+        return None
+
+def phase_accuracy(actual, predicted):
+    softmax = nn.Softmax(dim=1)
+    actual_phases = np.array(actual)
+    predicted_phases = softmax(predicted).to('cpu').detach().numpy()
+    max_pred = np.argmax(predicted_phases, axis=1)
+    accuracy = np.sum((max_pred == actual_phases).astype(np.float64))/actual_phases.shape[0]
+    return accuracy
 
 def main():
     signal.signal(signal.SIGINT,signal_handler)
@@ -413,30 +513,30 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('data', help='data folder')
     parser.add_argument('--load', help='model to load')
-    parser.add_argument('--epochs', type=int, default=150, help='number of epochs to train for')
+    parser.add_argument('--epochs', type=int, default=1000, help='max number of epochs to train for/but also controls how fast learning rate decays')
     parser.add_argument('--seed', type=int, default=0, help='random seed')
     parser.add_argument('--resample', action='store_true', help='resample data')
     parser.add_argument('--gpu', help='gpu to use')
     parser.add_argument('--num_images', type=int, default=1, help='number of input images')
-    parser.add_argument('--batch_size', type=int, default=65, help='batch size')
-    parser.add_argument('--val_batch_size', type=int, default=65, help='batch size')
-    parser.add_argument('--learning_rate', type=float, default=5e-3, help='batch size')
+    parser.add_argument('--batch_size', type=int, default=100, help='batch size')
+    parser.add_argument('--val_batch_size', type=int, default=100, help='batch size for validation')
+    parser.add_argument('--learning_rate', type=float, default=5e-4, help='starting learning rate')
     parser.add_argument('--num_pts', type=int, default=3, help='number of output waypoints')
     parser.add_argument('--capacity', type=float, default=1, help='network capacity')
-    parser.add_argument('--min', type=tuple, default=(0,-0.5,-0.5), help='minimum xyz ')
-    parser.add_argument('--max', type=tuple, default=(1,0.5,0.5), help='maximum xyz')
-    parser.add_argument('--bins', type=int, default=30, help='number of bins per coordinate')
+    parser.add_argument('--min', type=tuple, default=(0,-0.5,-0.5), help='minimum xyz/barely used and overwritten later')
+    parser.add_argument('--max', type=tuple, default=(1,0.5,0.5), help='maximum xyz/barely used and overwritten later')
+    parser.add_argument('--bins', type=int, default=100, help='number of bins per coordinate')
     parser.add_argument('-j', type=int, default=8, help='number of loader workers')
     parser.add_argument('--traj', type=int, default=1, help='train trajectories')
-    parser.add_argument('--real', type=int, default=0, help='real world imgs')
+    parser.add_argument('--real', type=int, default=1, help='real world imgs (0: sim data, 1: orange tracking data, else: normal real world data')
     parser.add_argument('--val', type=float, default=0.10, help='validation percentage')
-    parser.add_argument('--resnet18', type=int, default=0, help='ResNet18')
+    parser.add_argument('--resnet18', type=int, default=0, help='ResNet18 or ResNet8')
     parser.add_argument('--yaw_only', type=int, default=0, help='yaw only')
-    parser.add_argument('--custom', type=str, default="", help='custom parser: Run18/no_parse')
-    parser.add_argument('--test_arch', type=int, default=100, help='testing architectures')
+    parser.add_argument('--custom', type=str, default="no_parse", help='custom parser: Run18/no_parse (used in sim data and normal real world, Run18/no_parse allows to read unparsed future waypoint data)')
+    parser.add_argument('--test_arch', type=int, default=100, help='testing architectures, 100 loads default, other numbers loads orangenetarch from architecture folder, added to keep track of older data')
     parser.add_argument('--train', type=int, default=1, help='train or test')
     parser.add_argument('--data_aug_flip',type=int,default=1, help='Horizontal flipping on/off')
-    parser.add_argument('--real_test',type=int,default=0,help='self.h = 380/480')
+    parser.add_argument('--real_test',type=int,default=0,help='self.h = 380/480' )
     parser.add_argument('--freeze',type=str,default="",help='layer to freeze while training, linear or conv')
     parser.add_argument('--plot_data',type=int,default=0,help="plot data for accuracy")
     parser.add_argument('--input_size',type=float,default=1,help='input size change')
@@ -444,18 +544,28 @@ def main():
     parser.add_argument('--use_error_sampler',type=bool,default=False,help='adaptive error based sampling')
     parser.add_argument('--custom_loss',type=bool,default=False,help='custom loss for training')
     parser.add_argument('--depth',type=bool,default=False,help='use depth channel')
-    parser.add_argument('--seg',type=bool,default=False,help='use segmentation channel')
-    parser.add_argument('--temp_seg',type=bool,default=False,help='use segmentation channel')
-    parser.add_argument('--seg_only',type=bool,default=False,help='use segmentation channel')
-    parser.add_argument('--save_variables',type=int,default=20,help="save after every x epochs")
-    parser.add_argument('--mean_seg',type=str,default='data/mean_imgv2_data_seg_Run24.npy',help='mean segmentation image') # data/depth_data/data/mean_seg.npy
-    parser.add_argument('--segload', help='segment model to load')
-    parser.add_argument('--retrain_off_seg',type=bool,default=False,help='retrain segmentation off')
-    parser.add_argument('--relative_pose', type=bool, default=False,help='relative pose of points')
+    parser.add_argument('--seg',type=bool,default=False,help='use segmentation channel, don\'t use mostly')
+    parser.add_argument('--temp_seg',type=bool,default=True,help='use segmentation channel, use this')
+    parser.add_argument('--seg_only',type=bool,default=False,help='use segmentation channel, don\'t use mostly')
+    parser.add_argument('--save_variables',type=int,default=2,help="save after every x epochs")
+    parser.add_argument('--mean_seg',type=str,default='data/depth_data/data/mean_seg.npy',help='mean segmentation image, two options for real and sim world in comments') # data/depth_data/data/mean_seg.npy #data/mean_imgv2_data_seg_Run24.npy
+    parser.add_argument('--segload', type=str, default="model/segmentation/logs/variable_log/2021-01-31_13-25-31/model_seg145.pth.tar", help='segment model to load')
+    parser.add_argument('--retrain_off_seg',type=bool,default=True,help='retrain of segmentation off')
+    parser.add_argument('--relative_pose', type=bool, default=True,help='relative pose of points')
     parser.add_argument('--regression', type=bool, default=False,help='Use regression loss (MSE)')
     parser.add_argument('--spherical', type=bool, default=False,help='Use spherical coordinates')
     parser.add_argument('--pred_dt',type=float, default=1.0, help="Space between predicted points")
     parser.add_argument('--image_dt',type=float,default=1.0, help="Space between images provided to network")
+    parser.add_argument('--states',type=int,default=1,help="states to use with network, options: (1, 2, 3), check get_states function to see which version uses which states")
+    parser.add_argument('--num_controls',type=int,default=3,help="to divide data into multiple scenarios, to teach a different control strategy for each")
+    parser.add_argument('--reduce_n', type=bool, default=True,help='Remove last few events from staging dataset')
+    parser.add_argument('--extra_dt', nargs="+", type=float, default=[0.25, 0.25], help='pred_dt for extra phases')
+    parser.add_argument('--relabel', type=bool, default=False,help='Relabel last few events from staging')
+    parser.add_argument('--mix_labels', type=bool, default=False,help='Mix labels last few events from staging')
+    parser.add_argument('--resets', type=bool, default=True,help='Reset data used for training')
+    parser.add_argument('--body_v_dt', type=float, default=None,help='Average body v over longer dts')
+    parser.add_argument('--remove_hover', nargs="+", type=float, default=None,help='Threshold to remove equilibrium staging points')
+
 
     args = parser.parse_args()
 
@@ -477,15 +587,41 @@ def main():
     else:
         args.traj = True
 
+    if args.reduce_n == 0:
+        args.reduce_n = False
+    else:
+        args.reduce_n = True
+
+    if args.relabel == 0:
+        args.relabel = False
+    else:
+        args.relabel = True
+
+    if args.states in [3]:
+        args.magnet = True
+    else:
+        args.magnet = False
+
+    if args.remove_hover is not None:
+        args.remove_hover = tuple(args.remove_hover) 
+
     if args.real == 0:
         from customDatasetsOrientation import OrangeSimDataSet, SubSet
-        args.real = False
+        #args.real = False
+    elif args.real == 1:
+        from customDatasetv1 import OrangeSimDataSet, SubSet
     else:
         from customRealDatasetsOrientation import OrangeSimDataSet, SubSet
-        args.real = True
+        #args.real = True
 
     if args.test_arch == 100:
-        from orangenetarch import OrangeNet8, OrangeNet18
+        if args.num_controls > 1:
+            from orangenetarchmulticontrol import OrangeNet8, OrangeNet18
+        elif args.states != 0:
+            from orangenetarchstates import OrangeNet8, OrangeNet18
+        elif args.states == 0 and args.num_controls == 1:
+            from orangenetarch import OrangeNet8, OrangeNet18
+
     else:
         import importlib
         i = importlib.import_module('architecture.orangenetarch' + str(args.test_arch))
@@ -508,9 +644,22 @@ def main():
           args.min = [(0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2), (0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2), (0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2)]
           args.max = [(0.7, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2), (0.7, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2), (0.7, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2)]
       else:
-          if not args.real:
+          if args.real == 0:
               args.min = [(-0.1, -0.5, -0.25, -0.5, -0.1, -0.1), (-0.1, -0.5, -0.25, -0.5, -0.1, -0.1), (-0.1, -0.5, -0.25, -0.5, -0.1, -0.1)]
               args.max = [(1.0, 0.5, 0.25, 0.5, 0.1, 0.1), (1.0, 0.5, 0.25, 0.5, 0.1, 0.1), (1.0, 0.5, 0.25, 0.5, 0.1, 0.1)]
+          elif args.real == 1:
+              #args.min = [(-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.5, -0.25, -np.pi/2, -0.1, -0.1)]
+              #args.max = [(0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1), (0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1), (0.75, 0.75, 0.25, np.pi/2, 0.1, 0.1)]
+              #args.min = [(-0.25, -0.25, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.25, -0.25, -np.pi/2, -0.1, -0.1), (-0.25, -0.25, -0.25, -np.pi/2, -0.1, -0.1)]
+              #args.max = [(0.45, 0.45, 0.25, np.pi/2, 0.1, 0.1), (0.45, 0.45, 0.25, np.pi/2, 0.1, 0.1), (0.45, 0.45, 0.25, np.pi/2, 0.1, 0.1)]
+              if args.pred_dt <= 0.5:
+                  print("Pred DT: 0.5")
+                  args.min = [(-0.03, -0.1, -0.04, -0.12, -0.04, -0.04), (-0.03, -0.1, -0.04, -0.12, -0.04, -0.04), (-0.03, -0.1, -0.04, -0.12, -0.04, -0.04)]
+                  args.max = [(0.20, 0.1, 0.04, 0.12, 0.04, 0.04), (0.20, 0.1, 0.04, 0.12, 0.04, 0.04), (0.20, 0.1, 0.04, 0.12, 0.04, 0.04)]
+              else:
+                  args.min = [(-0.10, -0.20, -0.10, -0.25, -0.075, -0.075), (-0.10, -0.15, -0.10, -0.25, -0.075, -0.075), (-0.10, -0.15, -0.10, -0.25, -0.075, -0.075)]
+                  args.max = [(0.30, 0.20, 0.10, 0.25, 0.075, 0.075), (0.30, 0.15, 0.10, 0.25, 0.075, 0.075), (0.30, 0.15, 0.10, 0.25, 0.075, 0.075)]
+
           else:
               #args.min = [(0.,-0.5,-0.1,-np.pi,-np.pi/2,-np.pi),(0.,-1.,-0.15,-np.pi,-np.pi/2,-np.pi),(0.,-1.5,-0.2,-np.pi,-np.pi/2,-np.pi),(0.,-2.,-0.3,-np.pi,-np.pi/2,-np.pi),(0.,-3.,-0.5,-np.pi,-np.pi/2,-np.pi)]
               args.min = [(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi)]
@@ -522,12 +671,43 @@ def main():
           args.min = [(0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2), (0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2), (0.0, -np.pi, -np.pi/2, -np.pi, -np.pi/2, -np.pi/2)]
           args.max = [(0.7, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2), (1.2, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2), (1.7, np.pi, np.pi/2, np.pi, np.pi/2, np.pi/2)]
       else:
-          if not args.real:
+          if args.real == 0:
               args.min = [(-0.1, -0.5, -0.25, -0.5, -0.1, -0.1), (-0.1, -1.0, -0.4, -np.pi/4, -0.1, -0.1), (-0.1, -1.25, -0.6, -np.pi/2, -0.1, -0.1)]
               args.max = [(1.0, 0.5, 0.25, 0.5, 0.1, 0.1), (1.75, 1.0, 0.4, np.pi/4, 0.1, 0.1), (2.5, 1.25, 0.6, np.pi/2, 0.1, 0.1)]
+          elif args.real == 1:
+              args.min = [(-0.1, -0.4, -0.1, -np.pi/2, -0.1, -0.1), (-0.2, -0.8, -.15, -np.pi/2, -0.1, -0.1), (-0.3, -1.2, -0.25, -np.pi/2, -0.1, -0.1)]
+              args.max = [(0.5, 0.5, 0.2, np.pi/2, 0.1, 0.1), (1.0, 0.8, 0.4, np.pi/2, 0.1, 0.1), (1.5, 1.2, 0.55, np.pi/2, 0.1, 0.1)]
           else:
               args.min = [(-0.5,-0.5,-0.2,-np.pi,-np.pi,-np.pi),(-0.75,-0.75,-0.5,-np.pi,-np.pi,-np.pi),(-1.0,-1.0,-0.75,-np.pi,-np.pi,-np.pi)]
               args.max = [(1.,0.5,0.2,np.pi,np.pi,np.pi),(1.5,1.0,0.5,np.pi,np.pi,np.pi),(2.0,1.0,0.75,np.pi,np.pi,np.pi)]
+
+    if args.num_controls > 1:
+        if (args.extra_dt == [0.25] or (len(args.extra_dt) == 1 and args.extra_dt[0] <= 0.25)):
+            print("Extra dt 0.25")
+            if args.mix_labels:
+                args.extra_mins = [[(-0.030, -0.05, -0.01, -0.08, -0.02, -0.025), (-0.030, -0.05, -0.01, -0.08, -0.02, -0.025), (-0.030, -0.05, -0.01, -0.08, -0.02, -0.025)]]
+                args.extra_maxs = [[(0.035, 0.05, 0.03, 0.08, 0.02, 0.025), (0.035, 0.05, 0.03, 0.08, 0.02, 0.025), (0.035, 0.05, 0.03, 0.08, 0.02, 0.025)]]
+            else:
+                #args.extra_mins = [[(-0.030, -0.05, -0.01, -0.08, -0.02, -0.025), (-0.030, -0.05, -0.01, -0.08, -0.02, -0.025), (-0.030, -0.05, -0.01, -0.08, -0.02, -0.025)]]
+                #args.extra_maxs = [[(0.035, 0.05, 0.03, 0.08, 0.02, 0.025), (0.035, 0.05, 0.03, 0.08, 0.02, 0.025), (0.035, 0.05, 0.03, 0.08, 0.02, 0.025)]]
+                args.extra_mins = [[(-0.05, -0.05, -0.075, -0.10, -0.03, -0.03), (-0.05, -0.05, -0.075, -0.10, -0.03, -0.03), (-0.05, -0.05, -0.075, -0.10, -0.03, -0.03)]]
+                args.extra_maxs = [[(0.15, 0.05, 0.075, 0.10, 0.03, 0.03), (0.15, 0.05, 0.075, 0.10, 0.03, 0.03), (0.15, 0.05, 0.075, 0.10, 0.03, 0.03)]]
+                #args.extra_mins = [[(-0.01, -0.02, -0.01, -0.03, -0.02, -0.02), (-0.01, -0.02, -0.01, -0.03, -0.02, -0.02), (-0.01, -0.02, -0.01, -0.03, -0.02, -0.02)]]
+                #args.extra_maxs = [[(0.03, 0.02, 0.03, 0.03, 0.02, 0.02), (0.03, 0.02, 0.03, 0.03, 0.02, 0.02), (0.03, 0.02, 0.03, 0.03, 0.02, 0.02)]]
+        elif args.extra_dt == [0.5] or (len(args.extra_dt) == 1 and args.extra_dt[0] <= 0.5):
+            print("Extra dt 0.5")
+            args.extra_mins = [[(-0.05, -0.02, -0.01, -0.05, -0.03, -0.03), (-0.05, -0.02, -0.01, -0.05, -0.03, -0.03), (-0.05, -0.02, -0.01, -0.05, -0.03, -0.03)]]
+            extra_maxs = [[( 0.05,  0.02,  0.035,  0.05,  0.03,  0.03), ( 0.05,  0.02,  0.035,  0.05,  0.03,  0.03), ( 0.05,  0.02,  0.035,  0.05,  0.03,  0.03)]]
+        else:
+            args.extra_mins = [[(-0.05, -0.05, -0.075, -0.10, -0.03, -0.03), (-0.05, -0.05, -0.075, -0.10, -0.03, -0.03), (-0.05, -0.05, -0.075, -0.10, -0.03, -0.03)]]
+            args.extra_maxs = [[(0.15, 0.05, 0.075, 0.10, 0.03, 0.03), (0.15, 0.05, 0.075, 0.10, 0.03, 0.03), (0.15, 0.05, 0.075, 0.10, 0.03, 0.03)]]
+
+        if len(args.extra_dt) == 2:
+            args.extra_mins.append([(-0.1, -0.05, -0.03, -0.075, -0.03, -0.03), (-0.1, -0.05, -0.03, -0.075, -0.03, -0.03), (-0.1, -0.05, -0.03, -0.075, -0.03, -0.03)])
+            args.extra_maxs.append([(0.01, 0.05, 0.01, 0.075, 0.03, 0.03), (0.01, 0.05, 0.01, 0.075, 0.03, 0.03), (0.01, 0.05, 0.01, 0.075, 0.03, 0.03)])
+    else:
+        args.extra_mins = None
+        args.extra_maxs = None
 
     #args.traj = False
     #Data Transforms
@@ -535,7 +715,7 @@ def main():
     if not args.regression:
         if args.spherical:
             pt_trans.append(xyzToSpherical())
-        pt_trans.append(pointToBins(args.min,args.max,args.bins))
+        pt_trans.append(pointToBins(args.min,args.max,args.bins,extra_min=args.extra_mins,extra_max=args.extra_maxs))
     if len(pt_trans) > 0:
         pt_trans = transforms.Compose(pt_trans)
     else:
@@ -569,7 +749,10 @@ def main():
     seg_mean_image = torch.tensor(np.load(args.mean_seg))
 
     #TOCHECK
-    dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, custom_dataset=args.custom, input=args.input_size, depth=args.depth, seg=args.seg, temp_seg=args.temp_seg, seg_only=args.seg_only, rel_pose=args.relative_pose, pred_dt = args.pred_dt, dt=args.image_dt)
+    if args.real == 1:
+        dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, depth=args.depth, rel_pose=args.relative_pose, pred_dt = args.pred_dt, img_dt=args.image_dt, reduce_N=args.reduce_n, use_resets=args.resets, extra_dt=args.extra_dt, relabel=args.relabel, mix_labels=args.mix_labels, body_v_dt = args.body_v_dt, remove_hover = args.remove_hover, use_magnet=args.magnet)
+    else:
+        dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, custom_dataset=args.custom, input=args.input_size, depth=args.depth, seg=args.seg, temp_seg=args.temp_seg, seg_only=args.seg_only, rel_pose=args.relative_pose, pred_dt = args.pred_dt, dt=args.image_dt, body_v_dt = args.body_v_dt, remove_hover = args.remove_hover)
 
     #Break up into validation and training
     #val_perc = 0.07
@@ -590,29 +773,29 @@ def main():
 
     else:
         print("Traj")
-        val_order = np.ceil(len(dataclass.num_samples_dir_size)*val_perc).astype(int)
+        val_order = np.ceil(len(dataclass.num_samples_dir)*val_perc).astype(int)
         val_indices = []
         train_indices = []
         val_data = {}
-        val_data["order"] = np.array(random.sample(list(dataclass.num_samples_dir_size.keys()), k=val_order))
+        val_data["order"] = np.array(random.sample(list(dataclass.num_samples_dir.keys()), k=val_order))
         #print(val_data["order"])
 
         for x in val_data["order"]:
             val_indices.extend(list(range(dataclass.num_samples_dir[x]['start'], dataclass.num_samples_dir[x]['end'])))
             val_data[x] = dataclass.num_samples_dir[x]
 
-        for i, x in enumerate(list(dataclass.num_samples_dir_size.keys())):
+        for i, x in enumerate(list(dataclass.num_samples_dir.keys())):
             if x not in val_data["order"]:
                 train_indices.extend(list(range(dataclass.num_samples_dir[x]['start'], dataclass.num_samples_dir[x]['end'])))
 
         val_idx = len(val_indices)
-        train_idx = dataclass.num_samples - val_idx
+        train_idx = len(dataclass) - val_idx
 
         random.shuffle(train_indices)
 
         val_idx = np.array(val_indices)
         train_idx = np.array(train_indices)
-
+        
         #fopen = open('val_data_xyz.pickle', 'wb')
         #pickle.dump(val_data, fopen, pickle.HIGHEST_PROTOCOL)
 
@@ -645,6 +828,11 @@ def main():
     base_n_channels = 3
     n_channels = base_n_channels
 
+    if args.depth == 0:
+        args.depth = False
+    else:
+        args.depth = True
+
     if args.depth:
         n_channels += 1
     if args.seg or args.seg_only or args.temp_seg:
@@ -653,14 +841,32 @@ def main():
         else:
             n_channels += 1
 
+    state_count = 0
+
     if not args.resnet18:
-        model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,retrain_off=args.freeze,input=args.input_size, num_channels = n_channels, real=args.real)
+        if args.states == 0 and args.num_controls == 1:
+            model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,retrain_off=args.freeze,input=args.input_size, num_channels = n_channels, real=args.real)
+        else:
+            if args.states == 1:
+                state_count += 6 + 2
+            elif args.states == 2:
+                state_count += 6 + 6 + 2
+            elif args.states == 3:
+                state_count += 3 + 6 + 2
+            elif args.states == 4:
+                state_count += 2
+            elif args.states == 5:
+                state_count += 6
+            if args.num_controls > 1:
+                model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,retrain_off=args.freeze,input=args.input_size, num_channels = n_channels, real=args.real, state_count = state_count, num_controls=args.num_controls, extra_mins=args.extra_mins, extra_maxs=args.extra_maxs)
+            else:
+                model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,retrain_off=args.freeze,input=args.input_size, num_channels = n_channels, real=args.real, state_count = state_count)
     else:
         model = OrangeNet18(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=args.real_test,input=args.input_size, num_channels = n_channels)
 
     if args.load:
         if os.path.isfile(args.load):
-            checkpoint = torch.load(args.load)
+            checkpoint = torch.load(args.load, map_location=torch.device('cuda:'+args.gpu))
             model.load_state_dict(checkpoint)
             print("Loaded Checkpoint: ",args.load)
         else:
@@ -668,7 +874,7 @@ def main():
 
     if args.segload:
         if os.path.isfile(args.segload):
-            checkpoint = torch.load(args.segload)
+            checkpoint = torch.load(args.segload, map_location=torch.device('cuda:'+args.gpu))
             segmodel.load_state_dict(checkpoint)
             print("Loaded Checkpoint: ",args.segload)
         else:
@@ -735,7 +941,7 @@ def main():
         plotting_data = dict()
         data_loc = copy.deepcopy(args.data)
         val_outputs_x, val_outputs_y, val_outputs_z, val_outputs_yaw, val_outputs_p, val_outputs_r = loadData(val_idx,dataclass.num_list,data_loc,model,dataclass.traj_list,args.real,dataclass,args)
-        print(len(val_idx))
+        #print(len(val_idx))
         plotting_data['idx'] = range(len(val_idx))
 
         if not args.yaw_only:
@@ -771,16 +977,20 @@ def main():
     #    except:
     #            pass
     #model = model.to('cpu')
+
     seg_mean_image = seg_mean_image.to(device)
-    for epoch in range(args.epochs):
-        if args.temp_seg:
-            segmodel = segmodel.to(device)
-        model = model.to(device)
-        print('Epoch: ', epoch)
+    ranges = np.array([np.arange(i*args.bins, (i+1)*args.bins) for i in range(args.num_controls)])
+    for epoch in range(args.epochs):            
+        
+        print('\n\nEpoch: ', epoch)
         #Train
         #gc.collect()
         epoch_acc = [[[], []], [[], []], [[], []]]
+        extra_epoch_acc = [[[[], []], [[], []], [[], []]] for i in range(args.num_controls-1)]
         acc_total = [[0., 0.], [0., 0.], [0., 0.]]
+        extra_acc_total = [[[0., 0.], [0., 0.], [0., 0.]] for i in range(args.num_controls-1)]
+        extra_elements = [0. for i in range(args.num_controls-1)]
+        train_phase_accuracy = 0.
         elements = 0.
         loader = train_loader
         if args.use_sampler:
@@ -791,8 +1001,9 @@ def main():
                 loader = weight_loader
 
         for ctr, batch in enumerate(loader):
-            #print('Batch: ',ctr)
+            # print('Batch: ',ctr)
             #image_batch = batch['image'].to(device).float()
+            model = model.to(device)
             point_batch = batch['points'] #.to(device)
             optimizer.zero_grad()
             if args.temp_seg:
@@ -802,7 +1013,10 @@ def main():
                 batch_imgs = batch['image']
                 batch_imgs = batch_imgs.to(device)
                 #model = model.to(device)
+                classifier_loss = None
+
                 if args.temp_seg:
+                    segmodel = segmodel.to(device)
                     batch_images = None
                     for img_num in range(args.num_images):
                         seglogits = segmodel(batch_imgs[:, img_num*base_n_channels:(img_num+1)*base_n_channels, :, :])
@@ -820,26 +1034,50 @@ def main():
                         #    im.save(floc + "/output" + str(k + i) + ".png")
 
                         #exit(0)
+                        # print(segimages.shape, seg_mean_image.shape)
                         segimages -= seg_mean_image
                         segimages = torch.reshape(segimages, (segimages.shape[0], 1, segimages.shape[1], segimages.shape[2]))
-                        t_batch_imgs =  torch.cat((batch_imgs[:, img_num*base_n_channels:(img_num+1)*base_n_channels, :, :], segimages), 1)
+                        t_batch_imgs =  torch.cat((batch_imgs[:, img_num*(n_channels-1):(img_num+1)*(n_channels-1), :, :], segimages), 1)
                         if batch_images is None:
                             batch_images = t_batch_imgs
                         else:
                             batch_images = torch.cat((batch_images, t_batch_imgs), 1)
                 else:
                     batch_images = batch_imgs
-                    
-                logits = model(batch_images)
+                
+                if args.states == 0:
+                    logits = model(batch_images)
+                else:
+                    states = get_state_data(args.states, batch)
+                    states = states.to(device)
+                    logits = model(batch_images, states)
+
                 #print(logits.shape)
                 #exit(0)
                 #del batch_imgs
                 #del batch
+                #classifier = logits[:, 0]
+                #logits = logits[:, :3600]
+                if args.temp_seg:
+                    segmodel = segmodel.to('cpu')
+                b_size = logits.shape[0]
+
+                if args.num_controls > 1:
+                    classifier = logits[:, :model.classifier]
+                    classifier = classifier.reshape(-1, model.classifier).to(device)
+                    logits = logits[:, model.classifier:]
+                    classifier_loss = F.cross_entropy(classifier, batch['phase'].long().to(device))
+                    temp_accuracy = phase_accuracy(batch['phase'], classifier)
+                    train_phase_accuracy = ((elements * train_phase_accuracy) + (b_size * temp_accuracy))/(elements + b_size)
+                    phase = np.array(batch['phase'].to('cpu'))
+                else:
+                    phase = np.zeros(b_size).astype(int)
+
                 if not args.regression:
                     if not args.yaw_only:
-                        logits = logits.view(-1,6,model.num_points,model.bins)
+                        logits = logits.view(-1,6,model.num_points,model.bins*args.num_controls)
                     else:
-                        logits = logits.view(-1,4,model.num_points,model.bins)
+                        logits = logits.view(-1,4,model.num_points,model.bins*args.num_controls)
 
                     loss_x = [0. for t in range(model.num_points)]
                     loss_y = [0. for t in range(model.num_points)]
@@ -851,20 +1089,21 @@ def main():
 
                     loss_yaw = [0. for t in range(model.num_points)]
 
-                    b_size = logits.shape[0]
+                    
                     point_batch = point_batch.to(device)
+                    elements_accessed = np.arange(b_size)
                     for temp in range(model.num_points):
                         #print(logits[:,0,temp,:].shape)
                         #print(((point_batch)[:,temp,0]).shape)
-                        #exit()
-                        loss_x[temp] += F.cross_entropy(logits[:,0,temp,:],(point_batch)[:,temp,0])
-                        loss_y[temp] += F.cross_entropy(logits[:,1,temp,:],(point_batch)[:,temp,1])
-                        loss_z[temp] += F.cross_entropy(logits[:,2,temp,:],(point_batch)[:,temp,2])
-                        loss_yaw[temp] += F.cross_entropy(logits[:,3,temp,:],(point_batch)[:,temp,3])
+                        #exit()        
+                        loss_x[temp] += F.cross_entropy(logits[elements_accessed,0,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,0])
+                        loss_y[temp] += F.cross_entropy(logits[elements_accessed,1,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,1])
+                        loss_z[temp] += F.cross_entropy(logits[elements_accessed,2,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,2])
+                        loss_yaw[temp] += F.cross_entropy(logits[elements_accessed,3,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,3])
 
                         if not args.yaw_only:
-                            loss_p[temp] += F.cross_entropy(logits[:,4,temp,:],(point_batch)[:,temp,4])
-                            loss_r[temp] += F.cross_entropy(logits[:,5,temp,:],(point_batch)[:,temp,5])
+                            loss_p[temp] += F.cross_entropy(logits[elements_accessed,4,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,4])
+                            loss_r[temp] += F.cross_entropy(logits[elements_accessed,5,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,5])
 
                     point_batch = point_batch.to('cpu')
                     logits = logits.to('cpu')
@@ -876,24 +1115,17 @@ def main():
                             arg2 = 4
                             logits = logits.view(-1,4,model.num_points,model.bins)
                         idx_batch = batch['idx'].to('cpu')
-                        #label_batch = batch['time_frac']
-                        #print(logits.shape)
-                        #print(idx_batch)
                         for ii, idx in enumerate(idx_batch):
                             temp_logits = (logits.cpu()[ii]).view(1, arg2, model.num_points,model.bins)
                             temp_point_batch = (point_batch.cpu()[ii]).view(1, model.num_points, arg2)
                             acc_list = acc_metric(args, temp_logits, temp_point_batch, args.yaw_only,sphere_flag = args.spherical)
-                            #ele = np.where(train_idx == np.int(idx))
-                            #print(idx, ele)
-                            #print(train_idx)
-                            #if len(ele) != 1:
-                            #    print(idx, ele)
-                            #print(idx)
                             eps = 1e-6
                             error_weights[int(train_loc[int(idx)])] = np.sum(np.array(acc_list)) + eps
-                            #print(error_weights[batch['idx'][ii]])
 
-                    acc_list = acc_metric(args,logits,point_batch,args.yaw_only,sphere_flag = args.spherical)
+                    acc_list = acc_metric(args,logits,point_batch,args.yaw_only,phase,ranges,sphere_flag = args.spherical)
+                    if args.num_controls > 1:
+                        acc_list, extra_acc_list = acc_list
+
                     #del point_batch
                     #del logits
 
@@ -922,29 +1154,37 @@ def main():
                             if not args.yaw_only:
                                 batch_loss += loss_p[t]
                                 batch_loss += loss_r[t]
-
+                   
+                    if args.num_controls > 1:
+                        batch_loss += classifier_loss
+ 
                 else:
-                    logits = logits.view(-1,model.num_points,6)
-                    b_size = logits.shape[0]
                     logits = logits.to(device).double()
                     point_batch = point_batch.to(device).double()
-                    # print((point_batch)[:,0, 0])
-                    # s0, s1, s2 = len(point_batch), len(point_batch[0]), len(point_batch[0][0])
-                    # pb = torch.Tensor(s0, s1, s2)
-                    # print(s0, s1, s2)
-                    # list_pb = []
-                    # for ele_s0 in range(s0):
-                    #     list_list_pb = torch.Tensor(s1, s2)
-                    #     torch.cat(point_batch[ele_s0], out=list_list_pb)
-                    #     list_pb.append(list_list_pb)
-                    # print(pb.shape)
-                    # torch.cat(list_pb, out=pb)
+                    if not args.yaw_only:
+                        logits = logits.view(-1,args.num_controls,model.num_points*6)
+                        temp_point_batch = point_batch.view(-1,model.num_points*6)
+                    else:
+                        logits = logits.view(-1,args.num_controls,model.num_points*4)
+                        temp_point_batch = point_batch.view(-1,model.num_points*4)
+                    elements_accessed = np.arange(b_size)
+                    batch_loss = 0
+                    if (args.num_controls > 1):
+                        batch_loss += classifier_loss
                     if args.spherical:
                         temp_transform = sphericalToXYZ()
-                        batch_loss = F.mse_loss(temp_transform(logits),point_batch)#TODO: make sure this works
+                        batch_loss += F.mse_loss(temp_transform(logits[elements_accessed,phase,:]),temp_point_batch)
                     else:
-                        batch_loss = F.mse_loss(logits, point_batch)
-                    acc_list = acc_metric_regression(args, logits.cpu(), point_batch.cpu(),sphere_flag = args.spherical)
+                        batch_loss += F.mse_loss(logits[elements_accessed,phase,:],temp_point_batch)
+
+                    #if args.spherical:
+                    #    temp_transform = sphericalToXYZ()
+                    #    batch_loss = F.mse_loss(temp_transform(logits),point_batch)#TODO: make sure this works
+                    #else:
+                    #    batch_loss = F.mse_loss(logits, point_batch)
+                    acc_list = acc_metric_regression(args, logits[elements_accessed,phase,:].cpu(), temp_point_batch.cpu(),phase,sphere_flag = args.spherical)
+                    if args.num_controls > 1:
+                        acc_list, extra_acc_list = acc_list
 
                 #print(batch_loss)
                 #batch_loss.to_cpu()
@@ -955,11 +1195,11 @@ def main():
                 l2_reg = l2_reg.to(device)
                 batch_loss += lamda * l2_reg"""
                 batch_loss = batch_loss.to(device)
-                batch_imgs = batch_imgs.to(device)
+                # batch_imgs = batch_imgs.to(device)
                 #print(dir())
                 #print(optimizer)
-                logits = logits.to(device)
-                point_batch = point_batch.to(device)
+                # logits = logits.to(device)
+                # point_batch = point_batch.to(device)
                 model = model.to(device)
                 #optimizer = optimizer.to('cpu')
                 loss_mult = loss_mult.to(device)
@@ -969,18 +1209,21 @@ def main():
                         loss_y[i] = loss_y[i].to(device)
                         loss_z[i] = loss_z[i].to(device)
                         loss_yaw[i] = loss_yaw[i].to(device)
-                        loss_p[i] = loss_p[i].to(device)
-                        loss_r[i] = loss_r[i].to(device)
+                        if not args.yaw_only:
+                            loss_p[i] = loss_p[i].to(device)
+                            loss_r[i] = loss_r[i].to(device)
 
                 #print(batch_loss.device, l2_reg.device, lamda.device, logits.device, point_batch.device)
                 batch_loss.backward()
                 optimizer.step()
-                #model = model.to('cpu')
+                model = model.to('cpu')
 
                 del batch_imgs, point_batch, logits, batch_images, batch
+                if args.states != 0:
+                    del states
 
+                writer.add_scalar('train_loss',batch_loss,ctr+epoch*len(train_loader))
                 if not args.regression:
-                    writer.add_scalar('train_loss',batch_loss,ctr+epoch*len(train_loader))
                     writer.add_scalar('train_loss_x',torch.sum(torch.tensor(loss_x)),ctr+epoch*len(train_loader))
                     writer.add_scalar('train_loss_y',torch.sum(torch.tensor(loss_y)),ctr+epoch*len(train_loader))
                     writer.add_scalar('train_loss_z',torch.sum(torch.tensor(loss_z)),ctr+epoch*len(train_loader))
@@ -995,18 +1238,34 @@ def main():
                 #print('Training Accuracy: ',acc_list)
                 #print(type(acc_list))
 
-                for i in range(len(acc_total)):
-                    for j in range(2):
-                        acc_total[i][j] = ((elements * acc_total[i][j]) + (b_size * acc_list[i][j]))/(elements + b_size)
-                        #epoch_acc[i][j].append(acc_list[i][j])
+                for ii in range(args.num_controls):
+                    temp_ctr = len(np.argwhere(phase==ii))
+                    for i in range(len(acc_total)):
+                        for j in range(2):
+                            if ii == 0:
+                                if elements + temp_ctr == 0.:
+                                    continue
+                                acc_total[i][j] = ((elements * acc_total[i][j]) + (temp_ctr * acc_list[i][j]))/(elements + temp_ctr)
+                                #epoch_acc[i][j].append(acc_list[i][j])
+                            else:
+                                if extra_elements[ii-1] + temp_ctr == 0.:
+                                    continue
+                                extra_acc_total[ii-1][i][j] = ((extra_elements[ii-1] * extra_acc_total[ii-1][i][j]) + (temp_ctr * extra_acc_list[ii-1][i][j]))/(extra_elements[ii-1] + temp_ctr)                               
 
-                elements += b_size
+                    if ii == 0:
+                        elements += temp_ctr
+                    else:
+                        extra_elements[ii-1] += temp_ctr
 
                 #print(b_size)
 
         #Validation
         #print("Reach here")
         print('Training Accuracy: ',acc_total)
+        if args.num_controls > 1:
+            print("Train Phase Loss:", classifier_loss)
+            print('Training Phase Accuracy:', train_phase_accuracy)
+            print("Training Extra:", extra_acc_total)
         #exit()
         if args.yaw_only:
             val_loss = [0.,0.,0.,0.]
@@ -1014,16 +1273,25 @@ def main():
             val_loss = [0.,0.,0.,0.,0.,0.]
 
         val_acc = np.zeros((model.num_points,2))
+        if args.num_controls > 1:
+            extra_val_acc = np.zeros((args.num_controls-1,model.num_points,2))
         # if not args.yaw_only:
         #     resnet_output = np.zeros((0, 6, args.num_pts, model.bins))
         # else:
         #     resnet_output = np.zeros((0, 4, args.num_pts, model.bins))
 
+        val_elements = [0. for i in range(args.num_controls)]
+
+
+        val_phase_accuracy = 0.
+
         for batch in val_loader:
+            val_classifier_loss = None
             with torch.set_grad_enabled(False):
                 image_batch = batch['image'].to(device)
-                #model = model.to(device)
+                model = model.to(device)
                 if args.temp_seg:
+                    segmodel = segmodel.to(device)
                     batch_images = None
                     for img_num in range(args.num_images):
                         seglogits = segmodel(image_batch[:, img_num*base_n_channels:(img_num+1)*base_n_channels, :, :])
@@ -1043,71 +1311,129 @@ def main():
                         #exit(0)
                         segimages -= seg_mean_image
                         segimages = torch.reshape(segimages, (segimages.shape[0], 1, segimages.shape[1], segimages.shape[2]))
-                        t_batch_imgs =  torch.cat((image_batch[:, img_num*base_n_channels:(img_num+1)*base_n_channels, :, :], segimages), 1)
+                        t_batch_imgs =  torch.cat((image_batch[:, img_num*(n_channels-1):(img_num+1)*(n_channels-1), :, :], segimages), 1)
                         if batch_images is None:
                             batch_images = t_batch_imgs
                         else:
                             batch_images = torch.cat((batch_images, t_batch_imgs), 1)
+                    segmodel = segmodel.to('cpu')
                 else:
                     batch_images = image_batch
 
                 #print(segimages.shape, batch_imgs.shape)
-                model = model.to(device)
+                # model = model.to(device)
                 model.eval()
-                logits = model(batch_images)
+                # logits = model(batch_images)
+                if args.states == 0:
+                    logits = model(batch_images)
+                else:
+                    states = get_state_data(args.states, batch)
+                    states = states.to(device)
+                    logits = model(batch_images, states)
+
                 del image_batch
+                b_size = logits.shape[0]
+
+                if args.num_controls > 1:
+                    classifier = logits[:, :model.classifier].reshape(-1, model.classifier).to(device)
+                    logits = logits[:, model.classifier:]
+                    val_classifier_loss = F.cross_entropy(classifier, batch['phase'].long().to(device))
+                    temp_accuracy = phase_accuracy(batch['phase'], classifier)
+                    val_phase_accuracy += temp_accuracy
+                    phase = np.array(batch['phase'].to('cpu'))
+                else:
+                    phase = np.zeros(b_size).astype(int)
+
+                point_batch = batch['points'].to(device)
                 if not args.regression:
                     if not args.yaw_only:
-                        logits = logits.view(-1,6,model.num_points,model.bins)
+                        logits = logits.view(-1,6,model.num_points,model.bins*args.num_controls)
                     else:
-                        logits = logits.view(-1,4,model.num_points,model.bins)
-                    logits_x = logits[:,0,:,:]
-                    logits_y = logits[:,1,:,:]
-                    logits_z = logits[:,2,:,:]
-                    logits_yaw = logits[:,3,:,:]
+                        logits = logits.view(-1,4,model.num_points,model.bins*args.num_controls)
+
+                    loss_x = [0. for t in range(model.num_points)]
+                    loss_y = [0. for t in range(model.num_points)]
+                    loss_z = [0. for t in range(model.num_points)]
+
                     if not args.yaw_only:
-                        logits_p = logits[:,4,:,:]
-                        logits_r = logits[:,5,:,:]
+                        loss_r = [0. for t in range(model.num_points)]
+                        loss_p = [0. for t in range(model.num_points)]
 
-                    point_batch = batch['points'].to(device)
-                    for temp in range(model.num_points):
-                        val_loss[0] += F.cross_entropy(logits_x[:,temp,:],point_batch[:,temp,0])
-                        val_loss[1] += F.cross_entropy(logits_y[:,temp,:],point_batch[:,temp,1])
-                        val_loss[2] += F.cross_entropy(logits_z[:,temp,:],point_batch[:,temp,2])
-                        val_loss[3] += F.cross_entropy(logits_yaw[:,temp,:],point_batch[:,temp,3])
+                    loss_yaw = [0. for t in range(model.num_points)]
+
+                    elements_accessed = np.arange(b_size)
+                    for temp in range(model.num_points):                     
+                        val_loss[0] += F.cross_entropy(logits[elements_accessed,0,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,0])
+                        val_loss[1] += F.cross_entropy(logits[elements_accessed,1,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,1])
+                        val_loss[2] += F.cross_entropy(logits[elements_accessed,2,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,2])
+                        val_loss[3] += F.cross_entropy(logits[elements_accessed,3,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,3])
+
                         if not args.yaw_only:
-                            val_loss[4] += F.cross_entropy(logits_p[:,temp,:],point_batch[:,temp,4])
-                            val_loss[5] += F.cross_entropy(logits_r[:,temp,:],point_batch[:,temp,5])
+                            val_loss[4] += F.cross_entropy(logits[elements_accessed,4,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,4])
+                            val_loss[5] += F.cross_entropy(logits[elements_accessed,5,temp,ranges[phase].T].T,(point_batch)[elements_accessed,temp,5])
 
-                    val_acc_list = acc_metric(args,logits.cpu(),point_batch.cpu(), args.yaw_only,sphere_flag = args.spherical)
+                    val_acc_list = acc_metric(args,logits.cpu(),point_batch.cpu(), args.yaw_only,phase,ranges,sphere_flag = args.spherical)
+
+                    if args.num_controls > 1:
+                        val_acc_list, extra_val_acc_list = val_acc_list
     
                 else:
-                    logits = logits.view(-1,model.num_points,6)
                     logits = logits.to(device).double()
-                    point_batch = batch['points'].to(device).double()
-                    # s0, s1, s2 = len(point_batch), len(point_batch[0]), len(point_batch[0][0])
-                    # pb = torch.Tensor(s0, s1, s2)
-                    # list_pb = []
-                    # for ele_s0 in range(s0):
-                    #     list_list_pb = torch.Tensor(s1, s2)
-                    #     torch.cat(point_batch[ele_s0], out=list_list_pb)
-                    #     list_pb.append(list_list_pb)
-                    # torch.cat(list_pb, out=pb)
-                    # batch_loss = F.mse_loss(logits, pb)
-                    val_loss = F.mse_loss(logits, point_batch)
-                    val_acc_list = acc_metric_regression(args, logits.cpu(), point_batch.cpu(),sphere_flag = args.spherical)
+                    point_batch = point_batch.to(device).double()
+                    if not args.yaw_only:
+                        logits = logits.view(-1,args.num_controls,model.num_points*6)
+                        temp_point_batch = point_batch.view(-1,model.num_points*6)
+                    else:
+                        logits = logits.view(-1,args.num_controls,model.num_points*4)
+                        temp_point_batch = point_batch.view(-1,model.num_points*6)
+                    elements_accessed = np.arange(b_size)
+                    val_loss = [0]
+                    if (args.num_controls > 1):
+                        val_loss[0] += val_classifier_loss
+                    if args.spherical:
+                        temp_transform = sphericalToXYZ()
+                        val_loss[0] += F.mse_loss(temp_transform(logits[elements_accessed,phase,:]),temp_point_batch)
+                    else:
+                        val_loss[0] += F.mse_loss(logits[elements_accessed,phase,:],temp_point_batch)
+
+                    val_acc_list = acc_metric_regression(args, logits[elements_accessed,phase,:].cpu(), temp_point_batch.cpu(),phase,sphere_flag = args.spherical)
+                    if args.num_controls > 1:
+                        val_acc_list, extra_val_acc_list = val_acc_list
                 logits = logits.to('cpu')
                 #print(logits.shape)
                 #resnet_output = np.concatenate((resnet_output,logits), axis=0)
                 #print(resnet_output.shape)
-                b_size = logits.shape[0]
-                for ii, acc in enumerate(val_acc_list):
-                    for jj, acc_j in enumerate(acc):
-                        val_acc[ii][jj] += acc_j
-                        epoch_acc[ii][jj].append(acc_j)
+
+                for phase_num in range(args.num_controls):
+                    phase_i = len(np.argwhere(phase==phase_num))
+                    val_elements[phase_num] += phase_i
+                    if phase_num == 0:
+                        for ii, acc in enumerate(val_acc_list):
+                            for jj, acc_j in enumerate(acc):
+                                val_acc[ii][jj] += phase_i * acc_j
+                                epoch_acc[ii][jj].append(acc_j)
+                    else:
+                        for ii, acc in enumerate(extra_val_acc_list[phase_num-1]):
+                            for jj, acc_j in enumerate(acc):
+                                extra_val_acc[phase_num-1][ii][jj] += phase_i * acc_j
+                                extra_epoch_acc[phase_num-1][ii][jj].append(acc_j)
+
                 del point_batch
+                
+                if args.states != 0:
+                    del states
+
                 model = model.to('cpu')
-        val_acc = val_acc/len(val_loader)
+        
+        if val_elements[0] != 0.:
+            val_acc = val_acc/val_elements[0]
+        if args.num_controls > 1:
+            val_phase_accuracy /= len(val_loader)
+            for i in range(len(extra_val_acc)):
+                phase_i = val_elements[i+1]
+                if phase_i != 0:
+                    extra_val_acc[i] /= phase_i
+
         if args.traj and False:
             for ii in plotting_data['idx']:
                 plotting_data['data'][ii].append(resnet_output[ii,:,:,:])
@@ -1115,24 +1441,30 @@ def main():
             if args.plot_data:
                 with open(plot_data_path+'/data.pickle','wb') as f:
                     pickle.dump(plotting_data,f,pickle.HIGHEST_PROTOCOL)
+        if val_classifier_loss is None:
+            writer.add_scalar('val_loss',sum(val_loss),(epoch+1)*len(val_loader))
+        else:
+            writer.add_scalar('val_loss',sum(val_loss)+val_classifier_loss,(epoch+1)*len(val_loader))
         if not args.regression:
             if not args.yaw_only:
                 val_loss = [val_loss[temp].item()/len(val_loader) for temp in range(6)]
             else:
                 val_loss = [val_loss[temp].item()/len(val_loader) for temp in range(4)]
-            
-            writer.add_scalar('val_loss',sum(val_loss),(epoch+1)*len(train_loader))
-            writer.add_scalar('val_loss_x',val_loss[0],(epoch+1)*len(train_loader))
-            writer.add_scalar('val_loss_y',val_loss[1],(epoch+1)*len(train_loader))
-            writer.add_scalar('val_loss_z',val_loss[2],(epoch+1)*len(train_loader))
-            writer.add_scalar('val_loss_yaw',val_loss[3],(epoch+1)*len(train_loader))
+            writer.add_scalar('val_loss_x',val_loss[0],(epoch+1)*len(val_loader))
+            writer.add_scalar('val_loss_y',val_loss[1],(epoch+1)*len(val_loader))
+            writer.add_scalar('val_loss_z',val_loss[2],(epoch+1)*len(val_loader))
+            writer.add_scalar('val_loss_yaw',val_loss[3],(epoch+1)*len(val_loader))
             if not args.yaw_only:
-                writer.add_scalar('val_loss_p',val_loss[4],(epoch+1)*len(train_loader))
-                writer.add_scalar('val_loss_r',val_loss[5],(epoch+1)*len(train_loader))
+                writer.add_scalar('val_loss_p',val_loss[4],(epoch+1)*len(val_loader))
+                writer.add_scalar('val_loss_r',val_loss[5],(epoch+1)*len(val_loader))
         for ii, acc in enumerate(val_acc):
-            writer.add_scalar('val_acc_'+str(ii),acc[0],(epoch+1)*len(train_loader))
+            writer.add_scalar('val_acc_'+str(ii),acc[0],(epoch+1)*len(val_loader))
         print('Val Cross-Entropy Loss: ', val_loss)
         print('Val Accuracy: ',val_acc)
+        if args.num_controls > 1:
+            print("Val Phase Loss:", val_classifier_loss)
+            print("Val Phase Accuracy:", val_phase_accuracy)
+            print("Val Extra Accuracy:", extra_val_acc)
         #NOTE: Experimental --- might be bad
         if args.use_error_sampler and epoch % sampler_n_epochs == 0:
             #print(type(error_weights))
@@ -1214,15 +1546,29 @@ def main():
             print("Saving variables")
             save_model(epoch)
 
-        epoch_acc = np.array(epoch_acc)
-        mean_str = ""
-        var_str = ""
-        for i in range(len(epoch_acc)):
-            for j in range(len(epoch_acc[i])):
-                mean_str += (str(np.mean(epoch_acc[i][j])) + "\t")
-                var_str += (str(np.std(epoch_acc[i][j])) + "\t")
-        print(mean_str)
-        print(var_str)
+        for ii in range(args.num_controls):
+            print("Phase:", ii)
+            if ii == 0:
+                epoch_acc = np.array(epoch_acc)
+                mean_str = ""
+                var_str = ""
+                for i in range(len(epoch_acc)):
+                    for j in range(len(epoch_acc[i])):
+                        mean_str += (str(np.mean(epoch_acc[i][j])) + "\t")
+                        var_str += (str(np.std(epoch_acc[i][j])) + "\t")
+                print(mean_str)
+                print(var_str)
+            else:
+                extra_epoch_acc = np.array(extra_epoch_acc)
+                mean_str = ""
+                var_str = ""
+                for i in range(len(extra_epoch_acc[ii-1])):
+                    for j in range(len(extra_epoch_acc[ii-1][i])):
+                        mean_str += (str(np.mean(extra_epoch_acc[ii-1][i][j])) + "\t")
+                        var_str += (str(np.std(extra_epoch_acc[ii-1][i][j])) + "\t")
+                print(mean_str)
+                print(var_str)
+
     writer.close()
     print("Done")
 

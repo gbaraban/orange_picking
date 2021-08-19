@@ -37,12 +37,12 @@ def DAggerCompare(x,goals,ref_goals,cyl_o,cyl_h=1.6,cyl_r=0.6):
     #TODO: adjust gamma
     gamma = 1
     if len(x) == 6:
-        r = R.from_euler('zyx',x[3:6])
+        r = R.from_euler('ZYX',x[3:6])
     elif ((len(x) == 2) or (len(x) is 4)):
         r = R.from_matrix(np.array(x[1]))
         temp_x = x
         x = list(temp_x[0])
-        x.extend(r.as_euler('zyx'))
+        x.extend(r.as_euler('ZYX'))
 
     for g in goals:
         g_trans = r.apply(g[0:3]) + x[0:3]
@@ -54,7 +54,7 @@ def DAggerCompare(x,goals,ref_goals,cyl_o,cyl_h=1.6,cyl_r=0.6):
     metric = 0
     for (g,ref) in zip(goals,ref_goals):
         metric += np.linalg.norm(g[0:3]-ref[0]) #distance
-        g_dir = R.from_euler('zyx',g[3:6]).apply([1,0,0])
+        g_dir = R.from_euler('ZYX',g[3:6]).apply([1,0,0])
         ref_dir = np.array(ref[1])[:,0]
         metric += gamma*(1 - np.dot(g_dir,ref_dir))
     return metric
@@ -82,17 +82,17 @@ def transform_local(points,x):
     #transform points from gcop to torch
     torch_points = []
     if len(x) == 6:
-        r_inv = R.from_euler('zyx',x[3:6]).inv()
+        r_inv = R.from_euler('ZYX',x[3:6]).inv()
     elif ((len(x) == 2) or (len(x) is 4)):
         r = R.from_matrix(np.array(x[1]))
         temp_x = x
         x = list(temp_x[0])
-        x.extend(r.as_euler('zyx'))
+        x.extend(r.as_euler('ZYX'))
         r_inv = r.inv()
 
     for p in points:
         pos = r_inv.apply(np.array(p[0]) - np.array(x[0:3]))
-        rot = (r_inv*R.from_dcm(p[1])).as_euler('zyx')
+        rot = (r_inv*R.from_dcm(p[1])).as_euler('ZYX')
         torch_points.append(np.hstack((pos,rot)))
     return torch_points
 

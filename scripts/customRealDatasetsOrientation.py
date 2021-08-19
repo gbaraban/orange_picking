@@ -228,7 +228,7 @@ class OrangeSimDataSet(Dataset):
         elif self.custom_dataset == "no_parse":
             point = np.array(self.traj_list[trial_idx][idx])
             p0 = np.array(point[0:3])
-            R0 = R.from_euler('zyx', point[3:6]).as_dcm()
+            R0 = R.from_euler('ZYX', point[3:6]).as_dcm()
             points = []
             h = (float(self.nEvents[trial_idx])/(self.time_secs[trial_idx]*self.time_multiplier[trial_idx]))
             indices = np.floor(np.add(np.array([1*self.pred_dt, 2*self.pred_dt, 3*self.pred_dt]) * h, idx)).astype(int)
@@ -248,7 +248,7 @@ class OrangeSimDataSet(Dataset):
                         print(idx, ii)
                 pt = np.array(self.traj_list[trial_idx][ii])
                 p = np.array(pt[0:3])
-                Ri = R.from_euler('zyx', pt[3:6]).as_dcm()
+                Ri = R.from_euler('ZYX', pt[3:6]).as_dcm()
                 point_list.append(p)
                 rot_list.append(Ri)
 
@@ -274,7 +274,7 @@ class OrangeSimDataSet(Dataset):
                 Ri = np.array(rot_list[ii])
                 p = list(np.matmul(prev_R.T,p-prev_p))
                 Ri = np.matmul(prev_R.T,Ri)
-                Ri_zyx = list(R.from_dcm(Ri).as_euler('zyx'))
+                Ri_zyx = list(R.from_dcm(Ri).as_euler('ZYX'))
                 p.extend(Ri_zyx)
                 points.append(p)
 

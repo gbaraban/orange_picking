@@ -222,7 +222,7 @@ def main():
       angle = init_angle(tree,orange,x0)
       
       # x_ = tuple(x0[0:3])
-      # rot_m = R.from_euler('zyx', x0[3:6]).as_matrix()
+      # rot_m = R.from_euler('ZYX', x0[3:6]).as_matrix()
       # rot = tuple((tuple(rot_m[0,]),)) + tuple((tuple(rot_m[1,]),)) + tuple((tuple(rot_m[2,]),))
       # x = tuple((x_,rot))
       # x = x[0:] + tuple(((0,0,0),(0,0,0)))
@@ -319,7 +319,7 @@ def main():
     #Post Process
     trajectories.append(trajectory)
     final_x = trajectory[len(trajectory)-1]
-    ee_pos = final_x[0:3] + R.from_euler('zyx',final_x[3:6]).apply(orange_offset)
+    ee_pos = final_x[0:3] + R.from_euler('ZYX',final_x[3:6]).apply(orange_offset)
     final_error.append(np.linalg.norm(ee_pos-orange))
     '''
   #Calculate success rates

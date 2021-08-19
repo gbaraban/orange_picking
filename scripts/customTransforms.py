@@ -55,18 +55,35 @@ class xyzToSpherical(object):
         return np.array(local_pts)
 
 class pointToBins(object):
-    def __init__(self,min_list,max_list, bins):
+    def __init__(self,min_list,max_list, bins, extra_min = None, extra_max = None):
         self.min_list = min_list
         self.max_list = max_list
         self.bins = bins
+        self.extra_min = extra_min
+        self.extra_max = extra_max
 
     def __call__(self,points):
+        phase = 0
+        if type(points) is dict:
+            phase = points['phase']
+            points = points['points']
+
         local_pts = []
+        if (phase is None) or (self.extra_min is None) or (self.extra_max is None):
+            bound_min = self.min_list
+            bound_max = self.max_list
+        else:
+            if phase > 0:
+                bound_min = self.extra_min[phase-1]
+                bound_max = self.extra_max[phase-1]
+            else:
+                bound_min = self.min_list
+                bound_max = self.max_list
         for ctr, point in enumerate(points):
             #Convert into bins
             #print(len(point), len(points))
-            min_i = np.array(self.min_list[ctr]).astype(float)
-            max_i = np.array(self.max_list[ctr]).astype(float)
+            min_i = np.array(bound_min[ctr]).astype(float)
+            max_i = np.array(bound_max[ctr]).astype(float)
             point = np.array(point).astype(float)
             bin_nums = (point - min_i)/(max_i-min_i)
             bin_nums_scaled = (bin_nums*self.bins).astype(int)
@@ -96,11 +113,12 @@ class GaussLabels(object):
 class RandomHorizontalTrajFlip(object):
 	def __init__(self, p=0.5, n_inputs = 6):
 		self.p = p
-		self.reflect = np.zeros((4,4))
-		self.reflect[0,0] = 1
-		self.reflect[1,1] = -1
-		self.reflect[2,2] = 1
-		self.reflect[3,3] = 1
+		self.reflect = np.diag((1,-1,1,1))
+		#self.reflect = np.zeros((4,4))
+		#self.reflect[0,0] = 1
+		#self.reflect[1,1] = -1
+		#self.reflect[2,2] = 1
+		#self.reflect[3,3] = 1
 		self.n_inputs = n_inputs
 
 	def __call__(self, data):
@@ -120,11 +138,11 @@ class RandomHorizontalTrajFlip(object):
 					E = np.zeros((4,4))
 					E[3,3] = 1
 					E[0:3,3] = np.array(pt[0:3])
-					E[0:3,0:3] = R.from_euler('zyx', pt[3:]).as_dcm()
+					E[0:3,0:3] = R.from_euler('ZYX', pt[3:]).as_dcm()
 					E = np.matmul(self.reflect, E)
 
 					points[i,:3] = list(E[0:3,3])
-					points[i,3:] = R.from_dcm(E[0:3,0:3]).as_euler('zyx')
+					points[i,3:] = R.from_dcm(E[0:3,0:3]).as_euler('ZYX')
 
 				else:
 					E = np.zeros((4))
@@ -140,33 +158,35 @@ class RandomHorizontalTrajFlip(object):
 					E[3,3] = 1
 					E[0:3,3] = np.array(points[i,:])
 					E[0:3,0:3] = rot_list[i,:,:]
-					E = np.matmul(self.reflect, E)
-					E = np.matmul(E, self.reflect)
-					R_2 = R.from_euler('zyx', [-np.pi/2, 0, 0])
-					R_m2 = R_2.as_dcm()
-					E_m2 = np.zeros((4,4))
-					E_m2[3,3] = 1
-					E_m2[0:3,0:3] = R_m2
-					E = np.matmul(E, E_m2)
+					E_flip = np.matmul(np.matmul(self.reflect,E),self.reflect)
+					#E = np.matmul(self.reflect, E)
+					#E = np.matmul(E, self.reflect)
+					#R_2 = R.from_euler('ZYX', [-np.pi/2, 0, 0])
+					#R_m2 = R_2.as_dcm()
+					#E_m2 = np.zeros((4,4))
+					#E_m2[3,3] = 1
+					#E_m2[0:3,0:3] = R_m2
+					#E = np.matmul(E, E_m2)
 
-					points[i,:] = list(E[0:3,3])
-					rot_list[i,:,:] = E[0:3,0:3]
+					points[i,:] = E_flip[0:3,3]
+					rot_list[i,:,:] = E_flip[0:3,0:3]
 
 				else:
 					E = np.zeros((4))
 					E[0:3] = np.array(points[i,:])
 					E[3] = 1
-					E = np.matmul(self.reflect, E)
-					E = np.matmul(E, self.reflect)
-					R_2 = R.from_euler('zyx', [-np.pi/2, 0, 0])
-					R_m2 = R_2.as_dcm()
-					E_m2 = np.zeros((4,4))
-					E_m2[3,3] = 1
-					E_m2[0:3,0:3] = R_m2
+					E_flip = np.matmul(np.matmul(self.reflect,E),self.reflect)
+					#E = np.matmul(self.reflect, E)
+					#E = np.matmul(E, self.reflect)
+					#R_2 = R.from_euler('ZYX', [-np.pi/2, 0, 0])
+					#R_m2 = R_2.as_dcm()
+					#E_m2 = np.zeros((4,4))
+					#E_m2[3,3] = 1
+					#E_m2[0:3,0:3] = R_m2
 
-					E = np.matmul(E, E_m2)
+					#E = np.matmul(E, E_m2)
 
-					points[i,:] = list(E[0:3])
+					points[i,:] = E_flip[0:3]
 
 
 			points = np.array(points)

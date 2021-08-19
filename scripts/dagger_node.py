@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import rospy
 from sensor_msgs.msg import Image
 from std_msgs.msg import Bool
@@ -45,7 +46,7 @@ class DAgger:
             inf_R = R.from_quat([inf_pose.orientation.x,inf_pose.orientation.y,inf_pose.orientation.z,inf_pose.orientation.w])
             base_p = np.array([base_pose.position.x,base_pose.position.y,base_pose.position.z])
             base_R = R.from_quat([base_pose.orientation.x,base_pose.orientation.y,base_pose.orientation.z,base_pose.orientation.w])
-            cost += gamma*(np.linalg.norm(inf_p-base_p) + yaw_coeff*(inf_R.as_euler('zyx')[0] - base_R.as_euler('zyx')[0])
+            cost += gamma*(np.linalg.norm(inf_p-base_p) + yaw_coeff*(inf_R.as_euler('ZYX')[0] - base_R.as_euler('ZYX')[0])
         print("DAgger Cost: " + str(cost))
         if cost > eps:
             self.wp_pub.publish(base_msg)

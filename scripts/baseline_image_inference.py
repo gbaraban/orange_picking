@@ -188,8 +188,8 @@ class BaselineOrangeFinder:
         
     def __params(self, gpu=True, relative=True):
         self.__num_images = 1
-        self.__segload = "/home/siddharth/Desktop/asco/ws/src/orange_picking/model/model_seg145.pth.tar"
-        self.__mean_image_loc = "/home/siddharth/Desktop/orange_picking/data/mean_imgv2_data_data_collection4_real_world_traj_bag.npy"
+        self.__segload = "/home/matricex/matrice_ws/src/orange_picking/model/model_seg145.pth.tar"
+        self.__mean_image_loc = "/home/matricex/matrice_ws/src/orange_picking/data/mean_imgv2_data_data_collection4_real_world_traj_bag.npy"
         
         if torch.cuda.is_available() and gpu:
             self.__gpu = 0
@@ -531,7 +531,7 @@ class BaselineOrangeFinder:
         y = np.array([0, -1, 0])
         z = np.cross(plane_, y)
         rot = np.array([plane_, y, z]).T
-        # print(rot, np.linalg.det(rot), R.from_dcm(rot).as_euler('zyx', degrees=True))
+        # print(rot, np.linalg.det(rot), R.from_dcm(rot).as_euler('ZYX', degrees=True))
         orientation = R.from_dcm(rot).as_quat()
         if debug:
             self.debugPlanePlotter(pts, plane, orientation, position=mean_pt)
@@ -667,9 +667,9 @@ class BaselineOrangeFinder:
             return
 
         if trans is None or rot is None:
+            print("tf None")
             return
 
-        # print(area.shape)
         if area.shape[0] > 30:
             # print("In orange: ")
             mean_pt = self.publishData(depth_image, camera_intrinsics, area, self.__pointcloud_publisher, Trans=trans, Rot=rot, tracker=False)

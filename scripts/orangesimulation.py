@@ -122,8 +122,8 @@ def shuffleEnv(env_name,plot_only=False,future_version=False,trial_num=0,args=No
 #quat: switches return format between quaternion and rotation matrix.
 def quat_between(qa, qb, t, quat=False):
         if not quat:
-                qa = R.from_euler("zyx",qa).as_quat()
-                qb = R.from_euler("zyx",qb).as_quat()
+                qa = R.from_euler("ZYX",qa).as_quat()
+                qb = R.from_euler("ZYX",qb).as_quat()
 
         qm = np.array([0., 0., 0., 0.])
         cosHalfTheta = qa[3] * qb[3] + qa[0] * qb[0] + qa[1] * qb[1] + qa[2] * qb[2]
@@ -134,7 +134,7 @@ def quat_between(qa, qb, t, quat=False):
                 qm[2] = qa[2]
                 #print("A")
                 if not quat:
-                        qm = R.from_quat(qm).as_euler("zyx")
+                        qm = R.from_quat(qm).as_euler("ZYX")
 
                 return qm
 
@@ -149,7 +149,7 @@ def quat_between(qa, qb, t, quat=False):
                 qm[2] = (qa[2] * 0.5 + qb[2] * 0.5)
                 #print("B")
                 if not quat:
-                        qm = R.from_quat(qm).as_euler("zyx")
+                        qm = R.from_quat(qm).as_euler("ZYX")
 
                 return qm
 
@@ -161,7 +161,7 @@ def quat_between(qa, qb, t, quat=False):
         qm[2] = (qa[2] * ratioA + qb[2] * ratioB);
         #print("C")
         if not quat:
-                qm = R.from_quat(qm).as_euler("zyx")
+                qm = R.from_quat(qm).as_euler("ZYX")
 
         return qm
 
@@ -269,11 +269,11 @@ def run_model(model,image_arr,args,mean_image=None,device=None):
             point.append(model.min[pt][coord] + bin_size*predict[0,coord,pt])
         point = np.array(point)
         if args.relative_pose and pt != 0:
-            prev_R = R.from_euler('zyx', goal[-1][3:6]).as_dcm()
+            prev_R = R.from_euler('ZYX', goal[-1][3:6]).as_dcm()
             prev_p = goal[-1][0:3]
-            Rot = R.from_euler('zyx', point[3:6]).as_dcm()
+            Rot = R.from_euler('ZYX', point[3:6]).as_dcm()
             p = point[0:3]
-            Rot = list(R.from_dcm(np.matmul(prev_R, Rot)).as_euler('zyx'))
+            Rot = list(R.from_dcm(np.matmul(prev_R, Rot)).as_euler('ZYX'))
             p = list(np.matmul(prev_R, p)+prev_p)
             p.extend(Rot)
             point = np.array(p)
@@ -308,7 +308,7 @@ def trajCost(x_traj,u_traj,tree,orange,tf=10):
     yaw_g = 450
     yawf = np.arctan2(tree[1]-orange[1],tree[0]-orange[0])
     orange = np.array(orange)
-    rotf = R.from_euler('zyx',(yawf,0,0))
+    rotf = R.from_euler('ZYX',(yawf,0,0))
     mass = 0.5
     def yawCost(p,rot):
         df = np.array([orange[0] - p[0],orange[1] - p[1],0])
@@ -420,9 +420,9 @@ def trajCost(x_traj,u_traj,tree,orange,tf=10):
     elif (len(x_traj[0]) is 6):
         #print("zero:", x_traj[0])
         x_last = x_traj[0][0:3]
-        rot_last = R.from_euler('zyx', x_traj[0][3:6])#.as_matrix()
+        rot_last = R.from_euler('ZYX', x_traj[0][3:6])#.as_matrix()
         for i in range(N):
-            rot = R.from_euler('zyx', x_traj[i][3:6])#.as_matrix()
+            rot = R.from_euler('ZYX', x_traj[i][3:6])#.as_matrix()
             #print("I: ", i, x_traj[i])
             if len(x_traj[0]) is 6:
                 x = x_traj[i][0:3]
@@ -438,7 +438,7 @@ def trajCost(x_traj,u_traj,tree,orange,tf=10):
             #print("Running Cost: ", cost)
             x_last = x
             rot_last = rot
-        rot = R.from_euler('zyx',x_traj[N][3:6])#.as_matrix()
+        rot = R.from_euler('ZYX',x_traj[N][3:6])#.as_matrix()
         if len(x_traj[0]) is 6:
             x = x_traj[N][0:3]
         else:
@@ -493,7 +493,7 @@ def run_gcop(x,tree,orange,t=0,tf=10,N=100,save_path=None):#TODO:Add in args to 
         w0 = x[3]
     elif (len(x) is 6):
         cameraPos = tuple(x[0:3])
-        R0 = R.from_euler('zyx',x[3:6])
+        R0 = R.from_euler('ZYX',x[3:6])
         v0 = (0,0,0)
         w0 = (0,0,0)
     else:
@@ -542,15 +542,15 @@ def sys_f_gcop(x,goal,dt,goal_time=3,hz=50,plot_flag=False):
     elif (len(x) is 3):
         x0 = (tuple(x),(1,0,0,0,1,0,0,0,1),(0,0,0),(0,0,0))
     elif (len(x) is 4):
-        x0 = (tuple(x[0:3]),tuple(R.from_euler('zyx',(x[3],0,0)).as_matrix().flatten()),(0,0,0),(0,0,0))
+        x0 = (tuple(x[0:3]),tuple(R.from_euler('ZYX',(x[3],0,0)).as_matrix().flatten()),(0,0,0),(0,0,0))
     elif (len(x) is 6):
-        x0 = (tuple(x[0:3]),tuple(R.from_euler('zyx',x[3:6]).as_matrix().flatten()),(0,0,0),(0,0,0))
+        x0 = (tuple(x[0:3]),tuple(R.from_euler('ZYX',x[3:6]).as_matrix().flatten()),(0,0,0),(0,0,0))
     else:
         print("Unrecognized x length: ",len(x))
     goal_list = []
     if (len(goal[0]) is 6):
         for g in goal:
-            rot_local = R.from_euler('zyx',g[3:6])
+            rot_local = R.from_euler('ZYX',g[3:6])
             rot_x = R.from_dcm(np.reshape(x0[1],(3,3)))
             tot_rot = tuple((rot_local*rot_x).as_matrix().flatten())
             pos = rot_x.apply(g[0:3]) + np.array(x0[0])
@@ -590,7 +590,7 @@ def sys_f_linear(x,goal,dt,goal_time=1,plot_flag=False):
         for g in goal:
             goal_pts.append(g[0])
     else:
-        r = R.from_euler('zyx',x[3:6])
+        r = R.from_euler('ZYX',x[3:6])
         for g in goal:
             goal_pts.append(r.apply(g[0:3]) + x[0:3])
     dx = goal_pts[0] - x[0:3]
@@ -599,9 +599,9 @@ def sys_f_linear(x,goal,dt,goal_time=1,plot_flag=False):
     print(goal[0].size)
     if len(goal_pt) is 2:
         rot1 = R.from_dcm(goal_pt[1])
-        rot1 = R.from_euler('zyx',rot1.as_euler('zyx')*time_frac)
-        rot2 = R.from_euler('zyx',x[3:6])
-        (yaw,pitch,roll) = (rot1*rot2).as_euler('zyx')
+        rot1 = R.from_euler('ZYX',rot1.as_euler('ZYX')*time_frac)
+        rot2 = R.from_euler('ZYX',x[3:6])
+        (yaw,pitch,roll) = (rot1*rot2).as_euler('ZYX')
     elif len(goal_pt) is 4:
         yaw = x[3] + time_frac*(goal_pt[3] - x[3])
         roll = np.arcsin(dx[0]*np.sin(yaw) - dx[1]*np.cos(yaw))
@@ -611,9 +611,9 @@ def sys_f_linear(x,goal,dt,goal_time=1,plot_flag=False):
         roll = np.arcsin(dx[0]*np.sin(yaw) - dx[1]*np.cos(yaw))
         pitch = np.arctan2(np.cos(roll)*(dx[0]*np.cos(yaw) - dx[1]*np.sin(yaw)),np.cos(roll)*(dx[2]+9.8))
     elif (goal[0].size is 6):
-        rot1 = R.from_euler('zyx',quat_between(R.from_matrix(np.eye(3)).as_euler('zyx'),goal[0][3:6],time_frac))
-        rot2 = R.from_euler('zyx',x[3:6])
-        (yaw,pitch,roll) = (rot1*rot2).as_euler('zyx')
+        rot1 = R.from_euler('ZYX',quat_between(R.from_matrix(np.eye(3)).as_euler('ZYX'),goal[0][3:6],time_frac))
+        rot2 = R.from_euler('ZYX',x[3:6])
+        (yaw,pitch,roll) = (rot1*rot2).as_euler('ZYX')
     new_pos = x[0:3] + time_frac*dx
     new_x = np.hstack((new_pos,yaw,pitch,roll))
     if plot_flag:# or np.linalg.norm(dx) < 1e-3:
@@ -656,7 +656,7 @@ def run_sim(args,sys_f,env_name,model,eps=1.0, max_steps=99,dt=0.1,save_path = N
     yawf = np.arctan2(tree[1]-orange[1],tree[0]-orange[0])
     if "sys_f_gcop" in str(sys_f):
         x_ = tuple(x[0:3])
-        rot_m = R.from_euler('zyx', x[3:6]).as_matrix()
+        rot_m = R.from_euler('ZYX', x[3:6]).as_matrix()
         rot = tuple((tuple(rot_m[0,]),)) + tuple((tuple(rot_m[1,]),)) + tuple((tuple(rot_m[2,]),))
         x = tuple((x_,rot))
         x = x[0:] + tuple(((0,0,0),(0,0,0)))
@@ -681,7 +681,7 @@ def run_sim(args,sys_f,env_name,model,eps=1.0, max_steps=99,dt=0.1,save_path = N
             ang_dist = eps + 1
         else:
             dist = np.linalg.norm(x[0] - orange)
-            ang = R.from_dcm(x[1]).as_euler('zyx')
+            ang = R.from_dcm(x[1]).as_euler('ZYX')
             diff = ((yawf-ang[0] + np.pi) % (2*np.pi)) - np.pi
             if diff < -np.pi:
                 diff += 2*np.pi
@@ -784,7 +784,7 @@ def run_sim(args,sys_f,env_name,model,eps=1.0, max_steps=99,dt=0.1,save_path = N
                 pass
             elif len(x) == 6:
                 x_temp = list(x[0])
-                x_temp.extend(R.from_matrix(x[1]).as_euler('zyx'))
+                x_temp.extend(R.from_matrix(x[1]).as_euler('ZYX'))
                 x = x_temp
 
         x = sys_f(x,goal,dt,plot_flag=plot_step_flag)

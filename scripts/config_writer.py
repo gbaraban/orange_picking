@@ -18,7 +18,7 @@ class ConfigWriter(dict):
             info = yaml.full_load(file)
 
             for k, v in info.iteritems():
-                print(k, v)
+                print(k, v) 
 
     def write_config(self, write_loc):
         with open(self.read_loc, 'w') as file:

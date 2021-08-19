@@ -18,6 +18,8 @@ import matplotlib.pyplot as plt
 from mpl_toolkits import mplot3d
 from pytransform3d.rotations import *
 import shutil
+import subprocess
+import time
 from visual_servoing_pose_estimate import BaselineOrangeFinder
 
 bad_angles = []
@@ -177,8 +179,8 @@ def addDrop(R):
 #        Ri = Roti.as_dcm()
 #        R_relative = np.matmul(np.array(R0).T, np.array(Ri))
 #        ri = R.from_dcm(R_relative)
-#        r_zyx = ri.as_euler('zyx')
-#        r_po_zyx = Roti.as_euler('zyx')
+#        r_zyx = ri.as_euler('ZYX')
+#        r_po_zyx = Roti.as_euler('ZYX')
 #        rot_list.append([r_zyx[0], r_zyx[1], r_zyx[2]])
 #        rot_list_po.append([r_po_zyx[0], r_po_zyx[1], r_po_zyx[2]])
 #        #print(rot_list[x])
@@ -195,7 +197,7 @@ def addDrop(R):
 #    #print(point_list)
 #    point_list = np.concatenate((point_list, rot_list), axis=1)
 #    #print(point_list)
-#    rot0 = Rot0.as_euler('zyx')
+#    rot0 = Rot0.as_euler('ZYX')
 #    pos_only_p0 = list(p0)
 #    p0 = list(p0)
 #    p0.extend([rot0[0], rot0[1], rot0[2]])
@@ -203,13 +205,15 @@ def addDrop(R):
 #    return point_list, pos_only_point_list, indices, p0, pos_only_p0
 #
 
-def saveData(save_loc, no_events, odom_len, time, odom, bag_name, orange_pose=None):
+def saveData(save_loc, no_events, odom_len, mag_len, time, odom, mag, bag_name, orange_pose=None):
     data_dict = {}
     data_dict["nEvents"] = no_events
     data_dict["nOdom"] = odom_len
+    data_dict["nMag"] = mag_len
     data_dict["time_secs"] = time.secs
     data_dict["time_nsecs"] = time.nsecs
     data_dict["data"] = odom
+    data_dict["mag"] = mag
     data_dict["bag_name"] = bag_name
     if orange_pose is not None:
         data_dict["orange_pose"] = orange_pose
@@ -234,6 +238,8 @@ def parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info):
         fr_len = min((len(fr_info[1]), len(fr_info[3])))
         odom_len = len(fr_info[0])
         fr_odom = [np.zeros((6))]*odom_len
+        mag_len = len(fr_info[4])
+        fr_mag = [np.zeros((3))]*mag_len
 
         no_events = fr_len
         no_points = odom_len
@@ -257,7 +263,7 @@ def parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info):
                 p = np.array(p)
                 pt = np.zeros((6))
                 pt[0:3] = p
-                pt[3:6] = RotR.as_euler('zyx')
+                pt[3:6] = RotR.as_euler('ZYX')
                 fr_odom[ii] = pt
         for ii in range(fr_len):
             orange_loc = None
@@ -269,12 +275,14 @@ def parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info):
             
             if fr_odom[point_idx] is not None: #TODO Ask gabe to check
                 p0 = fr_odom[point_idx][0:3]
-                R0 = R.from_euler('zyx', fr_odom[point_idx][3:6]).as_quat()
+                R0 = R.from_euler('ZYX', fr_odom[point_idx][3:6]).as_quat()
                 orange_loc = bof.process_loc(fr_info[1][ii], fr_info[3][ii], p0, R0)
 
             orange_pose.append(orange_loc)
+        for ii in range(mag_len):
+            fr_mag[ii] = np.array(fr_info[4][ii])
 
-        saveData(fr_folder,fr_len,odom_len,fr_duration,fr_odom,trial_folder, orange_pose)
+        saveData(fr_folder,fr_len,odom_len,mag_len,fr_duration,fr_odom,fr_mag,trial_folder, orange_pose)
         if total_time is None:
             total_time = fr_duration
         else:
@@ -282,6 +290,7 @@ def parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info):
         total_events += fr_len
     else:
         fr_odom = []
+        fr_mag = []
     #Staging
     stage_folder = trial_folder + "/staging"
     os.makedirs(stage_folder)
@@ -294,6 +303,9 @@ def parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info):
     no_events = stage_len
     no_points = odom_len
     folder_time = stage_duration.secs + (stage_duration.nsecs/1e9)
+    if folder_time < 1:
+        print("Short Time... Skipping")
+        return
 
     orange_pose = []
     
@@ -313,7 +325,7 @@ def parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info):
             p = np.array(p)
             pt = np.zeros((6))
             pt[0:3] = p
-            pt[3:6] = RotR.as_euler('zyx')
+            pt[3:6] = RotR.as_euler('ZYX')
             stage_odom[ii] = pt
     for ii in range(stage_len):
         orange_loc = None
@@ -326,19 +338,25 @@ def parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info):
                     
         if stage_odom[point_idx] is not None: #TODO Ask gabe to check
             p0 = stage_odom[point_idx][0:3]
-            R0 = R.from_euler('zyx', stage_odom[point_idx][3:6]).as_quat()
+            R0 = R.from_euler('ZYX', stage_odom[point_idx][3:6]).as_quat()
             orange_loc = bof.process_loc(stage_info[1][ii], stage_info[3][ii], p0, R0)
 
         orange_pose.append(orange_loc)
 
+    mag_len = len(stage_info[4])
+    stage_mag = [np.zeros((3))]*mag_len
+    for ii in range(mag_len):
+        stage_mag[ii] = np.array(stage_info[4][ii])
 
-    saveData(stage_folder,stage_len,odom_len,stage_duration,stage_odom + fr_odom,trial_folder, orange_pose)
+    saveData(stage_folder,stage_len,odom_len,mag_len, stage_duration,stage_odom + fr_odom,stage_mag+fr_mag,trial_folder, orange_pose)
     if total_time is None:
         total_time = stage_duration
     else:
         total_time += stage_duration
     total_events += stage_len
     #Resets
+    orange_pose = []
+
     num_resets = len(reset_info[0])
     for rr in range(num_resets):
         reset_folder = trial_folder + "/reset" + str(rr) + "/"
@@ -348,6 +366,10 @@ def parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info):
         reset_len = min((len(reset_info[0][rr][1]), len(reset_info[0][rr][2])))
         odom_len = len(reset_info[0][rr][0])
         reset_odom = [np.zeros((6))]*odom_len
+        no_events = reset_len
+        no_points = odom_len
+        folder_time = reset_duration.secs + (reset_duration.nsecs/1e9)
+        
         for ii in range(odom_len):
             pt_odom = reset_info[0][rr][0][ii]
             if pt_odom is None:
@@ -364,13 +386,29 @@ def parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info):
                 p = np.array(p)
                 pt = np.zeros((6))
                 pt[0:3] = p
-                pt[3:6] = RotR.as_euler('zyx')
+                pt[3:6] = RotR.as_euler('ZYX')
                 reset_odom[ii] = pt
         for ii in range(reset_len):
+            orange_loc = None
+            time_frac = float(ii)/no_events
+            point_idx = int(time_frac*no_points)
+
             Img.fromarray(reset_info[0][rr][1][ii]).save(reset_folder + "/image" + str(ii) + ".png")
             np.save(reset_folder + "/depth_image" + str(ii) + ".npy", reset_info[0][rr][2][ii])
+            
+            if reset_odom[point_idx] is not None: #TODO Ask gabe to check
+                p0 = reset_odom[point_idx][0:3]
+                R0 = R.from_euler('ZYX', reset_odom[point_idx][3:6]).as_quat()
+                orange_loc = bof.process_loc(reset_info[0][rr][1][ii], reset_info[0][rr][2][ii], p0, R0)
 
-        saveData(reset_folder,reset_len,odom_len,reset_duration,reset_odom + fr_odom,trial_folder)
+            orange_pose.append(orange_loc)
+
+        mag_len = len(reset_info[0][rr][3])
+        reset_mag = [np.zeros((3))]*mag_len
+        for ii in range(mag_len):
+            reset_mag[ii] = np.array(reset_info[0][rr][3][ii])
+
+        saveData(reset_folder,reset_len,odom_len,mag_len,reset_duration,reset_odom + fr_odom,reset_mag+fr_mag,trial_folder,orange_pose=orange_pose)
         if total_time is None:
             total_time = reset_duration
         else:
@@ -379,331 +417,453 @@ def parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info):
     print("")
     print(trial_folder + ": " + str(total_events) + " events: " + str(total_time.secs) + " seconds")
 
-def main():
+def parseBag(bag_dir,bag_name,bag_ctr):
     vrpn_topic = "/vrpn_client/matrice/pose"
     img_topic = "/camera/color/image_raw/compressed"
     depth_topic = "/camera/aligned_depth_to_color/image_raw/compressedDepth"
     success_topic = "/magnet_values"
     status_topic = "/rqt_gui/system_status"
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument('bag_dir', help="bag dir")
-    args = parser.parse_args()
-
-    folder_list = os.listdir(args.bag_dir)
-    bag_list = []
-    for folder_name in folder_list:
-        if not os.path.isdir(args.bag_dir + folder_name):
-            continue
-        bag_list = bag_list + [folder_name + "/" + temp for temp in os.listdir(args.bag_dir + folder_name)]
-    bag_ctr = 0
     bag_time = None
     bag_events = 0
     total_time = None
     total_events = 0
-    for bag_name in bag_list:
-        if not bag_name.endswith(".bag"):
-            continue
-        print(str(bag_ctr) + ": " + bag_name),
-        fname = args.bag_dir + "/" + bag_name
+    print(str(bag_ctr) + ": " + bag_name),
+    fname = bag_dir + "/" + bag_name
+    try:
         bag = rosbag.Bag(fname)
+    except:
+        print(fname + " is not loadable")
+        return
+    
+    bag_save_folder = bag_dir + 'real_world_traj_mag_bag2/bag' + str(bag_ctr)
+    if os.path.isdir(bag_save_folder):
+        shutil.rmtree(bag_save_folder)
+    os.makedirs(bag_save_folder)
 
-        bag_save_folder = args.bag_dir + 'real_world_traj_bag/bag' + str(bag_ctr)
-        if os.path.isdir(bag_save_folder):
-            shutil.rmtree(bag_save_folder)
-        os.makedirs(bag_save_folder)
+    trial_ctr = 0
+    stage_odom = []
+    stage_img = []
+    stage_dimg = []
+    stage_mag = []
+    fr_odom = []
+    fr_img = []
+    fr_dimg = []
+    fr_mag = []
+    resets = []
+    reset_odom = []
+    reset_img = []
+    reset_dimg = []
+    reset_mag = []
+    img = None
+    dimg = None
+    odom = None
+    mag = None
+    img_t = -1
+    dimg_t = -1
+    depth_t = -1
+    odom_t = -1
+    mag_t = -1
+    stage_time = [None,None]
+    final_time = [None,None]
+    reset_times = []
+    reset_time = [None,None]
+    status = "Manual"
+    stageFlag = True
+    drop_ctr = 0
+    drop_reset_thresh = 10
+    success_ctr = 0
+    success_thresh = 550
+    success_num_thresh = 4
 
-        trial_ctr = 0
-        stage_odom = []
-        stage_img = []
-        stage_dimg = []
-        fr_odom = []
-        fr_img = []
-        fr_dimg = []
-        resets = []
-        reset_odom = []
-        reset_img = []
-        reset_dimg = []
-        img = None
-        dimg = None
-        odom = None
-        img_t = -1
-        dimg_t = -1
-        depth_t = -1
-        odom_t = -1
-        stage_time = [None,None]
-        final_time = [None,None]
-        reset_times = []
-        reset_time = [None,None]
-        status = "Manual"
-        stageFlag = True
-        drop_ctr = 0
-        drop_reset_thresh = 10
-        success_ctr = 0
-        success_thresh = 550
-        success_num_thresh = 4
-
-        for topic, msg, t in bag.read_messages(topics=[vrpn_topic, img_topic, status_topic, success_topic, depth_topic]):
-            # print(status)
-            if topic == success_topic:
-                if np.linalg.norm(msg.data) > success_thresh:
-                    success_ctr += 1
+    for topic, msg, t in bag.read_messages(topics=[vrpn_topic, img_topic, status_topic, success_topic, depth_topic]):
+        #print(status)
+        if topic == success_topic:
+            mag_t = t
+            mag = msg.data
+            if status is "Stage" and stageFlag:
+                stage_mag.append(mag)
+            if status is "Final":
+                fr_mag.append(mag)
+            if status is "Reset":
+                reset_mag.append(mag)
+            if np.linalg.norm(msg.data) > success_thresh:
+                success_ctr += 1
+            else:
+                success_ctr = 0
+            if (success_ctr >= success_num_thresh) and (status is not "ResetTrial") and (status is not "Manual"):
+                print("Magnet Success"),
+                status = "ResetTrial"
+                if (stage_time[0] is not None) and (stage_time[1] is not None):
+                    if (stage_time[1] - stage_time[0]).secs > 1:
+                        stage_info = (stage_odom,stage_img,stage_time,stage_dimg,stage_mag)
+                    else:
+                        stage_info = None
                 else:
-                    success_ctr = 0
-                if (success_ctr >= success_num_thresh) and (status is not "ResetTrial") and (status is not "Manual"):
-                    print("Magnet Success"),
-                    status = "ResetTrial"
-                    stage_info = (stage_odom,stage_img,stage_time,stage_dimg)
-                    fr_info = (fr_odom,fr_img,final_time,fr_dimg)
+                    stage_info = None
+                if stage_info is not None:
+                    if (final_time[1] is None) or (final_time[0] is None):
+                        fr_info = None
+                    else:
+                        fr_info = (fr_odom,fr_img,final_time,fr_dimg,fr_mag)
                     reset_info = (resets,reset_times)
                     parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info)
                     if bag_time is None:
-                        bag_time = (stage_time[1] - stage_time[0]) + (final_time[1] - final_time[0])
+                        bag_time = (stage_time[1] - stage_time[0])
                     else:
-                        bag_time += (stage_time[1] - stage_time[0]) + (final_time[1] - final_time[0])
+                        bag_time += (stage_time[1] - stage_time[0])
+                    if (final_time[1] is not None) and (final_time[0] is not None):
+                        bag_time += (final_time[1] - final_time[0])
                     trial_ctr += 1 
+                stage_odom = []
+                stage_img = []
+                stage_dimg = []
+                stage_mag = []
+                fr_odom = []
+                fr_img = []
+                fr_dimg = []
+                fr_mag = []
+                resets = []
+                reset_odom = []
+                reset_img = []
+                reset_dimg = []
+                reset_mag = []
+                img = None
+                dimg = None
+                odom = None
+                mag = None
+                img_t = -1
+                dimg_t = -1 
+                depth_t = -1
+                odom_t = -1
+                mag_t = -1
+                stage_time = [None,None]
+                stageFlag = True
+                final_time = [None,None]
+                reset_times = []
+                reset_time = [None,None]
+
+        if topic == status_topic:
+            if ("Manual" in msg.data) or ("Hover" in msg.data):
+                #if status is "Stage":
+                if status is "Final":
+                    if not stageFlag:
+                        if (stage_time[0] is not None) and (stage_time[1] is not None):
+                            if (stage_time[1] - stage_time[0]).secs > 1:
+                                stage_info = (stage_odom,stage_img,stage_time,stage_dimg,stage_mag)
+                            else:
+                                stage_info = None
+                        else:
+                            stage_info = None
+                        if stage_info is not None:
+                            fr_info = None
+                            reset_info = (resets,reset_times)
+                            parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info)
+                            if bag_time is None:
+                                bag_time = (stage_time[1] - stage_time[0])
+                            else:
+                                bag_time += (stage_time[1] - stage_time[0])
+                            if (final_time[1] is not None) and (final_time[0] is not None):
+                                bag_time += (final_time[1] - final_time[0])
+                            trial_ctr += 1
+                if status is "Reset":
+                    if not stageFlag:
+                        if (stage_time[0] is not None) and (stage_time[1] is not None):
+                            if (stage_time[1] - stage_time[0]).secs > 1:
+                                stage_info = (stage_odom,stage_img,stage_time,stage_dimg,stage_mag)
+                            else:
+                                stage_info = None
+                        else:
+                            stage_info = None
+                        if stage_info is not None:
+                            fr_info = None
+                            reset_info = (resets,reset_times)
+                            parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info)
+                            if bag_time is None:
+                                bag_time = (stage_time[1] - stage_time[0])
+                            else:
+                                bag_time += (stage_time[1] - stage_time[0])
+                            if (final_time[1] is not None) and (final_time[0] is not None):
+                                bag_time += (final_time[1] - final_time[0])
+                            trial_ctr += 1
+                #if status is "ResetTrial":
+                if status is not "Manual":
+                    print("Manual"),
+                    status = "Manual"
+                    stageFlag = True
                     stage_odom = []
                     stage_img = []
                     stage_dimg = []
+                    stage_mag = []
                     fr_odom = []
                     fr_img = []
                     fr_dimg = []
+                    fr_mag = []
+                    reset_odom = []
+                    reset_img = []
+                    reset_dimg = []
+                    reset_mag = []
+                    stage_time = [None,None]
+                    final_time = [None,None]
+                    reset_time = [None,None]
+                    reset_times = []
+                    resets = []
+            if ("Staging" in msg.data):
+                #if status = "Manual":
+                #if status = "Final":
+                if status is "Reset":
+                    resets.append((reset_odom,reset_img, reset_dimg,reset_mag))
+                    reset_odom = []
+                    reset_img = []
+                    reset_dimg = []
+                    reset_mag = []
+                    reset_times.append(reset_time)
+                    if bag_time is None:
+                        bag_time = reset_time[1] - reset_time[0]
+                    else:
+                        bag_time += (reset_time[1] - reset_time[0])
+                    reset_time = [None,None]
+                #if status is "ResetTrial":
+                if status is not "Stage":
+                    print("Stage"),
+                    status = "Stage"
+            if (("OrangeTracking" in msg.data) and ("ResetOrangeTracking" not in msg.data)) or ("FinalRise" in msg.data):
+                #if status is "Manual":
+                #if status is "Stage":
+                if status is "Reset":
+                    print("From Reset")
+                    #print(msg.data)
+                if (status is not "Final") and (status is not "ResetTrial"):
+                    print("Final"),
+                    stageFlag = False
+                    status = "Final"
+            if "ResetOrangeTracking" in msg.data:
+                #if status is "Manual":
+                #if status is "Stage":
+                if status is "Final":
+                    fr_odom = []
+                    fr_img = []
+                    fr_dimg = []
+                    fr_mag = []
+                    final_time = [None,None]
+                #if status is "ResetTrial":
+                if (status is not "Reset") and (status is not "ResetTrial"):
+                    print("Reset"),
+                    #print(msg.data)
+                    status = "Reset"
+            if "ResetTrial" in msg.data:
+                #if status is "Manual":
+                if (status is "Stage") or (status is "Final") or (status is "Reset"):
+                    if (stage_time[0] is not None) and (stage_time[1] is not None):
+                        if (stage_time[1] - stage_time[0]).secs > 1:
+                            stage_info = (stage_odom,stage_img,stage_time,stage_dimg,stage_mag)
+                        else:
+                            stage_info = None
+                    else:
+                        stage_info = None
+                    if stage_info is not None:
+                        if (final_time[1] is None) or (final_time[0] is None):
+                            fr_info = None
+                        else:
+                            fr_info = (fr_odom,fr_img,final_time,fr_dimg,fr_mag)
+                        reset_info = (resets,reset_times)
+                        parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info)
+                        if bag_time is None:
+                            bag_time = (stage_time[1] - stage_time[0])
+                        else:
+                            bag_time += (stage_time[1] - stage_time[0])
+                        if (final_time[1] is not None) and (final_time[0] is not None):
+                            bag_time += (final_time[1] - final_time[0])
+                        trial_ctr += 1 
+                    stage_odom = []
+                    stage_img = []
+                    stage_dimg = []
+                    stage_mag = []
+                    fr_odom = []
+                    fr_img = []
+                    fr_dimg = []
+                    fr_mag = []
                     resets = []
                     reset_odom = []
                     reset_img = []
                     reset_dimg = []
+                    reset_mag = []
                     img = None
                     dimg = None
                     odom = None
+                    mag = None
                     img_t = -1
-                    dimg_t = -1 
+                    dimg_t = -1
                     depth_t = -1
                     odom_t = -1
+                    mag_t = -1
                     stage_time = [None,None]
                     stageFlag = True
                     final_time = [None,None]
                     reset_times = []
                     reset_time = [None,None]
+                if status is not "ResetTrial":
+                    print("ResetTrial"),
+                    status = "ResetTrial"
 
-            if topic == status_topic:
-                if ("Manual" in msg.data) or ("Hover" in msg.data):
-                    #if status is "Stage":
-                    if status is "Final":
-                        if not stageFlag:
-                            stage_info = (stage_odom,stage_img,stage_time,stage_dimg)
-                            fr_info = None
-                            reset_info = (resets,reset_times)
-                            parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info)
-                            trial_ctr += 1
-                            if bag_time is None:
-                                bag_time = stage_time[1] - stage_time[0]
-                            else:
-                                bag_time += (stage_time[1] - stage_time[0])
-                    if status is "Reset":
-                        if not stageFlag:
-                            stage_info = (stage_odom,stage_img,stage_time,stage_dimg)
-                            fr_info = None
-                            reset_info = (resets,reset_times)
-                            parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info)
-                            trial_ctr += 1
-                            if bag_time is None:
-                                bag_time = stage_time[1] - stage_time[0]
-                            else:
-                                bag_time += (stage_time[1] - stage_time[0])
-                    #if status is "ResetTrial":
-                    if status is not "Manual":
-                        print("Manual"),
-                        status = "Manual"
-                        stageFlag = True
-                        stage_odom = []
-                        stage_img = []
-                        stage_dimg = []
-                        fr_odom = []
-                        fr_img = []
-                        fr_dimg = []
-                        stage_time = [None,None]
-                        final_time = [None,None]
-                        reset_time = [None,None]
-                        reset_times = []
-                        resets = []
-                if ("Staging" in msg.data):
-                    #if status = "Manual":
-                    #if status = "Final":
-                    if status is "Reset":
-                        resets.append((reset_odom,reset_img, reset_dimg))
-                        reset_odom = []
-                        reset_img = []
-                        reset_dimg = []
-                        reset_times.append(reset_time)
-                        if bag_time is None:
-                            bag_time = reset_time[1] - reset_time[0]
-                        else:
-                            bag_time += (reset_time[1] - reset_time[0])
-                        reset_time = [None,None]
-                    #if status is "ResetTrial":
-                    if status is not "Stage":
-                        print("Stage"),
-                        status = "Stage"
-                if (("OrangeTracking" in msg.data) and ("ResetOrangeTracking" not in msg.data)) or ("FinalRise" in msg.data):
-                    #if status is "Manual":
-                    #if status is "Stage":
-                    if status is "Reset":
-                        print("From Reset")
-                        #print(msg.data)
-                    if (status is not "Final") and (status is not "ResetTrial"):
-                        print("Final"),
-                        stageFlag = False
-                        status = "Final"
-                if "ResetOrangeTracking" in msg.data:
-                    #if status is "Manual":
-                    #if status is "Stage":
-                    if status is "Final":
-                        fr_odom = []
-                        fr_img = []
-                        fr_dimg = []
-                        final_time = [None,None]
-                    #if status is "ResetTrial":
-                    if (status is not "Reset") and (status is not "ResetTrial"):
-                        print("Reset"),
-                        #print(msg.data)
-                        status = "Reset"
-                if "ResetTrial" in msg.data:
-                    #if status is "Manual":
-                    if (status is "Stage") or (status is "Final") or (status is "Reset"):
-                        stage_info = (stage_odom,stage_img,stage_time,stage_dimg)
-                        fr_info = (fr_odom,fr_img,final_time,fr_dimg)
-                        reset_info = (resets,reset_times)
-                        parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info)
-                        if bag_time is None:
-                            bag_time = (stage_time[1] - stage_time[0]) + (final_time[1] - final_time[0])
-                        else:
-                            bag_time += (stage_time[1] - stage_time[0]) + (final_time[1] - final_time[0])
-                        trial_ctr += 1 
-                        stage_odom = []
-                        stage_img = []
-                        stage_dimg = []
-                        fr_odom = []
-                        fr_img = []
-                        fr_dimg = []
-                        resets = []
-                        reset_odom = []
-                        reset_img = []
-                        reset_dimg = []
-                        img = None
-                        dimg = None
-                        odom = None
-                        img_t = -1
-                        dimg_t = -1
-                        depth_t = -1
-                        odom_t = -1
-                        stage_time = [None,None]
-                        stageFlag = True
-                        final_time = [None,None]
-                        reset_times = []
-                        reset_time = [None,None]
-                    if status is not "ResetTrial":
-                        print("ResetTrial"),
-                        status = "ResetTrial"
-
-            if topic == vrpn_topic:
-                Rot0 = R.from_quat([
-                    msg.transform.rotation.x,
-                    msg.transform.rotation.y,
-                    msg.transform.rotation.z,
-                    msg.transform.rotation.w
-                    ])#possibly need to switch w to front
-                R0 = Rot0.as_dcm()#.flatten()
-                if not addDrop(R0):
-                    drop_ctr += 1
-                    #if drop_ctr > drop_reset_thresh:
-                    #    odom = None
-                    #continue
-                    odom = None
-                else:
-                    if drop_ctr > drop_reset_thresh:
-                        print("Dropped " + str(drop_ctr)),
-                    drop_ctr = 0
-                    odom = msg
-                odom_t = t
-                if status is "Stage" and stageFlag:
-                    stage_odom.append(odom)
-                if status is "Final":
-                    fr_odom.append(odom)
-                if status is "Reset":
-                    reset_odom.append(odom)
-
-
-            if topic == img_topic:
-                img = msg
-                img_t = t
-                if status is "Stage" and stageFlag:
-                    img_np = np_from_compressed_image(img)
-                    stage_img.append(img_np)
-                    bag_events += 1
-                if status is "Final":
-                    img_np = np_from_compressed_image(img)
-                    fr_img.append(img_np)
-                    bag_events += 1
-                if status is "Reset":
-                    img_np = np_from_compressed_image(img)
-                    reset_img.append(img_np)
-                    bag_events += 1
-                img_np = None
-
-            if topic == depth_topic:
-                dimg = msg
-                dimg_t = t
-                if status is "Stage" and stageFlag:
-                    dimg_np = depthnp_from_compressed_image(dimg)
-                    stage_dimg.append(dimg_np)
-                    bag_events += 1
-                if status is "Final":
-                    dimg_np = depthnp_from_compressed_image(dimg)
-                    fr_dimg.append(dimg_np)
-                    bag_events += 1
-                if status is "Reset":
-                    dimg_np = depthnp_from_compressed_image(dimg)
-                    reset_dimg.append(dimg_np)
-                    bag_events += 1
-                dimg_np = None
-
-            if (img is not None) and (dimg is not None) and (odom is not None):
-                if status is "Stage" and stageFlag:
-                    if stage_time[0] is None:
-                        stage_time[0] = max((odom_t,img_t,dimg_t))
-                    stage_time[1] = max((odom_t,img_t,dimg_t,))
-                if status is "Final":
-                    if final_time[0] is None:
-                        final_time[0] = max((odom_t,img_t,dimg_t))
-                    final_time[1] = max((odom_t,img_t,dimg_t))
-                if status is "Reset":
-                    if reset_time[0] is None:
-                        reset_time[0] = max((odom_t,img_t,dimg_t))
-                    reset_time[1] = max((odom_t,img_t,dimg_t))
+        if topic == vrpn_topic:
+            Rot0 = R.from_quat([
+                msg.transform.rotation.x,
+                msg.transform.rotation.y,
+                msg.transform.rotation.z,
+                msg.transform.rotation.w
+                ])#possibly need to switch w to front
+            R0 = Rot0.as_dcm()#.flatten()
+            if not addDrop(R0):
+                drop_ctr += 1
+                #if drop_ctr > drop_reset_thresh:
+                #    odom = None
+                #continue
                 odom = None
-                img = None
-                dimg = None
+            else:
+                if drop_ctr > drop_reset_thresh:
+                    print("Dropped " + str(drop_ctr)),
+                drop_ctr = 0
+                odom = msg
+            odom_t = t
+            if status is "Stage" and stageFlag:
+                stage_odom.append(odom)
+            if status is "Final":
+                fr_odom.append(odom)
+            if status is "Reset":
+                reset_odom.append(odom)
 
-        if not stageFlag:
-            stage_info = (stage_odom,stage_img,stage_time,stage_dimg)
+
+        if topic == img_topic:
+            img = msg
+            img_t = t
+            if status is "Stage" and stageFlag:
+                img_np = np_from_compressed_image(img)
+                stage_img.append(img_np)
+                bag_events += 1
+            if status is "Final":
+                img_np = np_from_compressed_image(img)
+                fr_img.append(img_np)
+                bag_events += 1
+            if status is "Reset":
+                img_np = np_from_compressed_image(img)
+                reset_img.append(img_np)
+                bag_events += 1
+            img_np = None
+
+        if topic == depth_topic:
+            dimg = msg
+            dimg_t = t
+            if status is "Stage" and stageFlag:
+                dimg_np = depthnp_from_compressed_image(dimg)
+                stage_dimg.append(dimg_np)
+            if status is "Final":
+                dimg_np = depthnp_from_compressed_image(dimg)
+                fr_dimg.append(dimg_np)
+            if status is "Reset":
+                dimg_np = depthnp_from_compressed_image(dimg)
+                reset_dimg.append(dimg_np)
+            dimg_np = None
+
+        if (img is not None) and (dimg is not None) and (odom is not None) and (mag is not None):
+            if status is "Stage" and stageFlag:
+                if stage_time[0] is None:
+                    stage_time[0] = max((odom_t,img_t,dimg_t,mag_t))
+                stage_time[1] = max((odom_t,img_t,dimg_t,mag_t))
+            if status is "Final":
+                if final_time[0] is None:
+                    final_time[0] = max((odom_t,img_t,dimg_t,mag_t))
+                final_time[1] = max((odom_t,img_t,dimg_t,mag_t))
+            if status is "Reset":
+                if reset_time[0] is None:
+                    reset_time[0] = max((odom_t,img_t,dimg_t,mag_t))
+                reset_time[1] = max((odom_t,img_t,dimg_t,mag_t))
+            odom = None
+            img = None
+            dimg = None
+            mag = None
+
+    if not stageFlag:
+        if (stage_time[0] is not None) and (stage_time[1] is not None):
+            if (stage_time[1] - stage_time[0]).secs > 1:
+                stage_info = (stage_odom,stage_img,stage_time,stage_dimg,stage_mag)
+            else:
+                stage_info = None
+        else:
+            stage_info = None
+        if stage_info is not None:
             fr_info = None
             reset_info = (resets,reset_times)
             parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info)
             if bag_time is None:
-                bag_time = stage_time[1] - stage_time[0]
+                bag_time = (stage_time[1] - stage_time[0])
             else:
                 bag_time += (stage_time[1] - stage_time[0])
-        print("")
-        print(bag_ctr, bag_time.secs, bag_time.nsecs, bag_events)
+            if (final_time[1] is not None) and (final_time[0] is not None):
+                bag_time += (final_time[1] - final_time[0])
+            trial_ctr += 1 
+    print("")
+    print(bag_ctr, bag_time.secs, bag_time.nsecs, bag_events)
+
+
+def main():
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('bag_dir', help="bag dir")
+    parser.add_argument('--bag_f', help="bag_file")
+    parser.add_argument('--bag_ctr', help="bag ctr")
+    parser.add_argument('-j', type=int,help="num_workers")
+    args = parser.parse_args()
+
+    if args.bag_f is not None:
+        parseBag(args.bag_dir,args.bag_f,args.bag_ctr)
+        return
+
+    folder_list = [""] + os.listdir(args.bag_dir)
+    for folder_name in folder_list:
+        if not os.path.isdir(args.bag_dir + folder_name):
+            continue
+        folder_list = folder_list + [folder_name + "/" + temp for temp in os.listdir(args.bag_dir + folder_name) if os.path.isdir(args.bag_dir + folder_name + "/" + temp)]
+    bag_list = []
+    for folder_name in folder_list:
+        if not os.path.isdir(args.bag_dir + folder_name):
+            continue
+        bag_list = bag_list + [folder_name + "/" + temp for temp in os.listdir(args.bag_dir + folder_name) if temp.endswith(".bag")]
+
+    bag_ctr = 0
+    bag_time = None
+    bag_events = 0
+    total_time = None
+    total_events = 0
+    p = ""
+    if args.j:
+        num_workers = args.j
+    else:
+        num_workers = 4
+    print("Number of workers: " + str(num_workers))
+    workers = []
+    for bag_name in bag_list:
+        if not bag_name.endswith(".bag"):
+            continue
+        cmd = ["python","scripts/bagModeParse.py",args.bag_dir,"--bag_f",bag_name,"--bag_ctr",str(bag_ctr)] 
+        while (len(workers) >= num_workers):
+            w = workers.pop(0)
+            w.poll()
+            if w.returncode is None:
+                workers.append(w)
+            time.sleep(1.0)
+        print("Starting Bag: " + bag_name + " " + str(bag_ctr))
+        workers.append(subprocess.Popen(cmd))
+
+#        parseBag(args.bag_dir,bag_name,bag_ctr)
         bag_ctr += 1
-        if total_time is None:
-            total_time = bag_time
-        else:
-            total_time += bag_time
-        total_events += bag_events
-        bag_time = None
-        bag_events = 0
-    print(str(bag_ctr) + " Bags: " + str(total_time.secs) + " seconds of flight and " + str(total_events) + " images")
+        #if total_time is None:
+        #    total_time = bag_time
+        #else:
+        #    total_time += bag_time
+        #total_events += bag_events
+        #bag_time = None
+        #bag_events = 0
+    #print(str(bag_ctr) + " Bags: " + str(total_time.secs) + " seconds of flight and " + str(total_events) + " images")
 
 if __name__ == "__main__":
     main()

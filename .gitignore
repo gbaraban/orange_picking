@@ -16,3 +16,8 @@ data/Run*
 #Folders
 *animation/*
 data/multi_mean_finder/*
+
+#Compressed files
+*.tar.gz
+*.tar
+*.gz
