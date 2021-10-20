@@ -1,3 +1,4 @@
+#!/usr/bin/env python2
 import rospy
 from sensor_msgs.msg import Image
 from std_msgs.msg import Bool
@@ -158,13 +159,14 @@ class BaselineOrangeFinder:
 
     def __loadModel(self):
         if os.path.isfile(self.__segload):
+            print("Loading Model: ", self.__segload)
             if not self.__gpu is None:
                     checkpoint = torch.load(self.__segload,map_location=torch.device('cuda'))
             else:
                     checkpoint = torch.load(self.__segload)
             self.__segmodel.load_state_dict(checkpoint)
             self.__segmodel.eval()
-            print("Loaded Model: ", self.__segload)
+            print("Model Loaded.")
         else:
                 print("No checkpoint found at: ", self.__segload)
                 exit(0)
@@ -188,8 +190,8 @@ class BaselineOrangeFinder:
         
     def __params(self, gpu=True, relative=True):
         self.__num_images = 1
-        self.__segload = "/home/matricex/matrice_ws/src/orange_picking/model/model_seg145.pth.tar"
-        self.__mean_image_loc = "/home/matricex/matrice_ws/src/orange_picking/data/mean_imgv2_data_data_collection4_real_world_traj_bag.npy"
+        self.__segload = "/home/gabe/repos/aerial_autonomy_ws/src/orange_picking/useful_models/seg/model_seg145.pth.tar"
+        self.__mean_image_loc = "/home/gabe/repos/aerial_autonomy_ws/src/orange_picking/useful_models/seg/mean_image.npy"
         
         if torch.cuda.is_available() and gpu:
             self.__gpu = 0
