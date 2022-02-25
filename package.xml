@@ -62,7 +62,10 @@
 
 
   <!-- The export tag contains other, unspecified, tags -->
+  <!--  <exec_depend>gazebo_ros</exec_depend-->
   <export>
+	  <!--	  <gazebo_ros gazebo_model_path="${prefix}/models"/>
+	  <gazebo_ros gazebo_media_path="${prefix}/models"/-->
     <!-- Other tools can request additional information be placed here -->
 
   </export>
