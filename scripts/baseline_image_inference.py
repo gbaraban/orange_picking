@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 import rospy
 from sensor_msgs.msg import Image
 from std_msgs.msg import Bool
@@ -25,6 +25,7 @@ from open3d import open3d
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from pytransform3d.rotations import *
+import sys
 
 
 name_to_dtypes = {
@@ -115,7 +116,6 @@ class Rotations:
 
 class BaselineOrangeFinder:
     def __init__(self, image_topic='/d400/color/image_raw', depth_topic='/d400/aligned_depth_to_color/image_raw', gcop_topic="/gcop_odom"):
-        print(image_topic, depth_topic)
         self.image_sub = message_filters.Subscriber(image_topic, Image)
         self.depth_sub = message_filters.Subscriber(depth_topic, Image)
         self.odom_node = message_filters.Subscriber(gcop_topic, Odometry)
@@ -138,6 +138,7 @@ class BaselineOrangeFinder:
         self.__normal_vec_publisher = rospy.Publisher("/normal_tracker", PoseArray, queue_size=100)
 
         self.__seg_image_publisher = rospy.Publisher("/seg_image", Image, queue_size=5)
+        self.__debug_image_publisher = rospy.Publisher("/debug_image", Image, queue_size=5)
         
         rot = Rotations()
         self.world2orange = None #np.eye(3)#np.matmul(rot.rotz(0), np.matmul(rot.rotx(np.pi/2),np.matmul(rot.rotz(np.pi/2), rot.roty(np.pi/2))))
@@ -150,10 +151,17 @@ class BaselineOrangeFinder:
         self.t = 0
       
         self.alpha = 0.5
-        self.min_alpha = 0.05
+        self.min_alpha = 0.005#0.05
         self.max_steps = 50
 
         self.stamp_now = None
+        self.__arm_mask_fname = '/home/gabe/repos/python3_ws/src/orange_picking/data/arm_mask.npy'
+        self.__arm_mask = None
+        if os.path.isfile(self.__arm_mask_fname):
+            print("Loading Mask")
+            self.__arm_mask = np.load(self.__arm_mask_fname)
+        else:
+            print("Mask Not Found")
 
         print("Setup complete")
 
@@ -190,8 +198,8 @@ class BaselineOrangeFinder:
         
     def __params(self, gpu=True, relative=True):
         self.__num_images = 1
-        self.__segload = "/home/gabe/repos/aerial_autonomy_ws/src/orange_picking/useful_models/seg/model_seg145.pth.tar"
-        self.__mean_image_loc = "/home/gabe/repos/aerial_autonomy_ws/src/orange_picking/useful_models/seg/mean_image.npy"
+        self.__segload = "/home/gabe/repos/python3_ws/src/orange_picking/useful_models/seg/model_seg145.pth.tar"
+        self.__mean_image_loc = "/home/gabe/repos/python3_ws/src/orange_picking/useful_models/seg/mean_image.npy"
         
         if torch.cuda.is_available() and gpu:
             self.__gpu = 0
@@ -210,7 +218,7 @@ class BaselineOrangeFinder:
 
     def __meanSubtract(self, cv_image):
         cv_image = cv2.resize(cv_image,(self.__w,self.__h))
-        cv2.imwrite("test_pre.png", cv_image)
+        #cv2.imwrite("test_pre.png", cv_image)
         cv_image = cv_image/255.0
         #print(cv_image.shape)
         if self.__mean_image is None:
@@ -239,7 +247,7 @@ class BaselineOrangeFinder:
         pub_np = (255 * seg_np.copy()).astype(np.uint8).reshape((self.__h, self.__w))
         image_message = self.__bridge.cv2_to_imgmsg(pub_np, encoding="passthrough")
         self.__seg_image_publisher.publish(image_message)
-        cv2.imwrite('test.png', pub_np)
+        #cv2.imwrite('test.png', pub_np)
 
         return seg_np
 
@@ -447,7 +455,7 @@ class BaselineOrangeFinder:
             goal.orientation.w = orientation[3]
 
             goalarray_msg.poses.append(goal)
-        # print("Publishing")
+        print("Publishing")
         self.__goalpoint_publisher.publish(goalarray_msg)
     
 
@@ -506,11 +514,11 @@ class BaselineOrangeFinder:
     def __find_plane(self, x, y, z, Trans, Rot, mean_pt, debug=False):
         #mean_pt = mean_pt/np.linalg.norm(mean_pt)
         pts = np.array([x, y, z]).T
-        print(pts.shape)
+        #print(pts.shape)
         t_size = np.min((500, pts.shape[0]))
         t_pts = np.random.choice(np.arange(pts.shape[0]), size=t_size, replace=False)
         pts = pts[t_pts]
-        print(pts.shape)
+        #print(pts.shape)
         all_points = open3d.utility.Vector3dVector(pts)
         pc = geometry.PointCloud(all_points)
         plane, success_pts = pc.segment_plane(0.05, int(pts.shape[0]*0.7), 1000)
@@ -614,6 +622,34 @@ class BaselineOrangeFinder:
     def reject_outliers3dMedian(self, data, m=3):
         return data[np.multiply(np.multiply(np.abs(data[:, 0] - np.median(data[:, 0])) < m * np.std(data[:, 0]), np.abs(data[:,1] - np.median(data[:,1])) < m * np.std(data[:,1])), np.abs(data[:,2] - np.median(data[:,2])) < m * np.std(data[:,2]))]
     
+    def reject_arm(self,area,image,seg):
+        #arm_bound_x = (350,500)
+        #arm_bound_y = (275,475)
+        #arm_color = np.array((12,154,226))
+        #color_thresh = 125;
+        new_area = []
+        pub_np = np.zeros((self.__h,self.__w,3)).astype(np.uint8)
+        for point in area:
+            if (seg[point[0],point[1]] < 0.8):
+                if self.__arm_mask is not None:
+                    if self.__arm_mask[point[0],point[1]] > 0:
+                        continue
+            pub_np[point[0],point[1]] = image[point[0],point[1]]
+            new_area.append(point)
+            #if ((arm_bound_x[0] < point[0] < arm_bound_x[1]) and 
+            #    (arm_bound_y[0] < point[1] < arm_bound_y[1]) and
+            #    (seg[point[0],point[1]] < 0.8)):
+            #    color = image[point[0],point[1]]
+            #    color_diff = np.linalg.norm(arm_color-color)
+            #    if (color_diff < color_thresh):
+            #        pub_np[point[0],point[1]] = 128
+            #        #cut_points.append(point)
+            #        #np.save("temp.npy",point)
+            #        continue
+        image_message = self.__bridge.cv2_to_imgmsg(pub_np, encoding="rgb8")
+        self.__debug_image_publisher.publish(image_message)
+        return np.array(new_area)
+
 
     def callback(self, image_data, depth_image_data):
         print("Reaching callbazck")
@@ -654,18 +690,21 @@ class BaselineOrangeFinder:
         #extra_min_x, extra_max_x = np.max((0, min_x-int(mult_x*size_x))), np.min((seg_np.shape[0], max_x+int(mult_x*size_)))
         #extra_min_y, extra_max_y = np.max((0, min_y-int(mult_y*size_y))), np.min((seg_np.shape[1], max_y+int(mult_y*size_)))
         mult_x, mult_y = 2., 2.
+        #mult_x, mult_y = 4., 4.
         extra_min_x, extra_max_x = np.max((0, mean_x-int(mult_x*size_x))), np.min((seg_np.shape[0], mean_x+int(mult_x*size_)))
         extra_min_y, extra_max_y = np.max((0, mean_y-int(mult_y*size_y))), np.min((seg_np.shape[1], mean_y+int(mult_y*size_)))
         
-        nx = np.linspace(extra_min_x, extra_max_x-1, extra_max_x - extra_min_x, dtype=np.int32)
-        ny = np.linspace(extra_min_y, extra_max_y-1, extra_max_y - extra_min_y, dtype=np.int32)
+        nx = np.linspace(extra_min_x, extra_max_x-1, int(extra_max_x - extra_min_x), dtype=np.int32)
+        ny = np.linspace(extra_min_y, extra_max_y-1, int(extra_max_y - extra_min_y), dtype=np.int32)
         extra_area = np.transpose([np.tile(nx, len(ny)), np.repeat(ny, len(nx))])
+        extra_area = self.reject_arm(extra_area,image,seg_np)
         
         trans, rot = None, None
         try:
             # (trans,rot) = self.listener.lookupTransform('world', 'camera_depth_optical_frame_filtered', rospy.Time(0))
             (trans,rot) = self.listener.lookupTransform('world', 'camera_depth_optical_frame', rospy.Time(0))
         except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+            print("Lookup Failed")
             return
 
         if trans is None or rot is None:
@@ -673,7 +712,7 @@ class BaselineOrangeFinder:
             return
 
         if area.shape[0] > 30:
-            # print("In orange: ")
+            #print("In orange: ")
             mean_pt = self.publishData(depth_image, camera_intrinsics, area, self.__pointcloud_publisher, Trans=trans, Rot=rot, tracker=False)
             if mean_pt is None:
                 return
