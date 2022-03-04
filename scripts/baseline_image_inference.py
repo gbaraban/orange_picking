@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+import ctypes
+libgcc_s = ctypes.CDLL('libgcc_s.so.1')
 import rospy
 from sensor_msgs.msg import Image
 from std_msgs.msg import Bool
@@ -26,6 +28,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from pytransform3d.rotations import *
 import sys
+
 
 
 name_to_dtypes = {
@@ -96,14 +99,12 @@ class Rotations:
         r = np.array([[1, 0, 0],
                     [0, np.cos(angle), np.sin(angle)],
                     [0, -np.sin(angle), np.cos(angle)]]).astype(np.float64)
-
         return r
 
     def roty(self, angle):
         r = np.array([[np.cos(angle), 0, -np.sin(angle)],
                     [0, 1, 0],
                     [np.sin(angle), 0, np.cos(angle)]]).astype(np.float64)
-
         return r
 
     def rotz(self, angle):
@@ -121,15 +122,11 @@ class BaselineOrangeFinder:
         self.odom_node = message_filters.Subscriber(gcop_topic, Odometry)
         
         self.__params()
-        
         self.__bridge = CvBridge()
-
         self.__segmodel = SegmentationNet()
         self.__loadModel()
         torch.no_grad()
-
         self.__loadMeanImages()
-
         self.__pointcloud_publisher = rospy.Publisher("/pointcloud_topic", PointCloud, queue_size=2)
         self.__pointcloud_publisher_extra = rospy.Publisher("/pointcloud_topic_extra", PointCloud, queue_size=2)
         self.__pointcloud_publisher_extra_norange = rospy.Publisher("/pointcloud_topic_extra_norange", PointCloud, queue_size=2)
@@ -155,7 +152,7 @@ class BaselineOrangeFinder:
         self.max_steps = 50
 
         self.stamp_now = None
-        self.__arm_mask_fname = '/home/gabe/repos/python3_ws/src/orange_picking/data/arm_mask.npy'
+        self.__arm_mask_fname = '/home/drone/nvme0/repos/python3_ws/src/orange_picking/data/arm_mask.npy'
         self.__arm_mask = None
         if os.path.isfile(self.__arm_mask_fname):
             print("Loading Mask")
@@ -198,14 +195,12 @@ class BaselineOrangeFinder:
         
     def __params(self, gpu=True, relative=True):
         self.__num_images = 1
-        self.__segload = "/home/gabe/repos/python3_ws/src/orange_picking/useful_models/seg/model_seg145.pth.tar"
-        self.__mean_image_loc = "/home/gabe/repos/python3_ws/src/orange_picking/useful_models/seg/mean_image.npy"
-        
+        self.__segload = "/home/drone/nvme0/repos/python3_ws/src/orange_picking/useful_models/seg/model_seg145.pth.tar"
+        self.__mean_image_loc = "/home/drone/nvme0/repos/python3_ws/src/orange_picking/useful_models/seg/mean_image.npy"  
         if torch.cuda.is_available() and gpu:
             self.__gpu = 0
         else:
             self.__gpu = None
-
         self.__h = 480
         self.__w = 640
 
@@ -367,7 +362,6 @@ class BaselineOrangeFinder:
         return x, y, z
 
     def __orange_orientation(self, trans, rot, mean_pos, orientation=None):
-
         if self.alpha != self.min_alpha:
             delta = (self.alpha - self.min_alpha)/self.max_steps   
             self.alpha -= delta
@@ -413,7 +407,6 @@ class BaselineOrangeFinder:
         return Rot, Trans
 
     def _publishGoalPoints(self, x, y, z, trans=None, rot=None, orientation=None, odom_data=None, num_points=1):
-        
         if trans is None or rot is None:
             try:
                 # (trans,rot) = self.listener.lookupTransform('world', 'camera_depth_optical_frame_filtered', rospy.Time(0))
@@ -735,7 +728,7 @@ class BaselineOrangeFinder:
 
 def main():
     rospy.init_node('baseline_inference')
-    bof = BaselineOrangeFinder(image_topic="/camera/color/image_raw/uncompressed", depth_topic="/camera/aligned_depth_to_color/image_raw/uncompressed")
+    bof = BaselineOrangeFinder(image_topic="/camera/color/image_raw", depth_topic="/camera/aligned_depth_to_color/image_raw")
     #bof = BaselineOrangeFinder(image_topic="/d400/color/image_raw", depth_topic="/d400/aligned_depth_to_color/image_raw")
     ts = message_filters.ApproximateTimeSynchronizer([bof.image_sub, bof.depth_sub], queue_size=2, slop=1.0,  allow_headerless=True)
     ts.registerCallback(bof.callback)
