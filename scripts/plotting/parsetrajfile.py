@@ -125,7 +125,7 @@ def plotMetaData(fig,ax,metadata,tree_compensate = None):
     cyl_o = metadata['tree'][0:3]
     if tree_compensate:
       goal = goal - cyl_o
-    ax.plot3D([goal[0]],[goal[1]],[goal[2]],color="orange",marker="o")
+    ax.plot3D([goal[0]],[goal[1]],[goal[2]],color="orange",marker="o",markersize=10)
     cyl_r = np.linalg.norm((goal[0:2]-cyl_o[0:2]))
   cyl_h = 1.6
   if tree_compensate:
@@ -152,9 +152,9 @@ def plotTrajData(fig,ax,states,rots = None, color=None,marker=None):
         ax.plot3D((x[ii],x[ii] + alpha*v[0]),(y[ii],y[ii]+alpha*v[1]),(z[ii],z[ii]+alpha*v[2]),colors[c])
   max_range = np.array([max(x) - min(x),max(y) - min(y),max(z) - min(z)]).max()
   mid = np.array([(max(x)+min(x))/2.0,(max(y)+min(y))/2.0,(max(z)+min(z))/2.0])
-  ax.set_xlim(mid[0]-max_range/2.0,mid[0]+max_range/2.0)
-  ax.set_ylim(mid[1]-max_range/2.0,mid[1]+max_range/2.0)
-  ax.set_zlim(max(0,mid[2]-max_range/2.0),mid[2]+max_range/2.0)
+  #ax.set_xlim(mid[0]-max_range/2.0,mid[0]+max_range/2.0)
+  #ax.set_ylim(mid[1]-max_range/2.0,mid[1]+max_range/2.0)
+  #ax.set_zlim(max(0,mid[2]-max_range/2.0),mid[2]+max_range/2.0)
 
 def plotTimeData(ts,states):
   states = np.array(states)

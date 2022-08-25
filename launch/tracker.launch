@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<launch>
+ <!--node pkg="orange_picking" type="baseline_image_inference.py" name="tracker" output="screen" /-->
+ <node pkg="image_transport" type="republish" name="color_uncompressed" args="compressed in:=/camera/color/image_raw raw out:=/camera/color/image_raw/uncompressed" output="screen" />
+ <node pkg="image_transport" type="republish" name="depth_uncompressed" args="compressedDepth in:=/camera/aligned_depth_to_color/image_raw raw out:=/camera/aligned_depth_to_color/image_raw/uncompressed" output="screen" />
+</launch>
