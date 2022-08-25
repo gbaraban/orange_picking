@@ -3,47 +3,61 @@ import os
 import PIL.Image as img
 import argparse
 
-def compute_mean_image(run_dir):
-  #num_points = model.num_points
-  #time_window = num_points*dt
-  #Assume reduced N is constant for all trials
-  trial_list = os.listdir(run_dir)
-  N = 0
-  for trial in trial_list:
-    if os.path.isdir(run_dir + '/' + trial):
-      image_list = os.listdir(run_dir + '/' + trial)
-      N += len(image_list) - 1
-  print(N)
+def recursive_search(run_dir):
+  #recursive search
+  dir_list = os.listdir(run_dir)
+  img_list = []
+  depth_list = []
+  for f in dir_list:
+      if os.path.isdir(run_dir + '/' + f):
+          f_list = [(f + '/' + temp) for temp in os.listdir(run_dir + '/' + f)]
+          dir_list += f_list
+      if f.endswith(".png"):
+          img_list.append(f)
+          continue
+      if f.startswith("depth_image") or ("/depth_image" in f):
+          depth_list.append(f)
+          continue
+  return (img_list, depth_list)
+
+def compute_mean_image(run_dir,f_list):
+  N = len(f_list)
   mean_image = None #np.zeros((480,640,3))
-  for trial in trial_list:
-    if os.path.isdir(run_dir + '/' + trial):
-      image_list = os.listdir(run_dir + '/' + trial)
-      for image in image_list:
-        if 'png' in image:
-          #print(image)
-          temp_image = img.open(run_dir + '/' + trial + '/' + image).resize((640,380))
+  for f in f_list:
+      print(f)
+      if f.endswith(".png"):
+          temp_image = img.open(run_dir + '/' + f).resize((640,380))
           temp_image = np.array(temp_image.getdata()).reshape(temp_image.size[1],temp_image.size[0],3)
-          print(temp_image.shape)
           temp_image = temp_image[:,:,0:3]/255.0 #Cut out alpha
           if mean_image is None:
             mean_image = np.zeros(temp_image.shape)
           mean_image += temp_image#np.multiply(np.array(temp_image)#, 1/N)
-  print(np.max(mean_image))
-  mean_image = np.multiply(mean_image,1/N)
-  print(np.max(mean_image))
-  im = img.fromarray(np.uint8(mean_image*255))
-  im.show()
+      if f.startswith("depth_image") or ("/depth_image" in f):
+          temp_image = np.load(run_dir + '/' + f)/10000.0
+          if mean_image is None:
+              mean_image = np.zeros(temp_image.shape)
+          mean_image += temp_image
+  print("Mean Max: " + str(np.max(mean_image)))
+  mean_image = np.multiply(mean_image,1/float(N))
+  print("Mean Max: " + str(np.max(mean_image)))
+  #im = img.fromarray(np.uint8(mean_image*255))
+  #im.show()
   return mean_image
 
+def create_mean_image(folder):
+  (img_list,depth_list) = recursive_search(folder)
+  color_mean = compute_mean_image(folder,img_list)
+  mean_img_loc = folder + "/mean_color_image.npy"
+  np.save(mean_img_loc,color_mean)
+  depth_mean = compute_mean_image(folder,depth_list)
+  mean_depth_loc = folder + "/mean_depth_image.npy"
+  np.save(mean_depth_loc,depth_mean)
+ 
 def main():
   parser = argparse.ArgumentParser()
   parser.add_argument('data', help='data file') 
   args = parser.parse_args()
-  data_loc_name = args.data.strip("..").strip(".").strip("/").replace("/", "_")
-  mean_img_loc = args.data + "../mean_img_" + data_loc_name + '.npy' 
-  print(mean_img_loc)
-  mean_image = compute_mean_image(args.data)
-  np.save(mean_img_loc,mean_image)
+  create_mean_image(args.data)
 
 if __name__ == '__main__':
     main()

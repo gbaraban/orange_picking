@@ -32,8 +32,10 @@ from numpy.linalg import norm
 #from customRealDatasetsOrientation import OrangeSimDataSet, SubSet
 from customTransforms import *
 import matplotlib.pyplot as plt
+from flatDataset import FlatDataSet
+from customDatasetv1 import OrangeSimDataSet
 
-phase_name_dict = {0: "staging", 1: "final", 2: "reset"}
+phase_name_dict = {0: "staging", 1: "final", 2: "reset", 3: "grip"}
 
 def make_phase_lists(phase_name,num_pts):
     ret_val = {}
@@ -70,16 +72,26 @@ def main():
     parser.add_argument('--batch_size', type=int, default=65, help='batch size')
     parser.add_argument('--num_pts', type=int, default=3, help='number of output waypoints')
     parser.add_argument('--pred_dt', type=float, default=1.0, help='time between output waypoints')
-    parser.add_argument('-j', type=int, default=4, help='number of loader workers')
+    parser.add_argument('-j', type=int, default=5, help='number of loader workers')
     parser.add_argument('--depth',type=bool,default=False,help='use depth channel')
-    parser.add_argument('--resets',type=bool,default=False,help='use reset data')
+    parser.add_argument('--resets',type=bool,default=True,help='use reset data')
     parser.add_argument('--spherical',type=bool,default=False,help='use spherical coords')
-    parser.add_argument('--relative',type=bool,default=False,help='use relative pose')
-    parser.add_argument('--reduce_N',type=bool,default=False,help='remove final window')
-    parser.add_argument('--extra_dt', nargs="+", type=float, default=None, help='pred_dt for extra phases')
+    parser.add_argument('--relative',type=bool,default=True,help='use relative pose')
+    parser.add_argument('--reduce_N',type=bool,default=True,help='remove final window')
+    parser.add_argument('--extra_dt', nargs="+", type=float, default=[0.25,0.25,0], help='pred_dt extra phases')
     parser.add_argument('--remove_hover', nargs="+", type=float, default=None,help='Threshold to remove equilibrium staging points')
     parser.add_argument('--magnet', type=bool, default=False, help='Use magnet data')
+#    parser.add_argument('--flat', type=bool, default=False, help='Use flat dataset')
+    parser.add_argument('--phase_end', type=bool, default=False, help='Use flat dataset')
+    parser.add_argument('--plot', type=bool, default=False, help='Plot results')
     args = parser.parse_args()
+    dict_name = "bounding_box_"
+    ignore_attributes = ["data","batch_size","j","depth","remove_hover","magnet","plot"]
+    for key in dir(args):
+        if ((not key.startswith('_')) and (key not in ignore_attributes)):
+            dict_name += "_" + key + "_" + str(getattr(args,key))
+    dict_name = args.data + dict_name + ".pickle"
+    print(dict_name)
 
     if args.remove_hover is not None:
         args.remove_hover = tuple(args.remove_hover)
@@ -107,18 +119,10 @@ def main():
         img_trans = transforms.Compose([RandomHorizontalTrajFlip(p=0.5)])
 
 
-        if args.spherical:
-            print("Sphere")
-            pt_trans = transforms.Compose([xyzToSpherical()])
-
-        #if args.real:
-        #    print("Real")
-        #    from customRealDatasetsOrientation import OrangeSimDataSet, SubSet
-        #else:
-        #    from customDatasetsOrientation import OrangeSimDataSet, SubSet
-        from customDatasetv1 import OrangeSimDataSet
-
-        dataclass = OrangeSimDataSet(args.data, 1, args.num_pts, pt_trans, img_trans, img_dt=1,pred_dt=args.pred_dt, reduce_N = args.reduce_N,depth=args.depth, rel_pose = args.relative, gaussian_pts=False,use_resets=args.resets,extra_dt = args.extra_dt, relabel=False, mix_labels=False, remove_hover=args.remove_hover, use_magnet=args.magnet)
+        if args.phase_end:
+            args.num_pts = 1
+#            dataclass = FlatDataSet(args.data, 1, pt_trans, img_trans, depth=args.depth, pred_dt = args.pred_dt, img_dt=1, reduce_N=args.reduce_N, use_resets=args.resets, extra_dt=args.extra_dt, remove_hover = args.remove_hover, use_magnet=args.magnet)
+        dataclass = OrangeSimDataSet(args.data, 1, args.num_pts, pt_trans, img_trans, img_dt=1,pred_dt=args.pred_dt, reduce_N = args.reduce_N,depth=args.depth, rel_pose = args.relative, gaussian_pts=False,use_resets=args.resets,extra_dt = args.extra_dt, relabel=False, mix_labels=False, remove_hover=args.remove_hover, use_magnet=args.magnet,phase_end=args.phase_end)
         dataloader = DataLoader(dataclass, batch_size=args.batch_size, num_workers=args.j)
 
         phase_dict = {}
@@ -191,28 +195,34 @@ def main():
                         try:
                             if not np.any(np.isnan(x)):
                                 phase_dict[phase_ii]["x_list"][point_ii].append(float(x))
+                            else:
                                 phase_dict[phase_ii]["nan_count"][0] += 1
                             if not np.any(np.isnan(y)):
                                 phase_dict[phase_ii]["y_list"][point_ii].append(float(y))
+                            else:
                                 phase_dict[phase_ii]["nan_count"][1] += 1 
                             if not np.any(np.isnan(z)):
                                 phase_dict[phase_ii]["z_list"][point_ii].append(float(z))
+                            else:
                                 phase_dict[phase_ii]["nan_count"][2] += 1
                             if not np.any(np.isnan(yaw)):
                                 phase_dict[phase_ii]["yaw_list"][point_ii].append(float(yaw))
+                            else:
                                 phase_dict[phase_ii]["nan_count"][3] += 1
                             if not np.any(np.isnan(pitch)):
                                 phase_dict[phase_ii]["pitch_list"][point_ii].append(float(pitch))
+                            else:
                                 phase_dict[phase_ii]["nan_count"][4] += 1
                             if not np.any(np.isnan(roll)):
                                 phase_dict[phase_ii]["roll_list"][point_ii].append(float(roll))
+                            else:
                                 phase_dict[phase_ii]["nan_count"][5] += 1
                         except Exception as e:
                             print("Exception Found")
                             print(e)
                             print(x, y, z, yaw, pitch, roll)
 
-        with open("bounding_box.pickle",'wb') as f:
+        with open(dict_name,'wb') as f:
             pickle.dump(phase_dict,f,pickle.HIGHEST_PROTOCOL)
 
     for phase in phase_dict:
@@ -259,13 +269,6 @@ def main():
         print("roll 10: ", percentList(phase_dict[phase]["roll_list"],10))
         print("roll 90: ", percentList(phase_dict[phase]["roll_list"],90))
         print("roll 99: ", percentList(phase_dict[phase]["roll_list"],99))
-        fig, axs = plt.subplots(2,3)
-        strings = ["body_v_x","body_v_y","body_v_z","body_w_1","body_w_2","body_w_3"]
-        for ii in range(2):
-            for jj in range(3):
-                temp = phase_dict[phase][strings[ii*3+jj]]
-                lb,ub= np.percentile(temp,(1,99))
-                axs[ii][jj].hist(temp,range=(lb,ub))
         #axs[0][0].hist(phase_dict[phase]["body_v_x"],bins=None)
         #axs[0][1].hist(phase_dict[phase]["body_v_y"],bins=None)
         #axs[0][2].hist(phase_dict[phase]["body_v_z"],bins=None)
@@ -283,7 +286,16 @@ def main():
             print("Min/max/avg magy: " + str(min(phase_dict[phase]["body_mag_y"])) + " " + str(max(phase_dict[phase]["body_mag_y"])) + " " + str(np.mean(phase_dict[phase]["body_mag_y"])))
             print("Min/max/avg magz: " + str(min(phase_dict[phase]["body_mag_z"])) + " " + str(max(phase_dict[phase]["body_mag_z"])) + " " + str(np.mean(phase_dict[phase]["body_mag_z"])))
         print(phase_dict[phase]["nan_count"])
-    plt.show()
+        if args.plot:
+            fig, axs = plt.subplots(2,3)
+            strings = ["body_v_x","body_v_y","body_v_z","body_w_1","body_w_2","body_w_3"]
+            for ii in range(2):
+                for jj in range(3):
+                    temp = phase_dict[phase][strings[ii*3+jj]]
+                    lb,ub= np.percentile(temp,(1,99))
+                    axs[ii][jj].hist(temp,range=(lb,ub))
+    if args.plot:
+        plt.show()
        
 #    print("x list: ", x_list)
 #    print("y list: ", y_list)

@@ -170,7 +170,7 @@ class BaselineOrangeFinder:
     def __params(self, gpu=True, relative=True):
         self.__num_images = 1
         self.__segload =  "/home/gabe/ws/ros_ws/src/orange_picking/useful_models/model_seg145.pth.tar"
-        self.__mean_image_loc = "/home/gabe/ws/ros_ws/src/orange_picking/data/mean_imgv2_data_data_collection4_real_world_traj_bag.npy"
+        self.__mean_image_loc = "/home/gabe/ws/ros_ws/src/orange_picking/useful_models/mean_imgv2_data_data_collection4_real_world_traj_bag.npy"
         
         if torch.cuda.is_available() and gpu:
             self.__gpu = 0

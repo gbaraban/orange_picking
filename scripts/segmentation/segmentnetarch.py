@@ -6,12 +6,13 @@ import torch.nn.functional as F
 import numpy as np
 
 class SegmentationNet(torch.nn.Module):
-    def __init__(self, capacity = 1, retrain_off_seg = False):
+    def __init__(self, capacity = 1, retrain_off_seg = False, mean_image = None):
         super(SegmentationNet,self).__init__()
         self.w = 640
         self.h = 480
         self.f = capacity
         self.n_classes = 2
+        self.mean_image = mean_image
 
         self.conv1 = nn.Conv2d(in_channels=3, out_channels=128, kernel_size=10, stride=4, padding=5)
         self.bn1 = nn.BatchNorm2d(128)
@@ -92,6 +93,9 @@ class SegmentationNet(torch.nn.Module):
 
 
     def forward(self,x):
+        if self.mean_image is not None:
+            in_type = x.dtype
+            x = x-(self.mean_image.to(in_type))
         #print(x.shape)
         x = self.conv1(x)
         x = self.bn1(x)

@@ -1,8 +1,126 @@
 import torch
 import numpy as np
 from scipy.spatial.transform import Rotation as R
+import PIL.Image as img
+from torchvision.transforms import functional
 
 #TODO: Add custom image transformations here
+
+def tensortoPIL(tensor):
+    tensor = tensor.cpu()
+    if len(tensor.shape) == 3:
+        tensor = np.transpose(tensor,[1,2,0])
+    return img.fromarray(np.uint8(tensor*255))
+
+def PILtotensor(im):
+    print(im.size)
+    arr = np.array(im.getdata()).reshape(im.size[1],im.size[0],3).transpose([2,0,1])
+    return arr/255.0
+
+
+def saveImage(tensor,name):
+    if len(tensor.shape) is 3:
+        num_c = tensor.shape[0]
+    else:
+        num_c = 1
+    if (num_c == 3) or (num_c == 1):
+        pil = tensortoPIL(tensor)
+        pil.save(name+".png")
+        return
+    if (num_c == 2):
+        saveImage(tensor[0,:,:],name + "c0")
+        saveImage(tensor[1,:,:],name + "c1")
+        return
+    saveImage(tensor[0:3,:,:],name+"c03")
+    saveImage(tensor[3:,:,:],name+"c3")
+    return
+    #new_t = PILtotensor(pil)
+    #res = new_t - tensor
+    #print(res.max())
+    #print(res.min())
+
+class CameraIntrinsics:
+    def __init__(self):
+        self.ppx = 333.42010498046875
+        self.ppy = 250.38986206054688
+        self.fx = 607.265625
+        self.fy = 607.2756958007812
+
+class WaypointPerspective(object):
+    def __init__(self, p, bound, relative_flag):
+        self.C = np.array([[0,1,0],[0,0,1],[1,0,0]])
+        self.cam = CameraIntrinsics()
+        self.p = p
+        self.bound = bound
+        self.rel = relative_flag
+
+    def world2pixel(self,p):
+        print("w2p")
+        print(p)
+        p = np.matmul(self.C,p)
+        print(p)
+        p = np.array([p[0]*self.cam.fx*p[2],p[1]*self.cam.fy*p[2]]) 
+        print(p)
+        p = p + np.array([self.cam.ppx,self.cam.ppy])
+        print(p)
+        return p
+
+    def __call__(self, data):
+        image = data["img"]
+        saveImage(image,"pre_image")
+        points = np.array(data["pts"])
+        rot_list = None
+        if "rots" in data.keys():
+            rot_list = np.array(data["rots"])
+        rotated = False
+        if np.random.random() > self.p:
+            rotated = True
+            yaw = 0.5#(np.random.sample()*2*self.bound) - self.bound
+            print("yaw: " + str(yaw))
+            pitch = 0
+            roll = 0
+            rot = R.from_euler('ZYX', [yaw,pitch,roll],degrees=False).as_dcm()
+            new_points = np.zeros(points.shape)
+            new_rots = None
+            if rot_list is not None:
+                new_rots = np.zeros(rot_list.shape)
+            if self.rel:
+                new_points[0,:] = np.matmul(rot,points[0,:])
+                new_points[1:,:] = points[1:,:]
+                if rot_list is not None:
+                    new_rots[0,:,:] = np.matmul(rot,rot_list[0,:,:])
+                    new_rots[1:,:] = rot_list[1:,:,:]
+            else:
+                for i in range(len(points)):
+                    new_points[i,:] = np.matmul(rot,points[i,:])
+                    if rot_list is not None:
+                        new_rots[i,:,:] = np.matmul(rot,rot_list[i,:,:])
+            start_points = np.zeros((4,2))
+            end_points = np.zeros((4,2))
+            temp_points = [points[0],
+                           points[0] + [0,-0.5,0],
+                           points[0] + [0,-0.5,-0.5],
+                           points[0] + [0,0,-0.5]]
+            for i in range(4):
+                start_points[i,:] = self.world2pixel(temp_points[i])
+                end_points[i,:] = self.world2pixel(np.matmul(rot,temp_points[i]))
+            print(start_points)
+            print(end_points)
+            pil_image = tensortoPIL(image)
+            coeffs = functional._get_perspective_coeffs(start_points, end_points)
+            print(coeffs)
+            pil_image = functional.perspective(pil_image,start_points,start_points)
+            image = PILtotensor(pil_image)
+            saveImage(image,"post_image")
+            points = new_points
+            if rot_list is not None:
+                rot_list = new_rots
+        data["img"] = image
+        data["pts"] = points
+        data["rots"] = rot_list
+        data["rotated"] = rotated
+        exit()
+        return data
 
 class sphericalToXYZ(object):
     def transformFunc(self, v):
@@ -85,11 +203,14 @@ class pointToBins(object):
             min_i = np.array(bound_min[ctr]).astype(float)
             max_i = np.array(bound_max[ctr]).astype(float)
             point = np.array(point).astype(float)
-            bin_nums = (point - min_i)/(max_i-min_i)
-            bin_nums_scaled = (bin_nums*self.bins).astype(int)
-            bin_nums = np.clip(bin_nums_scaled,a_min=0,a_max=self.bins-1)
+            if phase is 3:
+                bin_nums = np.zeros(point.shape)
+            else:
+                bin_nums = (point - min_i)/(max_i-min_i)
+                bin_nums_scaled = (bin_nums*self.bins).astype(int)
+                bin_nums = np.clip(bin_nums_scaled,a_min=0,a_max=self.bins-1)
             local_pts.append(bin_nums)
-        return np.array(local_pts)
+        return np.array(local_pts).astype(np.long)
 
 class GaussLabels(object):
     def __init__(self,mean,stdev,bins):
@@ -111,89 +232,50 @@ class GaussLabels(object):
         return label_list
 
 class RandomHorizontalTrajFlip(object):
-	def __init__(self, p=0.5, n_inputs = 6):
-		self.p = p
-		self.reflect = np.diag((1,-1,1,1))
-		#self.reflect = np.zeros((4,4))
-		#self.reflect[0,0] = 1
-		#self.reflect[1,1] = -1
-		#self.reflect[2,2] = 1
-		#self.reflect[3,3] = 1
-		self.n_inputs = n_inputs
+    def __init__(self, p=0.5, n_inputs = 6):
+        self.p = p
+        self.reflect = np.diag((1,-1,1,1))
+        #self.reflect = np.zeros((4,4))
+        #self.reflect[0,0] = 1
+        #self.reflect[1,1] = -1
+        #self.reflect[2,2] = 1
+        #self.reflect[3,3] = 1
+        self.n_inputs = n_inputs
 
-	def __call__(self, data):
-		image = data["img"]
-		points = np.array(data["pts"])
-		rot_list = None
-		if "rots" in data.keys():
-			rot_list = np.array(data["rots"])
+    def __call__(self, data):
+        image = data["img"]
+        raw_image = data["raw_img"]
+        points = np.array(data["pts"])
+        rot_list = None
+        if "rots" in data.keys():
+            rot_list = np.array(data["rots"])
 
-		flipped = False
-		if np.random.random() > self.p:
-			flipped = True
-			image = np.fliplr(image).copy()
-			"""
-			for i, pt in enumerate(points):
-				if self.n_inputs == 6:
-					E = np.zeros((4,4))
-					E[3,3] = 1
-					E[0:3,3] = np.array(pt[0:3])
-					E[0:3,0:3] = R.from_euler('ZYX', pt[3:]).as_dcm()
-					E = np.matmul(self.reflect, E)
-
-					points[i,:3] = list(E[0:3,3])
-					points[i,3:] = R.from_dcm(E[0:3,0:3]).as_euler('ZYX')
-
-				else:
-					E = np.zeros((4))
-					E[0:3] = np.array(pt[0:3])
-					E[3] = 1
-					E = np.matmul(self.reflect, E)
-
-					points[i,:3] = list(E[0:3])
-			"""
-			for i in range(len(points)):
-				if rot_list is not None:
-					E = np.zeros((4,4))
-					E[3,3] = 1
-					E[0:3,3] = np.array(points[i,:])
-					E[0:3,0:3] = rot_list[i,:,:]
-					E_flip = np.matmul(np.matmul(self.reflect,E),self.reflect)
-					#E = np.matmul(self.reflect, E)
-					#E = np.matmul(E, self.reflect)
-					#R_2 = R.from_euler('ZYX', [-np.pi/2, 0, 0])
-					#R_m2 = R_2.as_dcm()
-					#E_m2 = np.zeros((4,4))
-					#E_m2[3,3] = 1
-					#E_m2[0:3,0:3] = R_m2
-					#E = np.matmul(E, E_m2)
-
-					points[i,:] = E_flip[0:3,3]
-					rot_list[i,:,:] = E_flip[0:3,0:3]
-
-				else:
-					E = np.zeros((4))
-					E[0:3] = np.array(points[i,:])
-					E[3] = 1
-					E_flip = np.matmul(np.matmul(self.reflect,E),self.reflect)
-					#E = np.matmul(self.reflect, E)
-					#E = np.matmul(E, self.reflect)
-					#R_2 = R.from_euler('ZYX', [-np.pi/2, 0, 0])
-					#R_m2 = R_2.as_dcm()
-					#E_m2 = np.zeros((4,4))
-					#E_m2[3,3] = 1
-					#E_m2[0:3,0:3] = R_m2
-
-					#E = np.matmul(E, E_m2)
-
-					points[i,:] = E_flip[0:3]
-
-
-			points = np.array(points)
-			if rot_list is not None:
-				rot_list = np.array(rot_list)
-
-		if rot_list is None:
-			return image, points, flipped
-		else:
-			return image, points, rot_list, flipped
+        flipped = False
+        if np.random.random() > self.p:
+            flipped = True
+            image = np.flip(image,axis=2).copy()
+            raw_image = np.flip(raw_image,axis=2).copy()
+            for i in range(len(points)):
+                if rot_list is not None:
+                    E = np.zeros((4,4))
+                    E[3,3] = 1
+                    E[0:3,3] = np.array(points[i,:])
+                    E[0:3,0:3] = rot_list[i,:,:]
+                    E_flip = np.matmul(np.matmul(self.reflect,E),self.reflect)
+                    points[i,:] = E_flip[0:3,3]
+                    rot_list[i,:,:] = E_flip[0:3,0:3]
+                else:
+                    E = np.zeros((4))
+                    E[0:3] = np.array(points[i,:])
+                    E[3] = 1
+                    E_flip = np.matmul(np.matmul(self.reflect,E),self.reflect)
+                    points[i,:] = E_flip[0:3]
+            points = np.array(points)
+            if rot_list is not None:
+                rot_list = np.array(rot_list)
+        data["img"] = image
+        data["raw_img"] = raw_image
+        data["pts"] = points
+        data["rots"] = rot_list
+        data["flipped"] = flipped
+        return data

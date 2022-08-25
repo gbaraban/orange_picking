@@ -71,7 +71,7 @@ class SubSet(Dataset):
         return self.ds[self.idx[i]]
 
 class OrangeSimDataSet(Dataset):
-    def __init__(self, root_dir, num_images, num_pts, pt_trans, img_trans, img_dt=1.0, pred_dt=1.0, reduce_N = False, depth=False, rel_pose=False, gaussian_pts=False, use_resets = False, extra_dt=None, relabel=False, mix_labels=True, body_v_dt = None, use_magnet=False, remove_hover=None):
+    def __init__(self, root_dir, num_images, num_pts, pt_trans, img_trans, img_dt=1.0, pred_dt=1.0, reduce_N = False, depth=False, rel_pose=False, gaussian_pts=False, use_resets = False, extra_dt=None, relabel=False, mix_labels=True, body_v_dt = None, use_magnet=False, remove_hover=None, phase_end=False):
         self.run_dir = root_dir
         self.num_images = num_images
         self.num_pts = num_pts
@@ -82,16 +82,16 @@ class OrangeSimDataSet(Dataset):
         self.extra_dt = extra_dt
         self.reduce_N = reduce_N
         self.depth = depth
-        self.mean_seg = np.load("data/mean_imgv2_data_seg_real_world_traj_bag.npy")
-        self.mean_color_image = np.load("data/orange_tracking_data/mean_imgv2_data_orange_tracking_data_real_world_traj_bag.npy")
-        self.mean_depth_image = np.load("data/mean_depth_imgv2.npy")/10000.0 #10000 is the max of depth
+        #self.mean_seg = np.load(root_dir + "/mean_seg.npy")
+        self.mean_color_image = np.load(root_dir + "/mean_color_image.npy")
+        self.mean_depth_image = np.load(root_dir + "/mean_depth_image.npy") #10000 is the max of depth
         self.relative_pose = rel_pose
         self.gaussian_pts = gaussian_pts
         self.gaussian_var = [0.012, 0.012, 0.012, 0.04, 0.02, 0.02]
         self.gaussian_limit = [0.025, 0.025, 0.025, 0.08, 0.04, 0.04]
         self.resets = use_resets
         self.coeff_exists = False
-        self.phase_dict = {"staging": 0, "final": 1, "reset": 2}
+        self.phase_dict = {"staging": 0, "final": 1, "reset": 2, "grip": 3}
         self.final_thresh_x = float('-inf')
         self.final_thresh_r = float('-inf')
         self.relabel = relabel
@@ -108,10 +108,8 @@ class OrangeSimDataSet(Dataset):
         if relabel or mix_labels:
             self.final_thresh_x = 1.2
             self.final_thresh_r = 0.6
+        self.phase_end = phase_end
         
-        self.np_dir = root_dir.rstrip("/") + "_np/"
-        #if seg or seg_only: #temp_seg
-        #    self.trial_list = os.listdir(root_dir + "../seg_mask_real_np/")
         if reduce_N:
             time_window = num_pts*img_dt
         else:
@@ -147,7 +145,7 @@ class OrangeSimDataSet(Dataset):
                 for subfolder in trial_subfolders:
                     temp_dict = {}
                     temp_dict["start"] = len(self.event_list)
-                    if ("staging" in subfolder) or ("final" in subfolder):
+                    if ("staging" in subfolder) or ("final" in subfolder) or ("grip" in subfolder):
                         ret_val, folder_info = self.parseSubFolder(self.run_dir+"/"+trial+"/"+subfolder+"/")
                         if ret_val:
                             self.event_list = self.event_list+ret_val
@@ -199,29 +197,41 @@ class OrangeSimDataSet(Dataset):
 
         rp = dict_i["rp"]
         image = None
+        raw_image = None
         for ii, image_loc in enumerate(image_loc_list):
             image_np_loc = image_loc.replace(self.data_folder, self.data_folder + "_np").replace("png","npy")
             if os.path.isfile(image_np_loc):
-                temp_image = np.load(image_np_loc)
+                temp_raw_image = np.load(image_np_loc)
             else:
-                temp_image_PIL = img.open(image_loc)
-                temp_image = np.array(temp_image_PIL).astype(np.float32) #TODO: verify this works.  don't trust the internet
-                temp_image /= 255.0
-                temp_image -= self.mean_color_image
+                #print(image_loc)
+                temp_raw_image_PIL = img.open(image_loc).resize((640,480))
+                temp_raw_image = np.array(temp_raw_image_PIL.getdata())
+                temp_raw_image = temp_raw_image.reshape(temp_raw_image_PIL.size[1],temp_raw_image_PIL.size[0],3)
+                temp_raw_image = temp_raw_image[:,:,0:3]/255.0
+                np.save(image_np_loc,temp_raw_image)
 
+            temp_image = temp_raw_image - self.mean_color_image
+            temp_raw_image = np.transpose(temp_raw_image,[2,0,1])
             temp_image = np.transpose(temp_image,[2,0,1])
             if self.depth:
                 temp_depth = np.load(depth_loc_list[ii])/10000.0 # 10000 is max output of depth, found using data/find_mean_depth_img.py
                 temp_depth -= self.mean_depth_image
-                temp_depth = np.expand_dims(temp_depth,0)
+                #temp_depth = np.expand_dims(temp_depth,0)
+                temp_depth = np.transpose(temp_depth,[2,0,1])
                 temp_image = np.concatenate((temp_image,temp_depth),axis=0)
             if image is None:
                 image = temp_image
             else:
                 image = np.concatenate((image,temp_image),axis=0)
+            if raw_image is None:
+                raw_image = temp_raw_image
+            else:
+                raw_image = np.concatenate((raw_image,temp_raw_image),axis=0)
         image = image.astype('float32')
+        raw_image = raw_image.astype('float32')
 
         flipped = False
+        rotated = False
         # TODO Add augmentation
         point_list = []
         rot_list = []
@@ -230,26 +240,29 @@ class OrangeSimDataSet(Dataset):
             rot_list.append(R.from_euler("ZYX", points[ii, 3:6]).as_dcm())
 
         if self.image_transform:
-             data = {}
-             data["img"] = image
-             data["pts"] = point_list
-             data["rots"] = rot_list
-             image, point_list, rot_list, flipped = self.image_transform(data)
-
-        if flipped:
+            data = {}
+            data["img"] = image
+            data["raw_img"] = raw_image
+            data["pts"] = point_list
+            data["rots"] = rot_list
+            ret = self.image_transform(data)
+            image = ret["img"]
+            raw_image = ret["raw_img"]
+            point_list = ret["pts"]
+            rot_list = ret["rots"]
+            if "flipped" in ret.keys():
+                flipped = ret["flipped"]
+            if "rotated" in ret.keys():
+                rotated = ret["rotated"]
+        if flipped or rotated:
             temp_points = []
             for i in range(self.num_pts):
                 temp = list(point_list[i])
                 temp.extend(R.from_dcm(rot_list[i]).as_euler("ZYX"))
                 temp_points.append(np.array(temp))
             if max([abs(pt[3]) for pt in temp_points]) > 1.3:
-                #print("Input Points")
-                #print(points)
-                #print("New Points")
-                #print(np.array(temp_points))
                 pass
             points = np.array(temp_points)
-        
         phase = None
         if "phase" in dict_i:
             if type(dict_i["phase"]) is list and len(dict_i["phase"]) > 1:
@@ -262,11 +275,9 @@ class OrangeSimDataSet(Dataset):
             point_dict['points'] = points
             point_dict['phase'] = phase
             points = self.point_transform(point_dict)
-        else:
-            points = np.array(points).astype(np.float64)
 
         time_frac = dict_i["time_frac"]
-        return_dict = {'image':image, 'points':points, "flipped":flipped, "time_frac": time_frac, "rp": rp.astype("float32")}
+        return_dict = {'image':image, 'raw_image':raw_image, 'points':points, "flipped":flipped, "time_frac": time_frac, "rp": rp.astype("float32")}
 
         if "phase" in dict_i:
             return_dict["phase"] = phase
@@ -279,7 +290,6 @@ class OrangeSimDataSet(Dataset):
 
         if orange_pose is not None and not self.coeff_exists:
             return_dict["orange_pose"] = orange_pose
-        #print(return_dict)
         return return_dict
 
     def parseSubFolder(self,subfolder):
@@ -289,6 +299,8 @@ class OrangeSimDataSet(Dataset):
             phase = "reset"
         elif "staging" in subfolder:
             phase = "staging"
+        elif "grip" in subfolder:
+            phase = "grip"
         else:
             phase = None
             print("phase not found in " + subfolder)
@@ -375,7 +387,7 @@ class OrangeSimDataSet(Dataset):
                 folder_orange_pose = folder_data["orange_pose"] 
 
             if folder_time < 1.0:
-                print(str(no_events) + " " + str(no_points) + " " + subfolder)        
+                print("Skipping folder with: " + str(no_events) + " " + str(no_points) + " " + subfolder)        
                 return None, None
 
             if ("mag" in folder_data) and (self.use_magnet):
@@ -451,12 +463,13 @@ class OrangeSimDataSet(Dataset):
                 dict_i["rp"] = folder_odom[point_idx][4:6]
                 #print("PIDX:", point_idx)
                 for point_ctr in range(self.num_pts):
-                    temp_idx = point_idx + (point_ctr+1)*point_offset
-                    #print(temp_idx)
-                    if self.reduce_N and temp_idx > no_points and (phase is not "final"):
-                        #print("Skipping the rest of " + phase + ": " + str(temp_idx) + " of " + str(no_points))
-                        break_flag = True
-                        break
+                    if self.phase_end:
+                        temp_idx = no_points - 1
+                    else:
+                        temp_idx = point_idx + (point_ctr+1)*point_offset
+                        if self.reduce_N and temp_idx > no_points and (phase is not "final"):
+                            break_flag = True
+                            break
                     temp_idx = min(temp_idx,len(folder_odom)-1)
                     if folder_odom[temp_idx] is None:
                         #print("interpolate")

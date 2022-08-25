@@ -13,7 +13,14 @@ import gcophrotor
 import itertools
 import time
 
+"""
+	Takes manual inputs of different dagger configs and tries their permutation combination to find the best combination
+"""
+
 def read_csv(location):
+	"""
+		Reads config of the best models used for running the NN model
+	"""
 	fopen = open(location, "r")
 	cols = []
 	data = {}
@@ -38,6 +45,9 @@ def read_csv(location):
 
 
 def generate_gif(fname, loc="/home/gabe/ws/ros_ws/src/orange_picking/data/simulation/", gifs="/home/gabe/ws/ros_ws/src/orange_picking/gifs/"):
+	"""
+		Function to generate gifs for a run of simulation
+	"""
 	for dir in os.listdir(location):
 		for tname in os.listdir(loc + fname):
 			if tname.startswith("trial"):
