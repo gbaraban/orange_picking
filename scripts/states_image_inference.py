@@ -4,7 +4,7 @@ from std_msgs.msg import Bool, Int32
 import torch
 import numpy as np
 import time, os
-from geometry_msgs.msg import Pose, PoseArray, Point32
+from geometry_msgs.msg import Pose, PoseArray, Point32, Quaternion
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import PointCloud
 import std_msgs.msg
@@ -117,6 +117,12 @@ class StateInference:
         self.loadModel()
         self.wp_pub = rospy.Publisher("/goal_points",PoseArray,queue_size=10)
         self.phase_pub = rospy.Publisher("/phase_label",Int32,queue_size=10)
+        self.img_hz = 6
+        self.image_dt = 0.5
+        self.queue_window = int(math.ceil(self.img_hz * self.image_dt * (self.num_images - 1)))
+        self.im_queue = [-1 for i in range(self.queue_window)]
+        self.queue_len = 0
+        self.queue_ptr = 0
 
     def loadModel(self):
         if os.path.isfile(self.model_path):
@@ -214,9 +220,57 @@ class StateInference:
         self.phase_pub.publish(msg)
 
     def createTensor(self,image,depth,seg):
-        if self.num_images > 1:
-            print("too many images")
-            return 
+        im_tensor = torch.tensor(image - self.mean_image)
+        print("Image shape: " + str(im_tensor.shape))
+        if depth is not None:
+            d_tensor = torch.tensor(depth - self.mean_depth_image)
+            im_tensor = torch.cat((im_tensor,d_tensor),1)
+        if seg is not None:
+            s_tensor = torch.tensor(seg)
+            im_tensor = torch.cat((im_tensor,s_tensor),1)
+        im_tensor = self.getQueueImages(im_tensor)
+        return im_tensor 
+    
+    def getQueueImages(self,im):
+        if self.queue_len < len(self.queue):
+            self.queue[self.queue_ctr] = im
+            self.queue_ctr += 1
+            self.queue_ctr = self.queue_ctr%len(self.queue)
+            self.queue_len += 1
+            return None
+        output = im.copy()
+        print("Output Shape: " + output.shape)
+        for i in range(1,self.num_images):
+            loc = self.queue_ptr - (self.image_hz*i)
+            loc = loc%len(self.queue)
+            output = torch.cat((output,self.queue[loc]))
+        print("Output Shape: " + output.shape)
+        self.queue[self.queue_ctr] = im
+        self.queue_ctr += 1
+        self.queue_ctr = self.queue_ctr%len(self.queue)
+        return output
+
+    def getBodyV(self,odom,rot):
+        rotMat = rot.as_dcm()
+        body_v = []
+        body_v.append(odom.twist.twist.linear.x)
+        body_v.append(odom.twist.twist.linear.y)
+        body_v.append(odom.twist.twist.linear.z)
+        body_v = list(np.matmul(rotMat.T, np.array(body_v)))
+        body_v.append(odom.twist.twist.angular.x)
+        body_v.append(odom.twist.twist.angular.y)
+        body_v.append(odom.twist.twist.angular.z)
+        return list(body_v)
+
+    def getOrangePose(self,image,depth_image,seg_np):
+        area, extra_area = bof.findArea(image,seg_np)
+        camera_intrinsics = CameraIntrinsics()
+        ret = bof.getCloudData(depth_image, camera_intrinsics, area, extra_area)
+        if ret is None:
+            return None
+        pts,mean_pt,extra_pts = ret
+        orientation = bof.__find_plane(extra_pts,mean_pt)
+        return list(np.concatenate((mean_pt,orientation)))
 
     def callback(self, image_data, depth_image_data, odom):
         print("Reaching Callback")
@@ -226,7 +280,6 @@ class StateInference:
         image = bof.__rosmsg2np(image_data)
         if enable_depth or enable_orange_pos:
             depth_image = bof.__depthnpFromImage(depth_image_data)
-            depth_image -= self.__mean_depth_image
         else:
             depth_image = None
         if enable_seg or enable_orange_pos:
@@ -234,30 +287,29 @@ class StateInference:
             seg_np = bof.__segmentationInference(image_tensor)
         else:
             seg_np = None
-        #TODO: Add multiply image stacking later
         tensor = self.createTensor(image,depth_image,seg_np)
         #Build states
+        quat = odom.pose.pose.orientation
+        rot = R.from_quat((quat.x,quat.y,quat.z,quat.w))
+        states = []
+        if get
+        if enable_vel:
+            v = self.getBodyV(odom,rot)
+            if v is None:
+                return
+            states+=(v)
         if enable_orange_pos:
-            area, extra_area = bof.findArea(image,seg_np)
-            camera_intrinsics = CameraIntrinsics()
-            trans, rot = None, None
-            try:
-                (trans,rot) = self.listener.lookupTransform('world', 'camera_depth_optical_frame', rospy.Time(0))
-            except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
-                print("Lookup Failed")
+            op = self.getOrangePose()
+            if op is None:
                 return
-            if trans is None or rot is None:
-                print("tf None")
-                return
-
-            t5 = time.time()
-            ret = self.getCloudData(depth_image, camera_intrinsics, area, extra_area)
-            if ret is None:
-                return
-            t6 = time.time()
-            pts,mean_pt,extra_pts = ret
-            self.publishData(pts,extra_pts,Trans=trans, Rot=rot, mean_pt=mean_pt)
-
+            states.append(op)
+        if enable_rp:
+            rp = rot.as_euler("ZYX")[1:]
+            states.append(rp)
+        if len(states) is 0:
+            states = None
+        else:
+            states = np.array(states)
         #Run Inf
         pred, phase = self.predictInference(tensor,states)
         #Convert to Waypoint
