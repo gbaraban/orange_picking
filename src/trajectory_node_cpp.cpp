@@ -88,8 +88,8 @@ qf: The weights of the waypoint cost
 xout, us: The vectors to populate with the resulting trajectory
 */
 void solver_process_goal(int N, double gcop_tf, int epochs, Body3dState gcop_x0,
-     Body3dState goal1, Body3dState goal2, Body3dState goal3,
-     Vector12d q, Vector12d qf, Vector4d r, vector<Body3dState> &xout, vector<Vector4d> &us)
+     vector<Body3dState> goals, Vector12d q, Vector12d qf, Vector4d r, 
+     vector<Body3dState> &xout, vector<Vector4d> &us)
 {
   //Parameters
   double h = gcop_tf/N;
@@ -98,15 +98,11 @@ void solver_process_goal(int N, double gcop_tf, int epochs, Body3dState gcop_x0,
   //Costs
   MultiCost<Body3dState, 12, 4> cost(sys, gcop_tf);
   //Quadratic Cost
-  vector<Body3dState> goals(3);
-  goals[0] = goal1;
-  goals[1] = goal2;
-  goals[2] = goal3;
   Matrix<double,12,12> Q;
   Matrix<double,12,12> Qf;
   Matrix<double,4,4> R;
   vector<double> time_list = {gcop_tf};//Use equal spacing
-  Body3dCost<4> pathcost(sys, gcop_tf, goal3);
+  Body3dCost<4> pathcost(sys, gcop_tf, goals.back());
   Body3dWaypointCost waypointcost(sys, time_list, goals);
     for (int j = 0; j < 12; ++j)
     {
@@ -131,7 +127,6 @@ void solver_process_goal(int N, double gcop_tf, int epochs, Body3dState gcop_x0,
 
   // initial controls (e.g. hover at one place)
   vector<Vector4d> uds(N);
-  double third_N =((double) N)/goals.size();
   for (int i = 0; i < N; ++i) {
     us[i].head(3).setZero();
     us[i][3] = 9.81*sys.m;
@@ -304,7 +299,8 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   int epochs = 4;
   //Check for all zero goals
   all_zeros = true;
-  for (int ii = 0; ii < 3; ++ii) {
+  int num_goals = msg->poses.size();
+  for (int ii = 0; ii < num_goals; ++ii) {
     if (msg->poses[ii].position.x != 0) {
       //std::cout << "x" << ii << " is non-zero" << std::endl;
       all_zeros = false;
@@ -344,8 +340,8 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   /*if (all_zeros) {
     //std::cout << "Saw All Zeros!!" << std::endl;
   }*/
-  Body3dState goal[3];
-  for (int ii = 0; ii < 3; ++ii){
+  vector<Body3dState> goals(num_goals);
+  for (int ii = 0; ii < num_goals; ++ii){
     Vector3d local_p;
     local_p << msg->poses[ii].position.x, msg->poses[ii].position.y, msg->poses[ii].position.z;
     Matrix3d local_R;
@@ -381,16 +377,16 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
       last_quat.push_back(matrix2Quat(new_rot));
     }
     if (!all_zeros) {
-      goal[ii].p = (1 - filter_alpha)*last_pos[ii] + filter_alpha*new_pos;
+      goals[ii].p = (1 - filter_alpha)*last_pos[ii] + filter_alpha*new_pos;
       last_quat[ii] = last_quat[ii].slerp(matrix2Quat(new_rot),filter_alpha);
     } else {
-      goal[ii].p = new_pos;
+      goals[ii].p = new_pos;
       last_quat[ii] = matrix2Quat(new_rot);
     }
-    quat2Matrix(last_quat[ii],goal[ii].R);
-    last_pos[ii] = goal[ii].p;
-    goal[ii].v << 0, 0, 0;
-    goal[ii].w << 0, 0, 0;
+    quat2Matrix(last_quat[ii],goals[ii].R);
+    last_pos[ii] = goals[ii].p;
+    goals[ii].v << 0, 0, 0;
+    goals[ii].w << 0, 0, 0;
     geometry_msgs::TransformStamped temp;
     temp.header.stamp = last_time;
     temp.header.frame_id = world_name;
@@ -421,7 +417,7 @@ void callback(const geometry_msgs::PoseArray::ConstPtr& msg)
   ros::Time pre_ddp = ros::Time::now();
   if ( true ) { //!all_zeros) {
     Body3dState gcop_x0 = closest_state(x0);
-    solver_process_goal(N, tf, epochs, gcop_x0, goal[0], goal[1], goal[2],q, qf, r, xs, us);
+    solver_process_goal(N, tf, epochs, gcop_x0, goals ,q, qf, r, xs, us);
   } else {
     for (int ii = 0; ii < N+1; ++ii) {
       xs[ii] = x0;

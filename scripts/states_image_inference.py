@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import rospy
 from sensor_msgs.msg import Image
 from std_msgs.msg import Bool, Int32
@@ -28,25 +29,18 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from pytransform3d.rotations import *
 from baseline_image_inference import BaselineOrangeFinder
+from orangenetarchmulticontrol import *
 
 import math
 
-enable_multi_control = True 
+num_points = 1
+num_phases = True 
 enable_seg = True
 enable_depth = False
-enable_states = True
 num_images = 1
 states_v = False
 states_orange = False
 states_rp = False
-
-if enable_multi_control:
-    from orangenetarchmulticontrol import *
-elif enable_states:
-    from orangenetarchstates import *
-else:
-    from orangenetarch import *
-
 
 img_hz = 6
 queue_time = 0.5
@@ -56,36 +50,36 @@ queue_ptr = 0
 queue_empty = True
 
 def set_queued_imgs(curr):
-        global queue_ptr, queue
-	#retVal = (img,queue[(queue_ptr + queue_N/2)%queue_N],queue[queue_ptr])
-	queue[queue_ptr] = curr #cat
-	queue_ptr = (queue_ptr + 1)%queue_N
-	#torch.cat(retVal,1)#change to numpy h/v stack depending on image object type
+  global queue_ptr, queue
+  #retVal = (img,queue[(queue_ptr + queue_N/2)%queue_N],queue[queue_ptr])
+  queue[queue_ptr] = curr #cat
+  queue_ptr = (queue_ptr + 1)%queue_N
+  #torch.cat(retVal,1)#change to numpy h/v stack depending on image object type
 
 def get_queued_imgs(seg_image, num_imgs=3):
-	global queue_empty
-	#print("getting")
-	#img = image.cpu().detach().numpy().reshape(3,h,w)
-	curr = seg_image.cpu().detach().numpy()
-	#print(image.shape, seg_img.shape)
-	msg = curr.copy()
-	#print(msg.shape)
+  global queue_empty
+  #print("getting")
+  #img = image.cpu().detach().numpy().reshape(3,h,w)
+  curr = seg_image.cpu().detach().numpy()
+  #print(image.shape, seg_img.shape)
+  msg = curr.copy()
+  #print(msg.shape)
 
-	for i in range(num_imgs-2, -1, -1):
-		if queue_empty:
-			msg = np.concatenate((msg, curr))
+  for i in range(num_imgs-2, -1, -1):
+    if queue_empty:
+      msg = np.concatenate((msg, curr))
 
-		else:
-			loc = (queue_ptr - (img_hz * i))%queue_N
-			while queue[loc] is -1:
-				loc -= 1
-			#print("loc:", loc)
-			msg = np.concatenate((msg, queue[loc]))
+    else:
+      loc = (queue_ptr - (img_hz * i))%queue_N
+      while queue[loc] is -1:
+        loc -= 1
+      #print("loc:", loc)
+      msg = np.concatenate((msg, queue[loc]))
 
-	set_queued_imgs(curr)
-	queue_empty = False
+  set_queued_imgs(curr)
+  queue_empty = False
 
-	return msg
+  return msg
 
 class StateInference:
     def __init__(self, image_topic='/camera/color/image_raw', depth_topic='/camera/aligned_depth_to_color/image_raw', odom_topic="/gcop_odom", seg_flag=True):
@@ -97,32 +91,89 @@ class StateInference:
             self.topic_list.append(self.depth_topic)
         if odom_topic:
             self.topic_list.append(self.odom_topic)
-        self.bof = BaselineOrangeFinder(image_topic="/camera/color/image_raw", depth_topic="/camera/aligned_depth_to_color/image_raw")
+        self.bof = BaselineOrangeFinder(image_topic=self.image_topic, depth_topic=self.depth_topic)
         self.stamp_now = None
-        self.cap = ...
-        self.num_images = ...
-        self.num_points = ...
-        self.num_bins = ...
-        self.mins = ...
-        self.maxs = ...
-        self.num_coords = ...
-        self.num_channels = ...
-        self.num_states = ...
-        self.num_phases = ...
-        self.model = OrangeNet8(capacity,self.num_images,self.num_points,self.bins,self.mins,self.maxs,n_outputs=self.num_coords,num_channels=self.num_channels, state_count=self.num_states, num_controls=self.num_phases)
-        self.model_path = ...
-        self.mean_image_loc = ...
-        self.mean_depth_image_loc = ...
+        if rospy.has_param("model_cap"):
+            self.cap = rospy.get_param("model_cap")
+        else:
+            self.cap = 1.0
+        self.num_images = num_images
+        self.num_points = num_points
+        if rospy.has_param("model_bins"):
+            self.num_bins = rospy.get_param("model_bins")
+        else:
+            self.num_bins = 100
+        if rospy.has_param("phase_end"):
+            self.phase_end = rospy.get_param("phase_end")
+        else:
+            self.phase_end = False
+        self.setMinsMaxs()
+        self.dt_list = [1.0, 0.25, 0.25, 0]
+        self.num_coords = 6
+        self.num_channels = 3
+        if enable_seg:
+            self.num_channels += 1
+        if enable_depth:
+            self.num_channels += 1
+        self.num_states = 0
+        if states_v:
+            self.num_states += 3
+        if states_orange:
+            self.num_states += 6
+        if states_rp:
+            self.num_states += 2
+        self.num_phases = num_phases
+        self.model = OrangeNet8(self.cap,self.num_images,self.num_points,self.num_bins,self.mins,self.maxs,n_outputs=self.num_coords,num_channels=self.num_channels, state_count=self.num_states, num_controls=self.num_phases)
+        self.model_path = rospy.get_param("model_path")
+        if rospy.has_param("mean_image_loc"):
+            self.mean_image_loc = rospy.get_param("mean_iamge_loc")
+        else:
+            self.mean_image_loc = "../useful_models/mean_color_image.npy"
+        if rospy.has_param("mean_depth_loc"):
+            self.mean_depth_image_loc = rospy.get_param("mean_depth_loc")
+        else:
+            self.mean_depth_image_loc = "../useful_models/mean_depth_image.npy"
         self.gpu = 0
         self.loadModel()
         self.wp_pub = rospy.Publisher("/goal_points",PoseArray,queue_size=10)
         self.phase_pub = rospy.Publisher("/phase_label",Int32,queue_size=10)
+        self.success_pub = rospy.Publisher("/success",Int32,queue_size=10)
         self.img_hz = 6
         self.image_dt = 0.5
         self.queue_window = int(math.ceil(self.img_hz * self.image_dt * (self.num_images - 1)))
         self.im_queue = [-1 for i in range(self.queue_window)]
         self.queue_len = 0
         self.queue_ptr = 0
+
+    def setMinsMaxs(self):
+        if self.phase_end:
+            self.num_points = 1
+            stage_min = [(0, -0.7, -0.2, -0.20, -0.1, -0.1)]
+            stage_max = [(2.5, 0.7, 0.2, 0.20, 0.1, 0.1)]
+            final_min = [(0, -0.05, -0.01, -0.1, -0.05, -0.04)]
+            final_max = [(0.25, 0.05, 0.2, 0.1, 0.05, 0.04)]
+            reset_min = [(-0.30, -0.1, -0.20, -0.2, -0.06, -0.04)]
+            reset_max = [(0.0, 0.1, 0.0, 0.2, 0.06, 0.04)]
+            grip_min = [(0,0,0,0,0,0)]
+            grip_max = [(0,0,0,0,0,0)]
+            self.mins = stage_min
+            self.maxs = stage_max
+            self.extra_mins = [final_min,reset_min,grip_min]
+            self.extra_maxs = [final_max,reset_max,grip_max]
+        else:
+            stage_min = [(0, -0.10, -0.1, -0.20, -0.1, -0.1), (0, -0.13, -0.1, -0.20, -0.1, -0.1), (0, -0.14, -0.1, -0.20, -0.1, -0.1)]
+            stage_max = [(0.75, 0.1, 0.1, 0.20, 0.1, 0.1), (0.75, 0.13, 0.1, 0.20, 0.1, 0.1), (0.75, 0.14, 0.1, 0.20, 0.1, 0.1)]
+            final_min = [(-0.01, -0.01, -0.01, -0.01, -0.03, -0.03), (-0.01, -0.01, -0.01, -0.01, -0.1, -0.1), (-0.01, -0.01, -0.01, -0.01, -0.1, -0.1)]
+            final_max = [(0.04, 0.01, 0.03, 0.01, 0.03, 0.04), (0.04, 0.01, 0.03, 0.01, 0.04, 0.04), (0.04, 0.01, 0.03, 0.01, 0.04, 0.04)]
+            reset_min = [(-0.05, -0.01, -0.03, -0.04, -0.03, -0.03), (-0.05, -0.01, -0.03, -0.04, -0.1, -0.1), (-0.05, -0.01, -0.04, -0.01, -0.1, -0.1)]
+            reset_max = [(0.0, 0.01, 0.0, 0.04, 0.03, 0.04), (0.0, 0.01, 0.0, 0.04, 0.04, 0.04), (0.0, 0.01, 0.0, 0.04, 0.04, 0.04)]
+            grip_min = [(0,0,0,0,0,0),(0,0,0,0,0,0),(0,0,0,0,0,0)]
+            grip_max = [(0,0,0,0,0,0),(0,0,0,0,0,0),(0,0,0,0,0,0)]
+            self.mins = stage_min
+            self.maxs = stage_max
+            self.extra_mins = [final_min,reset_min,grip_min]
+            self.extra_maxs = [final_max,reset_max,grip_max]
+
 
     def loadModel(self):
         if os.path.isfile(self.model_path):
@@ -133,9 +184,9 @@ class StateInference:
             self.model.load_state_dict(checkpoint)
             self.model.eval()
             torch.no_grad()
-            print("Loaded Model: ", self.__modelload)
+            print("Loaded Model: ", self.model_path)
         else:
-            print("No checkpoint found at: ", self.__modelload)
+            print("No checkpoint found at: ", self.model_path)
             exit(0)
         if os.path.exits(self.mean_image_loc):
             self.mean_image = np.load(self.mean_image_loc)
@@ -193,10 +244,21 @@ class StateInference:
     def publishWP(self,wpList,phase):
         msg = PoseArray()
         header = std_msgs.msg.Header()
-        if phase is None:
-            header.stamp = rospy.Duration(0.0)
+        if self.phase_end:
+            max_v = 0.3
+            min_dt = 4.0
+            d = np.linalg.norm(wpList[0][0:3])
+            dt = d/max_v
+            dt = max((min_tf,dt))
+            header.stamp = rospy.Duration(dt)
         else:
-            header.stamp = rospy.Duration(self.dt_list[phase])
+            if phase is None:
+                header.stamp = rospy.Duration(0.0)
+            else:
+                dt = self.dt_list[phase]
+                dt = dt*self.num_points
+                header.stamp = rospy.Duration(dt)
+
         for wp in wpList:
             pt_pose = Pose()
             pt_pose.position.x = wp[0]
@@ -215,9 +277,13 @@ class StateInference:
         self.wp_pub.publish(msg)
 
     def publishPhase(self,phase):
+        #print("Phase is : " + str(phase))
         msg = Int32()
         msg.data = phase
         self.phase_pub.publish(msg)
+        success_msg = Bool()
+        success_msg.data = (phase == 4)
+        self.success_pub.publish(success_msg)
 
     def createTensor(self,image,depth,seg):
         im_tensor = torch.tensor(image - self.mean_image)
@@ -292,18 +358,17 @@ class StateInference:
         quat = odom.pose.pose.orientation
         rot = R.from_quat((quat.x,quat.y,quat.z,quat.w))
         states = []
-        if get
-        if enable_vel:
+        if states_v:
             v = self.getBodyV(odom,rot)
             if v is None:
                 return
             states+=(v)
-        if enable_orange_pos:
+        if states_orange:
             op = self.getOrangePose()
             if op is None:
                 return
             states.append(op)
-        if enable_rp:
+        if states_rp:
             rp = rot.as_euler("ZYX")[1:]
             states.append(rp)
         if len(states) is 0:
@@ -321,6 +386,46 @@ class StateInference:
 
 def main():
     rospy.init_node('states_image_inference')
+    global num_points 
+    if rospy.has_param("num_points"):
+        num_points = rospy.get_param("num_points")
+    else:
+        num_points = 3
+    global num_phases 
+    if rospy.has_param("num_phases"):
+        num_phases = rospy.get_param("num_phases")
+    else:
+        num_phases = 4
+    global enable_seg
+    if rospy.has_param("enable_seg"):
+        enable_seg = rospy.get_param("enable_seg")
+    else:
+        enable_seg = True
+    global enable_depth
+    if rospy.has_param("enable_depth"):
+        enable_depth = rospy.get_param("enable_depth")
+    else:
+        enable_depth = True
+    global num_images
+    if rospy.has_param("num_images"):
+        num_images = rospy.get_param("num_images")
+    else:
+        num_images = 1
+    global states_v
+    if rospy.has_param("states_v"):
+        states_v = rospy.get_param("states_v")
+    else:
+        states_v = False
+    global states_orange
+    if rospy.has_param("states_orange"):
+        states_orange = rospy.get_param("states_orange")
+    else:
+        states_orange = False 
+    global states_rp
+    if rospy.has_param("states_rp"):
+        states_rp = rospy.get_param("states_rp")
+    else:
+        states_rp = True
     si = StateInference()
     ts = message_filters.ApproximateTimeSynchronizer(si.topic_list, queue_size=2, slop=1.0,  allow_headerless=True)
     ts.registerCallback(si.callback)

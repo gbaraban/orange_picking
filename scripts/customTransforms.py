@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 import PIL.Image as img
-from torchvision.transforms import functional
+#from torchvision.transforms import functional
 
 #TODO: Add custom image transformations here
 
@@ -107,9 +107,9 @@ class WaypointPerspective(object):
             print(start_points)
             print(end_points)
             pil_image = tensortoPIL(image)
-            coeffs = functional._get_perspective_coeffs(start_points, end_points)
+#            coeffs = functional._get_perspective_coeffs(start_points, end_points)
             print(coeffs)
-            pil_image = functional.perspective(pil_image,start_points,start_points)
+#            pil_image = functional.perspective(pil_image,start_points,start_points)
             image = PILtotensor(pil_image)
             saveImage(image,"post_image")
             points = new_points
