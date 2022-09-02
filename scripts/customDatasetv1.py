@@ -201,7 +201,12 @@ class OrangeSimDataSet(Dataset):
         for ii, image_loc in enumerate(image_loc_list):
             image_np_loc = image_loc.replace(self.data_folder, self.data_folder + "_np").replace("png","npy")
             if os.path.isfile(image_np_loc):
-                temp_raw_image = np.load(image_np_loc)
+                try:
+                    temp_raw_image = np.load(image_np_loc)
+                except:
+                    print("Loading NP Image failed...")
+                    print(image_np_loc)
+                    exit(0)
             else:
                 #print(image_loc)
                 temp_raw_image_PIL = img.open(image_loc).resize((640,480))
@@ -373,6 +378,7 @@ class OrangeSimDataSet(Dataset):
                 dict_list.append(dict_i)
         else:
             no_events = folder_data["nEvents"]
+            no_devents = folder_data["nDEvents"]
             no_points = folder_data["nOdom"]
             folder_time = folder_data["time_secs"] + (folder_data["time_nsecs"]/1e9)
             folder_odom = folder_data["data"]
@@ -396,6 +402,7 @@ class OrangeSimDataSet(Dataset):
                 magnet_hz = float(no_magnets)/float(folder_time)
 
             image_hz = no_events/float(folder_time)
+            dimage_hz = no_devents/float(folder_time)
             image_offset = round(self.img_dt*image_hz)
             point_hz = float(no_points)/folder_time
             if self.phase_dict[phase] == 0 or self.extra_dt is None: #TODO Fix time problem if mix_labels phase
@@ -410,13 +417,18 @@ class OrangeSimDataSet(Dataset):
                 dict_i["phase"] = self.phase_dict[phase]
                 
                 if folder_orange_pose is not None:
-                    if folder_orange_pose[ii] is not None:
-                        if np.any(np.isnan(folder_orange_pose[ii][0])) or np.any(np.isnan(folder_orange_pose[ii][1])):
+                    orange_idx = int((float(ii)/no_events)*len(folder_orange_pose))
+                    if folder_orange_pose[orange_idx] is not None:
+                        if np.any(np.isnan(folder_orange_pose[orange_idx])):
                             dict_i["orange_pose"] = np.array([0., 0., 0., 0., 0., 0.])
                         else:
-                            orange_p = folder_orange_pose[ii][0]
-                            orange_q = folder_orange_pose[ii][1]
-                            dict_i["orange_pose"] = np.concatenate((orange_p, R.from_quat(orange_q).as_euler('ZYX'))) 
+                            if len(folder_orange_pose[orange_idx]) is 2:
+                                orange_p = folder_orange_pose[orange_idx][0]
+                                orange_q = folder_orange_pose[orange_idx][1]
+                                dict_i["orange_pose"] = np.concatenate((orange_p, R.from_quat(orange_q).as_euler('ZYX'))) 
+                            if len(folder_orange_pose[orange_idx]) is 6:
+                                orange_p = folder_orange_pose[orange_idx][0:3]
+                                dict_i["orange_pose"] = np.array(folder_orange_pose[orange_idx])
                             if (phase is "staging") and (orange_p[0] < self.final_thresh_x) and (np.linalg.norm(orange_p[1:]) < self.final_thresh_r):
                                 if self.relabel:
                                     dict_i["phase"] = self.phase_dict["final"]
@@ -440,7 +452,8 @@ class OrangeSimDataSet(Dataset):
                     image_loc = subfolder + "image" + str(image_idx) + ".png"
                     dict_i["image"].append(image_loc)
                     if self.depth:
-                        depth_loc = subfolder + "depth_image" + str(image_idx) + ".npy"
+                        dimage_idx = int((float(image_idx)/no_events)*no_devents)#TODO: try different strategies
+                        depth_loc = subfolder + "depth_image" + str(dimage_idx) + ".npy"
                         dict_i["depth"].append(depth_loc)
                 dict_i["time_frac"] = float(ii)/no_events
                 point_idx = round(dict_i["time_frac"]*no_points)

@@ -2,6 +2,7 @@ import numpy as np
 import os
 import PIL.Image as img
 import argparse
+from tqdm import tqdm
 
 def recursive_search(run_dir):
   #recursive search
@@ -12,6 +13,8 @@ def recursive_search(run_dir):
       if os.path.isdir(run_dir + '/' + f):
           f_list = [(f + '/' + temp) for temp in os.listdir(run_dir + '/' + f)]
           dir_list += f_list
+      if f.startswith("batch"):
+          continue
       if f.endswith(".png"):
           img_list.append(f)
           continue
@@ -23,7 +26,7 @@ def recursive_search(run_dir):
 def compute_mean(run_dir,f_list):
   N = len(f_list)
   mean_image = None #np.zeros((480,640,3))
-  for f in f_list:
+  for f in tqdm(f_list):
       if f.endswith(".png"):
           temp_image = img.open(run_dir + '/' + f).resize((640,480))
           temp_image = np.array(temp_image.getdata()).reshape(temp_image.size[1],temp_image.size[0],3)

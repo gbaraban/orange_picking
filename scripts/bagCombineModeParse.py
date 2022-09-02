@@ -24,6 +24,7 @@ import time
 from visual_servoing_pose_estimate import BaselineOrangeFinder
 import glob
 from computeMeanImage import create_mean_image
+from tqdm import tqdm
 
 bad_angles = []
 
@@ -37,14 +38,21 @@ force_good_list = {"2022-07-25":{4:[1,0]},
         "2022-07-31":{13:[-1],23:[-1],24:[-1]},
         "2022-08-08":{30:[-1],37:[-1],38:[-1]},
         "2022-08-10":{9:[-1],10:[-1],13:[-1]},
-        "2022-08-11":{2:[-1],3:[-1]}}
+        "2022-08-11":{2:[-1],3:[-1]},
+        "2022-08-26":{5:[-1],8:[-1],9:[-1],14:[-1],16:[-1],18:[-1],23:[-1],25:[-1],30:[-1]},
+        "2022-08-28":{13:[-1],14:[-1],16:[-1],20:[-1],22:[-1],30:[-1],31:[-1],32:[-1],33:[-1],34:[-1],37:[-1],38:[-1],39:[-1],40:[-1],43:[-1],45:[-1],46:[-1],47:[-1],48:[-1]},
+        "2022-08-29":{10:[-1],11:[-1],12:[-1],13:[-1],14:[-1],21:[-1],26:[-1],27:[-1],28:[-1],29:[-1],30:[-1],34:[-1],35:[-1],36:[-1],37:[-1],43:[-1],52:[-1],58:[-1],60:[-1]},
+        "2022-08-30":{1:[-1],6:[-1],7:[-1],8:[-1],10:[-1],12:[-1],13:[-1],14:[-1],15:[-1]}}
 
 force_bad_list = ["_7_2022-07-27", 
         "_22_2022-07-28","_24_2022-07-28","_26_2022-07-28",
         "_5_2022-07-29","_27_2022-07-29",
         "_11_2022-07-31","_12_2022-07-31","_16_2022-07-31",
         "_2_2022-08-08","_5_2022-08-08","_6_2022-08-08","_9_2022-08-08","_35_2022-08-08","_44_2022-08-08",
-        "_2_2022-08-10"]
+        "_2_2022-08-10",
+        "_27_2022-08-26","_29_2022-08-26",
+        "_11_2022-08-28","_21_2022-08-28","_24_2022-08-28",
+        "_19_2022-08-29","_24_2022-08-29"]
 
 error_printout_file = ""
 error_prefix = ""
@@ -152,9 +160,10 @@ def addDrop(R):
     if lr < 1:
         return True
 
-def saveData(save_loc, no_events, odom_len, grip_len, time, odom, grip, bag_name, orange_pose=None):
+def saveData(save_loc, no_events, no_devents, odom_len, grip_len, time, odom, grip, bag_name, orange_pose=None):
     data_dict = {}
     data_dict["nEvents"] = no_events
+    data_dict["nDEvents"] = no_devents
     data_dict["nOdom"] = odom_len
     if grip_len is not None:
         data_dict["nGrips"] = grip_len
@@ -168,259 +177,137 @@ def saveData(save_loc, no_events, odom_len, grip_len, time, odom, grip, bag_name
     with open(save_loc + '/data.pickle_no_parse','wb') as f:
         pickle.dump(data_dict,f,pickle.HIGHEST_PROTOCOL)
 
+def parsePhase(info,trial_folder,name,extra_odom = [], stage_flag = False):
+        folder = trial_folder + name
+        os.makedirs(folder)
+        time = info[2]
+        duration = time[1] - time[0]
+        img_len = len(info[1])
+        dimg_len = len(info[3])
+        odom_len = len(info[0])
+        odom = [np.zeros((6))]*odom_len
+
+        no_events = img_len
+        no_devents = dimg_len
+        no_points = odom_len
+        folder_time = duration.secs + (duration.nsecs/1e9)
+        if folder_time < 1 and stage_flag:
+            return None
+
+        orange_pose = []
+        
+        for ii in range(odom_len):
+            pt_odom = info[0][ii]
+            if pt_odom is None:
+                odom[ii] = None
+            else:
+                p = (pt_odom.transform.translation.x, pt_odom.transform.translation.y, pt_odom.transform.translation.z)
+                RotR = R.from_quat([
+                    pt_odom.transform.rotation.x,
+                    pt_odom.transform.rotation.y,
+                    pt_odom.transform.rotation.z,
+                    pt_odom.transform.rotation.w
+                    ])#possibly need to switch w to front
+                Rot = RotR.as_dcm()
+                p = np.array(p)
+                pt = np.zeros((6))
+                pt[0:3] = p
+                pt[3:6] = RotR.as_euler('ZYX')
+                odom[ii] = pt
+
+        for ii in range(img_len):
+            Img.fromarray(info[1][ii]).save(folder + "/image" + str(ii) + ".png")
+            
+        for ii in range(dimg_len):
+            np.save(folder + "/depth_image" + str(ii) + ".npy", info[3][ii])
+
+        op_len = len(info[5])
+        for ii in range(op_len):
+            msg = info[5][ii].poses[0]
+            orange_loc = np.zeros((6))
+            orange_loc[0] = msg.position.x
+            orange_loc[1] = msg.position.x
+            orange_loc[2] = msg.position.x
+            temp = (msg.orientation.x,
+                    msg.orientation.y,
+                    msg.orientation.z,
+                    msg.orientation.w)
+            orange_loc[3:6] = R.from_quat(temp).as_euler("ZYX")
+            orange_pose.append(orange_loc)
+#            orange_loc = None
+#            time_frac = float(ii)/dimg_len
+#            point_idx = int(time_frac*no_points)
+#            img_idx = int(time_frac*img_len)
+#            if odom[point_idx] is not None: #TODO Ask gabe to check
+#                p0 = odom[point_idx][0:3]
+#                R0 = R.from_euler('ZYX', odom[point_idx][3:6]).as_quat()
+#                orange_loc = bof.process_loc(info[1][img_idx], info[3][ii], p0, R0)
+#            orange_pose.append(orange_loc)
+
+        load_len = len(info[4]) 
+        load = [np.zeros((10))]*load_len
+        for ii in range(load_len):
+            load[ii] = np.array(info[4][ii])#CHANGE
+
+        saveData(folder,img_len,dimg_len,odom_len,load_len,duration,odom + extra_odom,load,trial_folder, orange_pose)
+        return duration,img_len,dimg_len,odom
+
+
 def parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info,grip_info):
     total_time = None
     total_events = 0
+    total_devents = 0
     trial_folder = bag_save_folder + "/trial" + str(trial_ctr)
     os.makedirs(trial_folder)
-    bof = BaselineOrangeFinder()
     #Gripping
     if grip_info:
-        grip_folder = trial_folder + "/grip"
-        os.makedirs(grip_folder)
-        grip_time = grip_info[2]
-        grip_duration = grip_time[1] - grip_time[0]
-        grip_len = min((len(grip_info[1]), len(grip_info[3])))
-        odom_len = len(grip_info[0])
-        grip_odom = [np.zeros((6))]*odom_len
-
-        no_events = grip_len
-        no_points = odom_len
-        folder_time = grip_duration.secs + (grip_duration.nsecs/1e9)
-
-        orange_pose = []
-        
-        for ii in range(odom_len):
-            pt_odom = grip_info[0][ii]
-            if pt_odom is None:
-                grip_odom[ii] = None
-            else:
-                p = (pt_odom.transform.translation.x, pt_odom.transform.translation.y, pt_odom.transform.translation.z)
-                RotR = R.from_quat([
-                    pt_odom.transform.rotation.x,
-                    pt_odom.transform.rotation.y,
-                    pt_odom.transform.rotation.z,
-                    pt_odom.transform.rotation.w
-                    ])#possibly need to switch w to front
-                Rot = RotR.as_dcm()
-                p = np.array(p)
-                pt = np.zeros((6))
-                pt[0:3] = p
-                pt[3:6] = RotR.as_euler('ZYX')
-                grip_odom[ii] = pt
-        for ii in range(grip_len):
-            orange_loc = None
-            time_frac = float(ii)/no_events
-            point_idx = int(time_frac*no_points)
-
-            Img.fromarray(grip_info[1][ii]).save(grip_folder + "/image" + str(ii) + ".png")
-            np.save(grip_folder + "/depth_image" + str(ii) + ".npy", grip_info[3][ii])
-            
-            if grip_odom[point_idx] is not None: #TODO Ask gabe to check
-                p0 = grip_odom[point_idx][0:3]
-                R0 = R.from_euler('ZYX', grip_odom[point_idx][3:6]).as_quat()
-                orange_loc = bof.process_loc(grip_info[1][ii], grip_info[3][ii], p0, R0)
-
-            orange_pose.append(orange_loc)
-        grip_load_len = len(grip_info[4]) 
-        grip_load = [np.zeros((10))]*grip_load_len
-        for ii in range(grip_load_len):
-            grip_load[ii] = np.array(grip_info[4][ii])#CHANGE
-
-        saveData(grip_folder,grip_len,odom_len,grip_load_len,grip_duration,grip_odom,grip_load,trial_folder, orange_pose)
+        duration, nevents, ndevents, grip_odom = parsePhase(grip_info,trial_folder,"/grip")
         if total_time is None:
-            total_time = grip_duration
+            total_time = duration
         else:
-            total_time += grip_duration
-        total_events += grip_len
+            total_time += duration
+        total_events += nevents
+        total_devents += ndevents
     else:
-        grip_odom = []
+       grip_odom = []
     #Final Rise
     if fr_info:
-        fr_folder = trial_folder + "/final"
-        os.makedirs(fr_folder)
-        fr_time = fr_info[2]
-        fr_duration = fr_time[1] - fr_time[0]
-        fr_len = min((len(fr_info[1]), len(fr_info[3])))
-        odom_len = len(fr_info[0])
-        fr_odom = [np.zeros((6))]*odom_len
-
-        no_events = fr_len
-        no_points = odom_len
-        folder_time = fr_duration.secs + (fr_duration.nsecs/1e9)
-
-        orange_pose = []
-        
-        for ii in range(odom_len):
-            pt_odom = fr_info[0][ii]
-            if pt_odom is None:
-                fr_odom[ii] = None
-            else:
-                p = (pt_odom.transform.translation.x, pt_odom.transform.translation.y, pt_odom.transform.translation.z)
-                RotR = R.from_quat([
-                    pt_odom.transform.rotation.x,
-                    pt_odom.transform.rotation.y,
-                    pt_odom.transform.rotation.z,
-                    pt_odom.transform.rotation.w
-                    ])#possibly need to switch w to front
-                Rot = RotR.as_dcm()
-                p = np.array(p)
-                pt = np.zeros((6))
-                pt[0:3] = p
-                pt[3:6] = RotR.as_euler('ZYX')
-                fr_odom[ii] = pt
-        for ii in range(fr_len):
-            orange_loc = None
-            time_frac = float(ii)/no_events
-            point_idx = int(time_frac*no_points)
-
-            Img.fromarray(fr_info[1][ii]).save(fr_folder + "/image" + str(ii) + ".png")
-            np.save(fr_folder + "/depth_image" + str(ii) + ".npy", fr_info[3][ii])
-            
-            if fr_odom[point_idx] is not None: #TODO Ask gabe to check
-                p0 = fr_odom[point_idx][0:3]
-                R0 = R.from_euler('ZYX', fr_odom[point_idx][3:6]).as_quat()
-                orange_loc = bof.process_loc(fr_info[1][ii], fr_info[3][ii], p0, R0)
-
-            orange_pose.append(orange_loc)
-        fr_load_len = len(fr_info[4]) 
-        fr_load = [np.zeros((10))]*fr_load_len
-        for ii in range(fr_load_len):
-            fr_load[ii] = np.array(fr_info[4][ii])#CHANGE
-
-        saveData(fr_folder,fr_len,odom_len, fr_load_len, fr_duration,fr_odom + grip_odom, fr_load, trial_folder, orange_pose)
+        duration, nevents, ndevents, fr_odom = parsePhase(fr_info,trial_folder,"/final",grip_odom)
         if total_time is None:
-            total_time = fr_duration
+            total_time = duration
         else:
-            total_time += fr_duration
-        total_events += fr_len
+            total_time += duration
+        total_events += nevents
+        total_devents += ndevents
     else:
-        fr_odom = []
+       fr_odom = []
     #Staging
-    stage_folder = trial_folder + "/staging"
-    os.makedirs(stage_folder)
-    stage_time = stage_info[2]
-    stage_duration = stage_time[1] - stage_time[0]
-    stage_len = min((len(stage_info[1]), len(stage_info[3])))
-    odom_len = len(stage_info[0])
-    stage_odom = [np.zeros((6))]*odom_len
-
-    no_events = stage_len
-    no_points = odom_len
-    folder_time = stage_duration.secs + (stage_duration.nsecs/1e9)
-    if folder_time < 1:
-        print("Short Time... Skipping")
+    ret = parsePhase(stage_info,trial_folder,"/staging",fr_odom + grip_odom,stage_flag = True)
+    if ret is None:
         return
-
-    orange_pose = []
-    
-    for ii in range(odom_len):
-        pt_odom = stage_info[0][ii]
-        if pt_odom is None:
-            stage_odom[ii] = None
-        else:
-            p = (pt_odom.transform.translation.x, pt_odom.transform.translation.y, pt_odom.transform.translation.z)
-            RotR = R.from_quat([
-                pt_odom.transform.rotation.x,
-                pt_odom.transform.rotation.y,
-                pt_odom.transform.rotation.z,
-                pt_odom.transform.rotation.w
-                ])#possibly need to switch w to front
-            Rot = RotR.as_dcm()
-            p = np.array(p)
-            pt = np.zeros((6))
-            pt[0:3] = p
-            pt[3:6] = RotR.as_euler('ZYX')
-            stage_odom[ii] = pt
-    for ii in range(stage_len):
-        orange_loc = None
-        time_frac = float(ii)/no_events
-        point_idx = int(time_frac*no_points)
-
-        Img.fromarray(stage_info[1][ii]).save(stage_folder + "/image" + str(ii) + ".png")
-        np.save(stage_folder + "/depth_image" + str(ii) + ".npy", stage_info[3][ii])
-
-                    
-        if stage_odom[point_idx] is not None: #TODO Ask gabe to check
-            p0 = stage_odom[point_idx][0:3]
-            R0 = R.from_euler('ZYX', stage_odom[point_idx][3:6]).as_quat()
-            orange_loc = bof.process_loc(stage_info[1][ii], stage_info[3][ii], p0, R0)
-
-        orange_pose.append(orange_loc)
-    stage_load_len = len(stage_info[4]) 
-    stage_load = [np.zeros((10))]*stage_load_len
-    for ii in range(stage_load_len):
-        stage_load[ii] = np.array(stage_info[4][ii])#CHANGE
-
-    saveData(stage_folder,stage_len,odom_len,stage_load_len, stage_duration,stage_odom + fr_odom + grip_odom, stage_load, trial_folder, orange_pose)
+    duration, nevents, ndevents, stage_odom = ret
     if total_time is None:
-        total_time = stage_duration
+        total_time = duration
     else:
-        total_time += stage_duration
-    total_events += stage_len
+        total_time += duration
+    total_events += nevents
+    total_devents += ndevents
     #Resets
-    orange_pose = []
-
     num_resets = len(reset_info[0])
     for rr in range(num_resets):
-        reset_folder = trial_folder + "/reset" + str(rr) + "/"
-        os.makedirs(reset_folder)
-        reset_time = reset_info[1][rr]
-        reset_duration = reset_time[1] - reset_time[0]
-        reset_len = min((len(reset_info[0][rr][1]), len(reset_info[0][rr][2])))
-        odom_len = len(reset_info[0][rr][0])
-        reset_odom = [np.zeros((10))]*odom_len
-        no_events = reset_len
-        no_points = odom_len
-        folder_time = reset_duration.secs + (reset_duration.nsecs/1e9)
-        
-        for ii in range(odom_len):
-            pt_odom = reset_info[0][rr][0][ii]
-            if pt_odom is None:
-                reset_odom[ii] = None
-            else:
-                p = (pt_odom.transform.translation.x, pt_odom.transform.translation.y, pt_odom.transform.translation.z)
-                RotR = R.from_quat([
-                    pt_odom.transform.rotation.x,
-                    pt_odom.transform.rotation.y,
-                    pt_odom.transform.rotation.z,
-                    pt_odom.transform.rotation.w
-                    ])#possibly need to switch w to front
-                Rot = RotR.as_dcm()
-                p = np.array(p)
-                pt = np.zeros((6))
-                pt[0:3] = p
-                pt[3:6] = RotR.as_euler('ZYX')
-                reset_odom[ii] = pt
-        for ii in range(reset_len):
-            orange_loc = None
-            time_frac = float(ii)/no_events
-            point_idx = int(time_frac*no_points)
-
-            Img.fromarray(reset_info[0][rr][1][ii]).save(reset_folder + "/image" + str(ii) + ".png")
-            np.save(reset_folder + "/depth_image" + str(ii) + ".npy", reset_info[0][rr][2][ii])
-            
-            if reset_odom[point_idx] is not None: #TODO Ask gabe to check
-                p0 = reset_odom[point_idx][0:3]
-                R0 = R.from_euler('ZYX', reset_odom[point_idx][3:6]).as_quat()
-                orange_loc = bof.process_loc(reset_info[0][rr][1][ii], reset_info[0][rr][2][ii], p0, R0)
-
-            orange_pose.append(orange_loc)
-        reset_load_len = len(reset_info[0][rr][3]) 
-        reset_load = [np.zeros((10))]*reset_load_len
-        for ii in range(reset_load_len):
-            reset_load[ii] = np.array(reset_info[0][rr][3][ii])#CHANGE
-
-        saveData(reset_folder,reset_len,odom_len,reset_load_len,reset_duration,reset_odom + fr_odom + grip_odom,reset_load,trial_folder,orange_pose=orange_pose)
+        info = (reset_info[0][rr][0],reset_info[0][rr][1],reset_info[1][rr],reset_info[0][rr][2],reset_info[0][rr][3],reset_info[0][rr][4])
+        duration, nevents, ndevents, reset_odom = parsePhase(info,trial_folder,"/reset" + str(rr),fr_odom + grip_odom)
         if total_time is None:
-            total_time = reset_duration
+            total_time = duration
         else:
-            total_time += reset_duration
-        total_events += reset_len
+            total_time += duration
+        total_events += nevents
+        total_devents += ndevents
     print("")
-    print(trial_folder + ": " + str(total_events) + " events: " + str(total_time.secs) + " seconds")
+    sum_str = trial_folder + ": " + str(total_events) + " events: " + str(total_devents) + " depth events: " + str(total_time.secs) + " seconds"
+    print(sum_str)
     with open(summary_file,'a') as f:
-        print(trial_folder + ": " + str(total_events) + " events: " + str(total_time.secs) + " seconds",file = f)
+        print(sum_str,file = f)
 
 def chopBagName(fname):
     idx = 0
@@ -601,6 +488,7 @@ def parseBag(bag_dir,bag_name,bag_ctr):
 #    success_topic = "/magnet_values"
     success_topic = "/orange_tracking_node/arm/jaw_grip_data"
     status_topic = "/rqt_gui/system_status"
+    tracker_topic = "/ros_tracker"
     bag_time = None
     bag_events = 0
     total_time = None
@@ -632,27 +520,33 @@ def parseBag(bag_dir,bag_name,bag_ctr):
     stage_img = []
     stage_dimg = []
     stage_load = []
+    stage_op = []
     fr_odom = []
     fr_img = []
     fr_dimg = []
     fr_load = []
+    fr_op = []
     resets = []
     reset_odom = []
     reset_img = []
     reset_dimg = []
     reset_load = []
+    reset_op = []
     grip_odom = []
     grip_img = []
     grip_dimg = []
     grip_load = []
+    grip_op = []
     img = None
     dimg = None
     odom = None
     grip = None
+    op = None
     img_t = -1
     dimg_t = -1
     odom_t = -1
     grip_t = -1
+    op_t = -1
     stage_time = [None,None]
     final_time = [None,None]
     reset_times = []
@@ -670,7 +564,7 @@ def parseBag(bag_dir,bag_name,bag_ctr):
     good_list = forceGood(chopped_name)
     bad_flag = forceBad(chopped_name)
     for bag in bag_list:
-        for topic, msg, t in bag.read_messages(topics=[vrpn_topic, img_topic, status_topic, success_topic, depth_topic]):
+        for topic, msg, t in bag.read_messages(topics=[vrpn_topic, img_topic, status_topic, success_topic, depth_topic,tracker_topic]):
             if topic == success_topic:
                 grip_t = t 
                 grip = np.array(msg.values)
@@ -697,11 +591,12 @@ def parseBag(bag_dir,bag_name,bag_ctr):
                         if seal_stage:
                             stageFlag = False
                         if seal_reset:
-                            resets.append((reset_odom,reset_img,reset_dimg,reset_load))
+                            resets.append((reset_odom,reset_img,reset_dimg,reset_load,reset_op))
                             reset_odom = []
                             reset_img = []
                             reset_dimg = []
                             reset_load = []
+                            reset_op = []
                             reset_times.append(reset_time)
                             if bag_time is None:
                                 bag_time = reset_time[1] - reset_time[0]
@@ -712,7 +607,7 @@ def parseBag(bag_dir,bag_name,bag_ctr):
                             if not stageFlag:
                                 if (stage_time[0] is not None) and (stage_time[1] is not None):
                                     if (stage_time[1] - stage_time[0]).secs > 1:
-                                        stage_info = (stage_odom,stage_img,stage_time,stage_dimg,stage_load)
+                                        stage_info = (stage_odom,stage_img,stage_time,stage_dimg,stage_load,stage_op)
                                     else:
                                         stage_info = None
                                 else:
@@ -722,9 +617,9 @@ def parseBag(bag_dir,bag_name,bag_ctr):
                                     grip_info = None
                                     if write_final:
                                         if (final_time[0] is not None) and (final_time[1] is not None):
-                                            fr_info = (fr_odom,fr_img,final_time,fr_dimg,fr_load)
+                                            fr_info = (fr_odom,fr_img,final_time,fr_dimg,fr_load,fr_op)
                                         if (grip_time[0] is not None) and (grip_time[1] is not None):
-                                            grip_info = (grip_odom,grip_img,grip_time,grip_dimg,grip_load)
+                                            grip_info = (grip_odom,grip_img,grip_time,grip_dimg,grip_load,grip_op)
                                     reset_info = (resets,reset_times)
                                     parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info,grip_info)
                                     if bag_time is None:
@@ -740,6 +635,7 @@ def parseBag(bag_dir,bag_name,bag_ctr):
                             stage_img = []
                             stage_dimg = []
                             stage_load = []
+                            stage_op = []
                             stage_time = [None,None]
                             reset_time = [None,None]
                             reset_times = []
@@ -749,10 +645,12 @@ def parseBag(bag_dir,bag_name,bag_ctr):
                             fr_img = []
                             fr_dimg = []
                             fr_load = []
+                            fr_op = []
                             grip_odom = []
                             grip_img = []
                             grip_dimg = []
                             grip_load = []
+                            grip_op = []
                             final_time = [None,None]
                             grip_time = [None,None]
                     status = new_status
@@ -825,28 +723,40 @@ def parseBag(bag_dir,bag_name,bag_ctr):
                     dimg_np = depthnp_from_image(dimg)
                     reset_dimg.append(dimg_np)
                 dimg_np = None
+            if topic == tracker_topic:
+                op = msg
+                op_t = t
+                if status is STAGE_STATUS and stageFlag:
+                    stage_op.append(op)
+                if status is TRACK_STATUS:
+                    fr_op.append(op)
+                if status is RESET_STATUS:
+                    reset_op.append(op)
+                if status is GRIP_STATUS:
+                    grip_op.append(op)
             #Store Times
-            if (img is not None) and (dimg is not None) and (odom is not None) and (grip is not None):
+            if (img is not None) and (dimg is not None) and (odom is not None) and (grip is not None) and (op is not None):
                 if status is STAGE_STATUS and stageFlag:
                     if stage_time[0] is None:
-                        stage_time[0] = max((odom_t,img_t,dimg_t,grip_t))
-                    stage_time[1] = max((odom_t,img_t,dimg_t,grip_t))
+                        stage_time[0] = max((odom_t,img_t,dimg_t,grip_t,op_t))
+                    stage_time[1] = max((odom_t,img_t,dimg_t,grip_t,op_t))
                 if status is TRACK_STATUS:
                     if final_time[0] is None:
-                        final_time[0] = max((odom_t,img_t,dimg_t,grip_t))
-                    final_time[1] = max((odom_t,img_t,dimg_t,grip_t))
+                        final_time[0] = max((odom_t,img_t,dimg_t,grip_t,op_t))
+                    final_time[1] = max((odom_t,img_t,dimg_t,grip_t,op_t))
                 if status is GRIP_STATUS:
                     if grip_time[0] is None:
-                        grip_time[0] = max((odom_t,img_t,dimg_t,grip_t))
-                    grip_time[1] = max((odom_t,img_t,dimg_t,grip_t))
+                        grip_time[0] = max((odom_t,img_t,dimg_t,grip_t,op_t))
+                    grip_time[1] = max((odom_t,img_t,dimg_t,grip_t,op_t))
                 if status is RESET_STATUS:
                     if reset_time[0] is None:
-                        reset_time[0] = max((odom_t,img_t,dimg_t,grip_t))
-                    reset_time[1] = max((odom_t,img_t,dimg_t,grip_t))
+                        reset_time[0] = max((odom_t,img_t,dimg_t,grip_t,op_t))
+                    reset_time[1] = max((odom_t,img_t,dimg_t,grip_t,op_t))
                 odom = None
                 img = None
                 dimg = None
                 grip = None
+                op = None
     #End of Bag
     new_status = getStatus("Ending")
     if (not stageFlag):
@@ -862,7 +772,7 @@ def parseBag(bag_dir,bag_name,bag_ctr):
             if seal_stage:
                 stageFlag = False
             if seal_reset:
-                resets.append((reset_odom,reset_img,reset_dimg,reset_load))
+                resets.append((reset_odom,reset_img,reset_dimg,reset_load,reset_op))
                 reset_times.append(reset_time)
                 if bag_time is None:
                     bag_time = reset_time[1] - reset_time[0]
@@ -872,7 +782,7 @@ def parseBag(bag_dir,bag_name,bag_ctr):
                 if not stageFlag:
                     if (stage_time[0] is not None) and (stage_time[1] is not None):
                         if (stage_time[1] - stage_time[0]).secs > 1:
-                            stage_info = (stage_odom,stage_img,stage_time,stage_dimg,stage_load)
+                            stage_info = (stage_odom,stage_img,stage_time,stage_dimg,stage_load,stage_op)
                         else:
                             stage_info = None
                     else:
@@ -882,9 +792,9 @@ def parseBag(bag_dir,bag_name,bag_ctr):
                         grip_info = None
                         if write_final:
                             if (final_time[0] is not None) and (final_time[1] is not None):
-                                fr_info = (fr_odom,fr_img,final_time,fr_dimg,fr_load)
+                                fr_info = (fr_odom,fr_img,final_time,fr_dimg,fr_load,fr_op)
                             if (grip_time[0] is not None) and (grip_time[1] is not None):
-                                grip_info = (grip_odom,grip_img,grip_time,grip_dimg,grip_load)
+                                grip_info = (grip_odom,grip_img,grip_time,grip_dimg,grip_load,grip_op)
                         reset_info = (resets,reset_times)
                         parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info,grip_info)
                         if bag_time is None:
@@ -922,6 +832,8 @@ def main():
         print("Summary Only: ")
         read_summary(verbose = True)
         return
+    if os.path.exists(summary_file):
+        shutil.move(summary_file,summary_file+".old")
     if args.bag_f is not None:
         parseBag(args.bag_dir,args.bag_f,args.bag_ctr)
         return
@@ -953,7 +865,7 @@ def main():
         num_workers = 4
     print("Number of workers: " + str(num_workers))
     workers = []
-    for bag_name in bag_list:
+    for bag_name in tqdm(bag_list):
         if not bag_name.endswith(".bag"):
             print("Trying to parse non-bag file: " + bag_name)
             continue
@@ -978,14 +890,18 @@ def main():
 
 def read_summary(verbose = False):
     total_events = 0
+    total_devents = 0
     if verbose:
         print(summary_file)
     with open(summary_file,'r') as f:
         for l in f:
             if verbose:
                 print(l)
-            total_events += int(l.split(": ",1)[1].split(" events")[0])
+            split_str = l.split(": ")
+            total_events += int(split_str[1].split(" events")[0])
+            total_devents += int(split_str[2].split(" depth events")[0])
     print("Total Events: " + str(total_events))
+    print("Total Depth Events: " + str(total_devents))
 
 if __name__ == "__main__":
     main()

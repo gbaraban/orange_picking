@@ -490,7 +490,7 @@ def main():
     parser.add_argument('--depth',type=bool,default=False,help='use depth channel')
     parser.add_argument('--seg',default=True,help='use segmentation channel, use this')
     parser.add_argument('--seg_only',type=bool,default=False,help='use segmentation channel, don\'t use mostly')
-    parser.add_argument('--save_variables',type=int,default=2,help="save after every x epochs")
+    parser.add_argument('--save_variables',type=int,default=4,help="save after every x epochs")
     parser.add_argument('--mean_seg',type=str,default='useful_models/mean_imgv2_data_data_collection4_real_world_traj_bag.npy',help='mean segmentation image, two options for real and sim world in comments') # data/depth_data/data/mean_seg.npy #data/mean_imgv2_data_seg_Run24.npy
     parser.add_argument('--segload', type=str, default="useful_models/model_seg145.pth.tar", help='segment model to load')
     parser.add_argument('--retrain_off_seg',type=bool,default=True,help='retrain of segmentation off')
@@ -981,7 +981,8 @@ def main():
                 if print_ctr > 0:
                     for i in range(print_ctr):
                         print("Printing: " + str(i))
-                        saveImage(batch_images[i,:,:,:],args.data + "/batch" + str(i))
+                        saveImage(batch_images[i,:,:,:],args.data + "/batch" + str(i),args.num_images)
+                        saveImage(batch['raw_image'][i,:,:,:],args.data + "/raw_batch" + str(i))
                         r = get_state_data(args.states,batch)
                         if r is not None:
                             states = r[i]

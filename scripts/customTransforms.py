@@ -10,6 +10,8 @@ def tensortoPIL(tensor):
     tensor = tensor.cpu()
     if len(tensor.shape) == 3:
         tensor = np.transpose(tensor,[1,2,0])
+        if tensor.shape[2] == 1:
+            tensor = tensor[:,:,0]
     return img.fromarray(np.uint8(tensor*255))
 
 def PILtotensor(im):
@@ -18,21 +20,28 @@ def PILtotensor(im):
     return arr/255.0
 
 
-def saveImage(tensor,name):
+def saveImage(tensor,name,num_images=1):
     if len(tensor.shape) is 3:
         num_c = tensor.shape[0]
     else:
         num_c = 1
-    if (num_c == 3) or (num_c == 1):
-        pil = tensortoPIL(tensor)
-        pil.save(name+".png")
+    num_c = num_c/num_images
+    if num_images is 1:
+        if (num_c == 3) or (num_c == 1):
+            pil = tensortoPIL(tensor)
+            pil.save(name+".png")
+            return
+        if (num_c == 2):
+            saveImage(tensor[0,:,:],name + "depth")
+            saveImage(tensor[1,:,:],name + "seg")
+            return
+        saveImage(tensor[0:3,:,:],name+"_color")
+        saveImage(tensor[3:,:,:],name+"_")
         return
-    if (num_c == 2):
-        saveImage(tensor[0,:,:],name + "c0")
-        saveImage(tensor[1,:,:],name + "c1")
-        return
-    saveImage(tensor[0:3,:,:],name+"c03")
-    saveImage(tensor[3:,:,:],name+"c3")
+    for ii in range(num_images):
+        temp_name = name + "n" + str(ii)
+        temp_tensor = tensor[(num_c*ii):(num_c*(ii+1)),:,:]
+        saveImage(temp_tensor,temp_name)
     return
     #new_t = PILtotensor(pil)
     #res = new_t - tensor
