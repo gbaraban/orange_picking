@@ -252,8 +252,6 @@ class RandomHorizontalTrajFlip(object):
         self.n_inputs = n_inputs
 
     def __call__(self, data):
-        image = data["img"]
-        raw_image = data["raw_img"]
         points = np.array(data["pts"])
         rot_list = None
         if "rots" in data.keys():
@@ -262,8 +260,13 @@ class RandomHorizontalTrajFlip(object):
         flipped = False
         if np.random.random() > self.p:
             flipped = True
-            image = np.flip(image,axis=2).copy()
-            raw_image = np.flip(raw_image,axis=2).copy()
+            if "img" in data.keys():
+                image = data["img"]
+                raw_image = data["raw_img"]
+                image = np.flip(image,axis=2).copy()
+                raw_image = np.flip(raw_image,axis=2).copy()
+                data["img"] = image
+                data["raw_img"] = raw_image
             for i in range(len(points)):
                 if rot_list is not None:
                     E = np.zeros((4,4))
@@ -282,8 +285,15 @@ class RandomHorizontalTrajFlip(object):
             points = np.array(points)
             if rot_list is not None:
                 rot_list = np.array(rot_list)
-        data["img"] = image
-        data["raw_img"] = raw_image
+            if "orange_pose" in data.keys() and data["orange_pose"] is not None:
+                E = np.zeros((4,4))
+                E[3,3] = 1
+                E[0:3,3] = np.array(data["orange_pose"][0:3])
+                E[0:3,0:3] = R.from_euler("ZYX",data["orange_pose"][3:6]).as_dcm()
+                E_flip = np.matmul(np.matmul(self.reflect,E),self.reflect)
+                op = list(E_flip[0:3,3])
+                op.extend(R.from_dcm(E_flip[0:3,0:3]).as_euler("ZYX"))
+                data["orange_pose"] = np.array(op)
         data["pts"] = points
         data["rots"] = rot_list
         data["flipped"] = flipped

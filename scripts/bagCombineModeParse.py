@@ -58,6 +58,8 @@ error_printout_file = ""
 error_prefix = ""
 summary_file = ""
 
+overwrite = True
+
 
 def np_from_compressed_image(comp_im):
     np_arr = np.fromstring(comp_im.data, np.uint8)
@@ -160,7 +162,7 @@ def addDrop(R):
     if lr < 1:
         return True
 
-def saveData(save_loc, no_events, no_devents, odom_len, grip_len, time, odom, grip, bag_name, orange_pose=None):
+def saveData(save_loc, no_events, no_devents, odom_len, grip_len, start, end, time, odom, grip, bag_name, orange_pose=None):
     data_dict = {}
     data_dict["nEvents"] = no_events
     data_dict["nDEvents"] = no_devents
@@ -168,6 +170,10 @@ def saveData(save_loc, no_events, no_devents, odom_len, grip_len, time, odom, gr
     if grip_len is not None:
         data_dict["nGrips"] = grip_len
         data_dict["grip"] = grip
+    data_dict["start_secs"] = start.secs
+    data_dict["start_nsecs"] = start.nsecs
+    data_dict["end_secs"] = end.secs
+    data_dict["end_nsecs"] = end.nsecs
     data_dict["time_secs"] = time.secs
     data_dict["time_nsecs"] = time.nsecs
     data_dict["data"] = odom
@@ -179,8 +185,12 @@ def saveData(save_loc, no_events, no_devents, odom_len, grip_len, time, odom, gr
 
 def parsePhase(info,trial_folder,name,extra_odom = [], stage_flag = False):
         folder = trial_folder + name
-        os.makedirs(folder)
+        global overwrite
+        if overwrite:
+            os.makedirs(folder)
         time = info[2]
+        start_t = time[0]
+        end_t = time[1]
         duration = time[1] - time[0]
         img_len = len(info[1])
         dimg_len = len(info[3])
@@ -214,12 +224,11 @@ def parsePhase(info,trial_folder,name,extra_odom = [], stage_flag = False):
                 pt[0:3] = p
                 pt[3:6] = RotR.as_euler('ZYX')
                 odom[ii] = pt
-
-        for ii in range(img_len):
-            Img.fromarray(info[1][ii]).save(folder + "/image" + str(ii) + ".png")
-            
-        for ii in range(dimg_len):
-            np.save(folder + "/depth_image" + str(ii) + ".npy", info[3][ii])
+        if overwrite:
+            for ii in range(img_len):
+                Img.fromarray(info[1][ii]).save(folder + "/image" + str(ii) + ".png")
+            for ii in range(dimg_len):
+                np.save(folder + "/depth_image" + str(ii) + ".npy", info[3][ii])
 
         op_len = len(info[5])
         for ii in range(op_len):
@@ -249,7 +258,7 @@ def parsePhase(info,trial_folder,name,extra_odom = [], stage_flag = False):
         for ii in range(load_len):
             load[ii] = np.array(info[4][ii])#CHANGE
 
-        saveData(folder,img_len,dimg_len,odom_len,load_len,duration,odom + extra_odom,load,trial_folder, orange_pose)
+        saveData(folder,img_len,dimg_len,odom_len,load_len,start_t, end_t, duration,odom + extra_odom,load,trial_folder, orange_pose)
         return duration,img_len,dimg_len,odom
 
 
@@ -258,7 +267,9 @@ def parseTrialData(bag_save_folder,trial_ctr,stage_info,fr_info,reset_info,grip_
     total_events = 0
     total_devents = 0
     trial_folder = bag_save_folder + "/trial" + str(trial_ctr)
-    os.makedirs(trial_folder)
+    global overwrite
+    if overwrite:
+        os.makedirs(trial_folder)
     #Gripping
     if grip_info:
         duration, nevents, ndevents, grip_odom = parsePhase(grip_info,trial_folder,"/grip")
@@ -403,6 +414,10 @@ def StateMachine(bag_name,old_state,new_state, good_flag = False, bad_flag = Fal
             print(error_prefix + "ERROR: " + "Unknown Transition: " + str(old_state) + " > " + str(new_state),file=f)
         return -1
     if new_state is RESET_STATUS:
+        if (old_state is STAGE_STATUS):
+            clear_stage = True
+            clear_flag = True
+            return (write_stage_resets,write_final,seal_stage,seal_reset,clear_flag,clear_stage)
         if (old_state is TRACK_STATUS) or (old_state is GRIP_STATUS):
             return None
         print("Unknown Transition: " + str(old_state) + " > " + str(new_state))
@@ -497,9 +512,11 @@ def parseBag(bag_dir,bag_name,bag_ctr):
     fname_list = []
     chopped_name = chopBagName(bag_name) 
     bag_save_folder = bag_dir + 'jaw_data/bag' + str(bag_ctr)
-    if os.path.isdir(bag_save_folder):
-        shutil.rmtree(bag_save_folder)
-    os.makedirs(bag_save_folder)
+    global overwrite
+    if overwrite:
+        if os.path.isdir(bag_save_folder):
+            shutil.rmtree(bag_save_folder)
+        os.makedirs(bag_save_folder)
     global error_prefix
     error_prefix = bag_save_folder + ": "
     if bag_name.endswith("_0.bag"):
@@ -869,16 +886,19 @@ def main():
         if not bag_name.endswith(".bag"):
             print("Trying to parse non-bag file: " + bag_name)
             continue
-        cmd = ["python","scripts/bagCombineModeParse.py",args.bag_dir,"--bag_f",bag_name,"--bag_ctr",str(bag_ctr)] 
-        while (len(workers) >= num_workers):
-            w = workers.pop(0)
-            w.poll()
-            if w.returncode is None:
-                workers.append(w)
-            time.sleep(1.0)
-        print("Starting Bag: " + bag_name + " " + str(bag_ctr))
-        workers.append(subprocess.Popen(cmd))
-        bag_ctr += 1
+        if num_workers > 1:
+            cmd = ["python","scripts/bagCombineModeParse.py",args.bag_dir,"--bag_f",bag_name,"--bag_ctr",str(bag_ctr)] 
+            while (len(workers) >= num_workers):
+                w = workers.pop(0)
+                w.poll()
+                if w.returncode is None:
+                    workers.append(w)
+                time.sleep(1.0)
+            print("Starting Bag: " + bag_name + " " + str(bag_ctr))
+            workers.append(subprocess.Popen(cmd))
+            bag_ctr += 1
+        else:
+            parseBag(args.bag_dir,bag_name,bag_ctr)
     while (len(workers) > 0):
         w = workers.pop(0)
         w.poll()
@@ -886,7 +906,9 @@ def main():
             workers.append(w)
         time.sleep(1.0)
     read_summary()
-    create_mean_image(args.bag_dir + '/jaw_data/')
+    global overwrite
+    if overwrite:
+        create_mean_image(args.bag_dir + '/jaw_data/')
 
 def read_summary(verbose = False):
     total_events = 0

@@ -103,25 +103,27 @@ class OrangeNet8(torch.nn.Module):
         self.max = maxs
         self.outputs = n_outputs
         #Blocks
-        #TODO: Add input layer
-        self.conv1 = nn.Conv2d(in_channels=self.num_images*num_channels,out_channels=int(56*self.f),kernel_size=9,stride=3,padding=4)
-        self.maxpool = nn.MaxPool2d(kernel_size = 5, stride = 2)
-        self.block1 = make_layer8(int(56*self.f),int(72*self.f), stride_length=3)
-        self.block2 = make_layer8(int(72*self.f),int(96*self.f), stride_length=2)
-        self.block3 = make_layer8(int(96*self.f),int(128*self.f), stride_length=2)
-        #in_size = 768*self.f#122880#temp
-        if real_test:
-            linear_layer_size = 43008
-        else:
-            if real:
-                linear_layer_size =  32256 #38880 #69120 #55296 #61440 #30720 #34944
+        if self.num_channels > 0:
+            self.conv1 = nn.Conv2d(in_channels=self.num_images*num_channels,out_channels=int(56*self.f),kernel_size=9,stride=3,padding=4)
+            self.maxpool = nn.MaxPool2d(kernel_size = 5, stride = 2)
+            self.block1 = make_layer8(int(56*self.f),int(72*self.f), stride_length=3)
+            self.block2 = make_layer8(int(72*self.f),int(96*self.f), stride_length=2)
+            self.block3 = make_layer8(int(96*self.f),int(128*self.f), stride_length=2)
+            #in_size = 768*self.f#122880#temp
+            if real_test:
+                linear_layer_size = 43008
             else:
-                linear_layer_size = 31104
+                if real:
+                    linear_layer_size =  32256 #38880 #69120 #55296 #61440 #30720 #34944
+                else:
+                    linear_layer_size = 31104
 
-        if input == 0.5:
-            linear_layer_size = 7680 #30720 #34944 #17472 #9856
+            if input == 0.5:
+                linear_layer_size = 7680 #30720 #34944 #17472 #9856
 
-        in_size = linear_layer_size*self.f#122880#temp
+            in_size = linear_layer_size*self.f#122880#temp
+        else:
+            in_size = 0
         print("IN SIZE: ",in_size)
         self.fc1 = nn.Linear(int(in_size) + int(self.state_count),int(16384*self.f))
         self.dropout1 = nn.Dropout(0.3) #, inplace=True)
@@ -147,21 +149,24 @@ class OrangeNet8(torch.nn.Module):
 
 
     def forward(self,x,states=None):
-        #x =  self.resnet(x)
-        #print(x.shape)
-        x = self.conv1(x)
-        #print(x.shape)
-        #x = self.maxpool(x)
-        x = self.block1(x)
-        #print(x.shape)
-        #x = self.maxpool(x)
-        x = self.block2(x)
-        #print(x.shape)
-        x = self.block3(x)
-        x = torch.flatten(x,1)
-        x = F.relu(x)
-        if states is not None:
-            x = torch.cat((x, states), 1)
+        if x is not None:
+            #x =  self.resnet(x)
+            #print(x.shape)
+            x = self.conv1(x)
+            #print(x.shape)
+            #x = self.maxpool(x)
+            x = self.block1(x)
+            #print(x.shape)
+            #x = self.maxpool(x)
+            x = self.block2(x)
+            #print(x.shape)
+            x = self.block3(x)
+            x = torch.flatten(x,1)
+            x = F.relu(x)
+            if states is not None:
+                x = torch.cat((x, states), 1)
+        else:
+            x = states
         #print(x.shape)
         x = self.fc1(x)
         #print(x.shape)

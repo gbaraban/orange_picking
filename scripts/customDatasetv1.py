@@ -125,7 +125,10 @@ class OrangeSimDataSet(Dataset):
         self.num_samples_dir = {}
         phase_ctr = {}
         phase_time_list = {}
+        phase_event_list = {}
         for trial in trial_list:
+            if not os.path.isdir(self.run_dir + "/" + trial):
+                continue
             trial_subfolders = os.listdir(self.run_dir + "/" + trial)
             if os.path.exists(self.run_dir + "/" + trial + "/data.pickle_no_parse"):
                 ret_val, folder_info = self.parseSubFolder(self.run_dir+"/"+trial+"/")
@@ -139,8 +142,10 @@ class OrangeSimDataSet(Dataset):
                     if folder_info[0] not in phase_ctr.keys():
                         phase_ctr[folder_info[0]] = 0
                         phase_time_list[folder_info[0]] = []
+                        phase_event_list[folder_info[0]] = []
                     phase_ctr[folder_info[0]] += 1
                     phase_time_list[folder_info[0]].append(folder_info[1])
+                    phase_event_list[folder_info[0]].append(folder_info[2])
             else:
                 for subfolder in trial_subfolders:
                     temp_dict = {}
@@ -155,11 +160,23 @@ class OrangeSimDataSet(Dataset):
                             if folder_info[0] not in phase_ctr.keys():
                                 phase_ctr[folder_info[0]] = 0
                                 phase_time_list[folder_info[0]] = []
+                                phase_event_list[folder_info[0]] = []
                             phase_ctr[folder_info[0]] += 1
                             phase_time_list[folder_info[0]].append(folder_info[1])
-                    if self.resets and ("reset" in subfolder):
+                            phase_event_list[folder_info[0]].append(folder_info[2])
+                    if (self.resets > 0) and ("reset" in subfolder):
                         ret_val, folder_info = self.parseSubFolder(self.run_dir+"/"+trial+"/"+subfolder+"/")
                         if ret_val:
+                            if (self.resets < 1):
+                                #print("Sampling from Reset: ",len(ret_val)," ",folder_info[1]," ",folder_info[2])
+                                temp_frac = min(self.resets,1)
+                                rand_idx = np.random.permutation(len(ret_val))
+                                final_idx = int(temp_frac*len(ret_val))
+                                rand_idx = rand_idx[0:final_idx]
+                                ret_val = [ret_val[_] for _ in rand_idx]
+                                #folder_info[1] = folder_info[1]*temp_frac
+                                #folder_info[2] = folder_info[2]*temp_frac
+                                #print("After: ",len(ret_val)," ",folder_info[1]," ",folder_info[2])
                             self.event_list = self.event_list+ret_val
                             temp_dict["end"] = len(self.event_list)
                             self.num_samples_dir[self.traj_count] = temp_dict
@@ -167,11 +184,13 @@ class OrangeSimDataSet(Dataset):
                             if folder_info[0] not in phase_ctr.keys():
                                 phase_ctr[folder_info[0]] = 0
                                 phase_time_list[folder_info[0]] = []
+                                phase_event_list[folder_info[0]] = []
                             phase_ctr[folder_info[0]] += 1
                             phase_time_list[folder_info[0]].append(folder_info[1])
+                            phase_event_list[folder_info[0]].append(folder_info[2])
         for phase in phase_ctr.keys():
             print("Phase: " + str(phase) + " time data")
-            print(str(phase_ctr[phase]) + " folders.  Average Length: " + str(np.mean(phase_time_list[phase])))
+            print(str(phase_ctr[phase]) + " folders.  Average Length: " + str(np.mean(phase_time_list[phase])) + " Total Events: " + str(sum(phase_event_list[phase])))
 
 
     def __len__(self):
@@ -232,8 +251,9 @@ class OrangeSimDataSet(Dataset):
                 raw_image = temp_raw_image
             else:
                 raw_image = np.concatenate((raw_image,temp_raw_image),axis=0)
-        image = image.astype('float32')
-        raw_image = raw_image.astype('float32')
+        if image is not None:
+            image = image.astype('float32')
+            raw_image = raw_image.astype('float32')
 
         flipped = False
         rotated = False
@@ -246,19 +266,23 @@ class OrangeSimDataSet(Dataset):
 
         if self.image_transform:
             data = {}
-            data["img"] = image
-            data["raw_img"] = raw_image
+            if image is not None:
+                data["img"] = image
+                data["raw_img"] = raw_image
             data["pts"] = point_list
             data["rots"] = rot_list
+            data["orange_pose"] = orange_pose
             ret = self.image_transform(data)
-            image = ret["img"]
-            raw_image = ret["raw_img"]
+            if image is not None:
+                image = ret["img"]
+                raw_image = ret["raw_img"]
             point_list = ret["pts"]
             rot_list = ret["rots"]
             if "flipped" in ret.keys():
                 flipped = ret["flipped"]
             if "rotated" in ret.keys():
                 rotated = ret["rotated"]
+            orange_pose = ret["orange_pose"]
         if flipped or rotated:
             temp_points = []
             for i in range(self.num_pts):
@@ -268,6 +292,7 @@ class OrangeSimDataSet(Dataset):
             if max([abs(pt[3]) for pt in temp_points]) > 1.3:
                 pass
             points = np.array(temp_points)
+            rp = np.array((rp[0],-rp[1])) 
         phase = None
         if "phase" in dict_i:
             if type(dict_i["phase"]) is list and len(dict_i["phase"]) > 1:
@@ -282,19 +307,27 @@ class OrangeSimDataSet(Dataset):
             points = self.point_transform(point_dict)
 
         time_frac = dict_i["time_frac"]
-        return_dict = {'image':image, 'raw_image':raw_image, 'points':points, "flipped":flipped, "time_frac": time_frac, "rp": rp.astype("float32")}
+        return_dict = {'points':points, "flipped":flipped, "time_frac": time_frac, "rp": rp.astype("float32")}
+        if image is not None:
+            return_dict['image'] = image
+            return_dict['raw_image'] = raw_image
 
         if "phase" in dict_i:
             return_dict["phase"] = phase
 
         if "bodyV" in dict_i and not self.coeff_exists:
+            bodyV = dict_i["bodyV"].astype("float32")
+            if flipped:
+                bodyV[1] = -bodyV[1]
+                bodyV[3] = -bodyV[3]
+                bodyV[5] = -bodyV[5]
             return_dict["body_v"] = dict_i["bodyV"].astype("float32")
 
         if "magnet" in dict_i:
             return_dict["magnet"] = (dict_i["magnet"]/4096.).astype(np.float32)
 
         if orange_pose is not None and not self.coeff_exists:
-            return_dict["orange_pose"] = orange_pose
+            return_dict["orange_pose"] = orange_pose.astype("float32")
         return return_dict
 
     def parseSubFolder(self,subfolder):
@@ -480,7 +513,7 @@ class OrangeSimDataSet(Dataset):
                         temp_idx = no_points - 1
                     else:
                         temp_idx = point_idx + (point_ctr+1)*point_offset
-                        if self.reduce_N and temp_idx > no_points and (phase is not "final"):
+                        if self.reduce_N and temp_idx > no_points and (phase is not "grip"):
                             break_flag = True
                             break
                     temp_idx = min(temp_idx,len(folder_odom)-1)
@@ -505,7 +538,7 @@ class OrangeSimDataSet(Dataset):
                 #print(point_idx, p0, R0, point_list)
                 if break_flag:
                     break#continue
-                if (phase is not "final") and self.remove_hover:
+                if (phase is not "grip") and self.remove_hover:
                     if np.all([(np.linalg.norm(point[0:3]) < self.remove_hover[0]) and (np.linalg.norm(point[3:]) < self.remove_hover[1]) for point in point_list]):
                         continue
     #            if max(point_list[0]) > 1.5:
@@ -538,7 +571,7 @@ class OrangeSimDataSet(Dataset):
                 else:
                     dict_i["bodyV"] = 0.5*backward_v + 0.5*forward_v
                 dict_list.append(dict_i)
-        return dict_list, (self.phase_dict[phase],folder_time)
+        return dict_list, (self.phase_dict[phase],folder_time, no_events)
     
     def interpolateOdom(self,folder_odom,none_idx):
         back_idx = 0

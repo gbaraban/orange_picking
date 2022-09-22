@@ -438,7 +438,11 @@ def get_state_data(state_config, data):
         orange_pose_data = data["orange_pose"]
         states_data = torch.Tensor(orange_pose_data)
         return states_data
-
+    elif state_config == 6:
+        body_v_data = data["body_v"]
+        rp_data = data["rp"]
+        states_data = torch.cat((body_v_data, rp_data), 1)
+        return states_data
     else:
         return None
 
@@ -487,7 +491,7 @@ def main():
     parser.add_argument('--plot_data',type=int,default=0,help="plot data for accuracy")
     parser.add_argument('--input_size',type=float,default=1,help='input size change')
     parser.add_argument('--custom_loss',type=bool,default=False,help='custom loss for training')
-    parser.add_argument('--depth',type=bool,default=False,help='use depth channel')
+    parser.add_argument('--depth',type=bool,default=True,help='use depth channel')
     parser.add_argument('--seg',default=True,help='use segmentation channel, use this')
     parser.add_argument('--seg_only',type=bool,default=False,help='use segmentation channel, don\'t use mostly')
     parser.add_argument('--save_variables',type=int,default=4,help="save after every x epochs")
@@ -500,11 +504,11 @@ def main():
     parser.add_argument('--pred_dt',type=float, default=1.0, help="Space between predicted points")
     parser.add_argument('--extra_dt', nargs="+", type=float, default=[0.25, 0.25, 0], help='pred_dt for extra phases')
     parser.add_argument('--image_dt',type=float,default=1.0, help="Space between images provided to network")
-    parser.add_argument('--states',type=int,default=1,help="states to use with network, options: (1, 2, 3), check get_states function to see which version uses which states")
+    parser.add_argument('--states',type=int,default=4,help="states to use with network, options: (1, 2, 3), check get_states function to see which version uses which states")
     parser.add_argument('--num_controls',type=int,default=4,help="to divide data into multiple scenarios, to teach a different control strategy for each")
     parser.add_argument('--reduce_n', type=bool, default=True,help='Remove last few events from staging dataset')
     parser.add_argument('--relabel', type=bool, default=False,help='Relabel last few events from staging')
-    parser.add_argument('--resets', type=bool, default=True,help='Reset data used for training')
+    parser.add_argument('--resets', type=float, default=1,help='Reset data used for training')
     parser.add_argument('--body_v_dt', type=float, default=None,help='Average body v over longer dts')
     parser.add_argument('--remove_hover', nargs="+", type=float, default=None,help='Threshold to remove equilibrium staging points')
     parser.add_argument('--perspective', default=0, help='apply random perspective')
@@ -512,6 +516,7 @@ def main():
     parser.add_argument('--phase_end', default=False, help='Predict the end of the phase')
     parser.add_argument('--min', type=tuple, default=(0,-0.5,-0.5), help='minimum xyz/overwritten later')
     parser.add_argument('--max', type=tuple, default=(1,0.5,0.5), help='maximum xyz/ overwritten later')
+    parser.add_argument('--old_mult', type=int, default=0,help='use the old loss_mult')
     args = parser.parse_args()
 
     if args.custom == "":
@@ -554,6 +559,11 @@ def main():
         args.depth = False
     else:
         args.depth = True
+
+#    if args.resets == 0:
+#        args.resets = False
+#    else:
+#        args.resets = True
 
     from customDatasetv1 import OrangeSimDataSet, SubSet
 
@@ -679,11 +689,12 @@ def main():
     #TODO ,GaussLabels(1,1e-10,args.bins)])
 
     img_trans = []
-    if args.train == 1 and args.data_aug_flip == 1:
-        img_trans.append(RandomHorizontalTrajFlip(p=0.5))
-    args.perspective = float(args.perspective)
-    if args.perspective != 0:
-        img_trans.append(WaypointPerspective(0.5,args.perspective,args.relative_pose))
+    if args.num_images > 0:
+        if args.train == 1 and args.data_aug_flip == 1:
+            img_trans.append(RandomHorizontalTrajFlip(p=0.5))
+        args.perspective = float(args.perspective)
+        if args.perspective != 0:
+            img_trans.append(WaypointPerspective(0.5,args.perspective,args.relative_pose))
     if len(img_trans) > 0:
         print("Image transform set")
         img_trans = transforms.Compose(img_trans)
@@ -692,22 +703,23 @@ def main():
 
     sampler_n_epochs = 2
     #Load Mean image
-    print("Test")
-    mean_img_loc = args.data + '/mean_color_image.npy'
-    if not (os.path.exists(mean_img_loc)):
-        print('mean image file not found', mean_img_loc)
-        return 0
-        #mean_image = compute_mean_image(train_indices, data_loc, model)#TODO:Add this in
-        #np.save(mean_img_loc, mean_image)
-    else:
-        print('mean image file found')
-        mean_image = np.load(mean_img_loc)
+    if args.num_images > 0:
+        mean_img_loc = args.data + '/mean_color_image.npy'
+        if not (os.path.exists(mean_img_loc)):
+            print('mean image file not found', mean_img_loc)
+            return 0
+            #mean_image = compute_mean_image(train_indices, data_loc, model)#TODO:Add this in
+            #np.save(mean_img_loc, mean_image)
+        else:
+            print('mean image file found')
+            mean_image = np.load(mean_img_loc)
     #mean_image = np.zeros((model.w, model.h, 3))
     #img_trans = None 
     #Create dataset class
 
     #TOCHECK
     dataclass = OrangeSimDataSet(args.data, args.num_images, args.num_pts, pt_trans, img_trans, depth=args.depth, rel_pose=args.relative_pose, pred_dt = args.pred_dt, img_dt=args.image_dt, reduce_N=args.reduce_n, use_resets=args.resets, extra_dt=args.extra_dt, relabel=args.relabel, mix_labels=False, body_v_dt = args.body_v_dt, remove_hover = args.remove_hover, use_magnet=args.magnet)
+    print("Total Data Length: " + str(len(dataclass)))
 
     #Break up into validation and training
     #val_perc = 0.07
@@ -785,6 +797,9 @@ def main():
     if (args.seg is True):
         n_channels += 1
 
+    if args.num_images == 0:
+        n_channels = 0
+
     state_count = 0
 
     if not args.resnet18:
@@ -801,6 +816,8 @@ def main():
                 state_count += 2
             elif args.states == 5:
                 state_count += 6
+            elif args.states == 6:
+                state_count += 6 + 2
             if args.num_controls > 1:
                 model = OrangeNet8(args.capacity,args.num_images,args.num_pts,args.bins,args.min,args.max,n_outputs=n_outputs,real_test=False,retrain_off=args.freeze,input=args.input_size, num_channels = n_channels, real=1, state_count = state_count, num_controls=args.num_controls, extra_mins=args.extra_mins, extra_maxs=args.extra_maxs)
             else:
@@ -834,7 +851,7 @@ def main():
         device = torch.device('cpu')
     print('Device: ', device)
 
-    if args.seg is True:
+    if args.seg is True and args.num_images > 0:
         print("Segmentation Enabled")
         seg_mean_image = np.transpose(np.load(args.mean_seg),[2,0,1])
         seg_mean_image = torch.tensor(seg_mean_image)
@@ -853,7 +870,7 @@ def main():
             else:
                 print('No checkpoint found at: ',args.segload)
 
-    if args.seg is True:
+    if args.seg is True and args.num_images > 0:
         print('Model Device: ', next(model.parameters()).device, next(segmodel.parameters()).device)
     else:
         print('Model Device: ', next(model.parameters()).device)
@@ -869,8 +886,10 @@ def main():
     #optimizer = optim.SGD(list(model.parameters()) + list(segmodel.parameters()), lr=args.learning_rate, momentum=0.9)
     scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=learn_rate_decay)
     #ReduceLROnPlateau is an interesting idea
-    #loss_mult = torch.tensor([[0.8, 0.5, 0.3],[0.8, 0.5, 0.3]]).to(device)
-    loss_mult = torch.tensor([[1, 1, 1],[1, 1, 1]]).to(device)
+    if args.old_mult is not 0:
+        loss_mult = torch.tensor([[0.8, 0.5, 0.3],[0.8, 0.5, 0.3]]).to(device)
+    else:
+        loss_mult = torch.tensor([[1, 1, 1],[1, 1, 1]]).to(device)
 
     #Save Parameters
     save_variables_divider = args.save_variables #5 #10
@@ -938,6 +957,7 @@ def main():
     for epoch in range(args.epochs):            
         
         print('\n\nEpoch: ', epoch)
+        #print("Memory: 953: ",torch.cuda.memory_allocated(device))
         #Train
         #gc.collect()
         epoch_acc = [[[], []] for _ in range(args.num_pts)]
@@ -950,51 +970,76 @@ def main():
         loader = train_loader
 
         for ctr, batch in enumerate(loader):
+            #if ctr > 4:
+            #    break
+            #print("Memory: 966: ",torch.cuda.memory_allocated(device))
+            #print("Batch: ",ctr)
             #image_batch = batch['image'].to(device).float()
             model = model.to(device)
             point_batch = batch['points'] #.to(device)
             optimizer.zero_grad()
             model.train()
+            #print("Memory: 973: ",torch.cuda.memory_allocated(device))
             with torch.set_grad_enabled(True):
                 #model = model.to(device)
                 classifier_loss = None
 
-                if args.seg is True:
-                    imgs = batch['image'].to(device)
-                    raw_imgs = batch['raw_image'].to(device)
-                    segmodel = segmodel.to(device)
-                    batch_images = None
-                    for img_num in range(args.num_images):
-                        start_raw_idx = img_num*(base_n_channels)
-                        end_raw_idx = (img_num+1)*(base_n_channels)
-                        start_idx = img_num*(n_channels)
-                        end_idx = (img_num+1)*(n_channels)
-                        segimages = run_seg(segmodel,raw_imgs[:, start_raw_idx:end_raw_idx, :, :])
-                        t_batch_imgs =  torch.cat((imgs[:, start_idx:end_idx, :, :], segimages), 1)
-                        if batch_images is None:
-                            batch_images = t_batch_imgs
-                        else:
-                            batch_images = torch.cat((batch_images, t_batch_imgs), 1)
+                if args.num_images > 0:
+                    if args.seg is True:
+                        imgs = batch['image'].to(device)
+                        raw_imgs = batch['raw_image'].to(device)
+                        segmodel = segmodel.to(device)
+                        batch_images = None
+                        for img_num in range(args.num_images):
+                            start_raw_idx = img_num*(base_n_channels)
+                            end_raw_idx = (img_num+1)*(base_n_channels)
+                            start_idx = img_num*(n_channels)
+                            end_idx = (img_num+1)*(n_channels)
+                            segimages = run_seg(segmodel,raw_imgs[:, start_raw_idx:end_raw_idx, :, :])
+                            t_batch_imgs =  torch.cat((imgs[:, start_idx:end_idx, :, :], segimages), 1)
+                            if batch_images is None:
+                                batch_images = t_batch_imgs
+                            else:
+                                batch_images = torch.cat((batch_images, t_batch_imgs), 1)
+                    else:
+                        batch_images = batch['image'].to(device)
                 else:
-                    batch_images = batch['image'].to(device)
+                    batch_images = None
+                #print("Memory: 996: ",torch.cuda.memory_allocated(device))
 
+                print_idx = []
                 if print_ctr > 0:
-                    for i in range(print_ctr):
-                        print("Printing: " + str(i))
-                        saveImage(batch_images[i,:,:,:],args.data + "/batch" + str(i),args.num_images)
-                        saveImage(batch['raw_image'][i,:,:,:],args.data + "/raw_batch" + str(i))
-                        r = get_state_data(args.states,batch)
+                    if args.num_controls > 1:
+                        for p in range(args.num_controls):
+                            for temp_idx in range(100):
+                                if batch['phase'][temp_idx] == p:
+                                    print_idx.append(temp_idx)
+                                    break
+                    else:
+                        print_idx = range(print_ctr)
+                    if args.num_images > 0:
+                        print("Printing Indices: ",print_idx)
+                        np.save(args.data + "/batch_images.npy",batch_images[print_idx].cpu().detach().numpy())
+                    r = get_state_data(args.states,batch)
+                    if r is not None:
+                        np.save(args.data + "/batch_states.npy",r[print_idx].cpu().detach().numpy())
+                    for temp_ctr,idx in enumerate(print_idx):
+                        print("Printing: " + str(temp_ctr) + " " + str(idx))
+                        if args.num_images > 0:
+                            saveImage(batch_images[idx,:,:,:],args.data + "/batch" + str(temp_ctr),args.num_images)
+                            saveImage(batch['raw_image'][idx,:,:,:],args.data + "/raw_batch" + str(temp_ctr))
                         if r is not None:
-                            states = r[i]
-                            print("States: " + str(i))
+                            states = r[idx]
+                            print("States: " + str(temp_ctr))
                             print(states)
                         if args.num_controls > 1:
-                            print("Phase: " + str(i))
-                            print(batch['phase'][i])
-                        print("Points: " + str(i))
-                        print(point_batch[i])
+                            print("Phase: " + str(temp_ctr))
+                            print(batch['phase'][idx])
+                        print("Points: " + str(temp_ctr))
+                        print(point_batch[idx])
                     print_ctr = 0
 
+                #print("Memory: 1028: ",torch.cuda.memory_allocated(device))
 
                 if args.states == 0:
                     logits = model(batch_images)
@@ -1003,19 +1048,27 @@ def main():
                     states = states.to(device)
                     logits = model(batch_images, states)
 
+                #print("Memory: 1037: ",torch.cuda.memory_allocated(device))
                 #print(logits.shape)
                 #exit(0)
                 #del batch_imgs
                 #del batch
                 #classifier = logits[:, 0]
                 #logits = logits[:, :3600]
-                if args.seg is True:
+                if args.seg is True and args.num_images > 0:
                     segmodel = segmodel.to('cpu')
                 b_size = logits.shape[0]
 
+                if len(print_idx) > 0:
+                    np.save(args.data + "/logits.npy",logits[print_idx].cpu().detach().numpy())
+
+                #print("Memory: 1051: ",torch.cuda.memory_allocated(device))
                 if args.num_controls > 1:
                     classifier = logits[:, :model.classifier]
                     classifier = classifier.reshape(-1, model.classifier).to(device)
+                    if len(print_idx) > 0:
+                        print("Classifier output")
+                        print(classifier[print_idx])
                     logits = logits[:, model.classifier:]
                     classifier_loss = F.cross_entropy(classifier, batch['phase'].long().to(device))
                     temp_accuracy = phase_accuracy(batch['phase'], classifier)
@@ -1024,6 +1077,7 @@ def main():
                 else:
                     phase = np.zeros(b_size).astype(int)
 
+                #print("Memory: 1066: ",torch.cuda.memory_allocated(device))
                 if not args.regression:
                     if not args.yaw_only:
                         logits = logits.view(-1,6,model.num_points,model.bins*args.num_controls)
@@ -1119,6 +1173,7 @@ def main():
                     acc_list = acc_metric_regression(args, logits[elements_accessed,phase,:].cpu(), temp_point_batch.cpu(),phase,sphere_flag = args.spherical)
                     if args.num_controls > 1:
                         acc_list, extra_acc_list = acc_list
+                #print("Memory: 1162: ",torch.cuda.memory_allocated(device))
 
                 #print(batch_loss)
                 #batch_loss.to_cpu()
@@ -1147,12 +1202,17 @@ def main():
                             loss_p[i] = loss_p[i].to(device)
                             loss_r[i] = loss_r[i].to(device)
 
+                #print("Memory: 1191: ",torch.cuda.memory_allocated(device))
                 #print(batch_loss.device, l2_reg.device, lamda.device, logits.device, point_batch.device)
                 batch_loss.backward()
+                #print("Memory: 1194: ",torch.cuda.memory_allocated(device))
                 optimizer.step()
+                #print("Memory: 1196: ",torch.cuda.memory_allocated(device))
                 model = model.to('cpu')
 
+                #print("Memory: 1199: ",torch.cuda.memory_allocated(device))
                 del point_batch, logits, batch_images, batch
+                #print("Memory: 1201: ",torch.cuda.memory_allocated(device))
                 if args.states != 0:
                     del states
 
@@ -1186,6 +1246,7 @@ def main():
                         elements += temp_ctr
                     else:
                         extra_elements[ii-1] += temp_ctr
+                #print("Memory: 1235: ",torch.cuda.memory_allocated(device))
 
         #Validation
         #print("Reach here")
@@ -1213,32 +1274,39 @@ def main():
 
         val_phase_accuracy = 0.
 
-        for batch in val_loader:
+        for val_ctr, batch in enumerate(val_loader):
+            if val_ctr > 4:
+                break
             val_classifier_loss = None
             with torch.set_grad_enabled(False):
-                if args.seg is True:
-                    imgs = batch['image'].to(device)
-                    raw_imgs = batch['raw_image'].to(device)
-                    segmodel = segmodel.to(device)
-                    batch_images = None
-                    for img_num in range(args.num_images):
-                        start_raw_idx = img_num*(base_n_channels)
-                        end_raw_idx = (img_num+1)*(base_n_channels)
-                        start_idx = img_num*(n_channels)
-                        end_idx = (img_num+1)*(n_channels)
-                        segimages = run_seg(segmodel,raw_imgs[:, start_raw_idx:end_raw_idx, :, :])
-                        t_batch_imgs =  torch.cat((imgs[:, start_idx:end_idx, :, :], segimages), 1)
-                        if batch_images is None:
-                            batch_images = t_batch_imgs
-                        else:
-                            batch_images = torch.cat((batch_images, t_batch_imgs), 1)
+                if args.num_images > 0:
+                    if args.seg is True:
+                        imgs = batch['image'].to(device)
+                        raw_imgs = batch['raw_image'].to(device)
+                        segmodel = segmodel.to(device)
+                        batch_images = None
+                        for img_num in range(args.num_images):
+                            start_raw_idx = img_num*(base_n_channels)
+                            end_raw_idx = (img_num+1)*(base_n_channels)
+                            start_idx = img_num*(n_channels)
+                            end_idx = (img_num+1)*(n_channels)
+                            segimages = run_seg(segmodel,raw_imgs[:, start_raw_idx:end_raw_idx, :, :])
+                            t_batch_imgs =  torch.cat((imgs[:, start_idx:end_idx, :, :], segimages), 1)
+                            if batch_images is None:
+                                batch_images = t_batch_imgs
+                            else:
+                                batch_images = torch.cat((batch_images, t_batch_imgs), 1)
+                    else:
+                        batch_images = batch['image'].to(device)
                 else:
-                    batch_images = batch['image'].to(device)
+                    batch_images = None
+                #print("Memory: 1284: ",torch.cuda.memory_allocated(device))
 
                 #print(segimages.shape, batch_imgs.shape)
                 # model = model.to(device)
                 model = model.to(device)
                 model.eval()
+                #print("Memory: 1290: ",torch.cuda.memory_allocated(device))
                 # logits = model(batch_images)
                 if args.states == 0:
                     logits = model(batch_images)
@@ -1260,6 +1328,7 @@ def main():
                     phase = np.zeros(b_size).astype(int)
 
                 point_batch = batch['points'].to(device)
+                #print("Memory: 1312: ",torch.cuda.memory_allocated(device))
                 if not args.regression:
                     if not args.yaw_only:
                         logits = logits.view(-1,6,model.num_points,model.bins*args.num_controls)
@@ -1314,7 +1383,9 @@ def main():
                     val_acc_list = acc_metric_regression(args, logits[elements_accessed,phase,:].cpu(), temp_point_batch.cpu(),phase,sphere_flag = args.spherical)
                     if args.num_controls > 1:
                         val_acc_list, extra_val_acc_list = val_acc_list
+                #print("Memory: 1367: ",torch.cuda.memory_allocated(device))
                 logits = logits.to('cpu')
+                #print("Memory: 1369: ",torch.cuda.memory_allocated(device))
                 #print(logits.shape)
                 #resnet_output = np.concatenate((resnet_output,logits), axis=0)
                 #print(resnet_output.shape)
@@ -1334,9 +1405,11 @@ def main():
                                 extra_epoch_acc[phase_num-1][ii][jj].append(acc_j)
 
                 del point_batch, logits, batch_images, batch
+                #print("Memory: 1389: ",torch.cuda.memory_allocated(device))
                 if args.states != 0:
                     del states
                 model = model.to('cpu')
+                #print("Memory: 1393: ",torch.cuda.memory_allocated(device))
         
         if val_elements[0] != 0.:
             val_acc = val_acc/val_elements[0]
@@ -1402,6 +1475,7 @@ def main():
                 print(mean_str)
                 print(var_str)
 
+    save_model()
     writer.close()
     print("Done")
 
